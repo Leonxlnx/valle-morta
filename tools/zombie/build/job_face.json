@@ -1,0 +1,1 @@
+{"tag": "face", "mesh": "E:\\fable\\shootinggame\\tools\\zombie\\build\\prev_face.npz", "views": [{"name": "front", "loc": [0, -1.2, 1.645], "tgt": [0, 0, 1.633], "lens": 235}, {"name": "q3", "loc": [0.75, -0.95, 1.655], "tgt": [0, -0.05, 1.633], "lens": 235}], "res": [400, 480], "samples": 32, "out": "E:\\fable\\shootinggame\\tools\\zombie\\build\\pv_face_", "ground": null}

@@ -1,0 +1,34 @@
+00:15.859  blend            | Read blend: "E:\fable\shootinggame\tools\weapon\build\weapon.blend"
+E:\fable\shootinggame\tools\weapon\build_rifle.py:142: DeprecationWarning: 'Material.use_nodes' is expected to be removed in Blender 6.0
+  m = bpy.data.materials.new('CLAY'); m.use_nodes = True; nt = m.node_tree; nt.nodes.clear()
+E:\fable\shootinggame\tools\weapon\build_rifle.py:110: DeprecationWarning: 'World.use_nodes' is expected to be removed in Blender 6.0
+  w = bpy.data.worlds.new('W'); sc.world = w; w.use_nodes = True; nt = w.node_tree; nt.nodes.clear()
+00:20.671  render           | Saved: 'E:\fable\shootinggame\tools\_preview\weapon\clay_fp.png'
+00:24.921  render           | Saved: 'E:\fable\shootinggame\tools\_preview\weapon\clay_ads.png'
+00:29.953  render           | Saved: 'E:\fable\shootinggame\tools\_preview\weapon\clay_beauty.png'
+00:37.203  render           | Saved: 'E:\fable\shootinggame\tools\_preview\weapon\clay_closeR.png'
+00:43.531  render           | Saved: 'E:\fable\shootinggame\tools\_preview\weapon\clay_closeL.png'
+00:50.234  render           | Saved: 'E:\fable\shootinggame\tools\_preview\weapon\clay_top.png'
+Could not find platform independent libraries <prefix>
+sheet E:\fable\shootinggame\tools\_preview\weapon\clay_sheet.png (1000, 843)
+boolean True 146 260
+ATLAS rifle tris 26698 pids (array([ 1.,  2.,  3.,  4.,  5., 11., 14.], dtype=float32), array([8970, 1996,  524,  524,  122,   98,  277]))
+  node RifleBody tris 21110
+  node Bolt tris 1116
+  node Magazine tris 4292
+  node Trigger tris 180
+ATLAS hands tris 17472 pids (array([ 6.,  7.,  8.,  9., 10., 12., 13.], dtype=float32), array([1916, 1740,  880, 2080,  524,  968,  224]))
+  node HandR tris 8736
+  node HandL tris 8736
+Info: Saved as "weapon.blend"
+STAGE geo ok 1.4 s
+rendered fp 4.8 s
+rendered ads 4.3 s
+rendered beauty 5.0 s
+rendered closeR 7.2 s
+rendered closeL 6.3 s
+rendered top 6.7 s
+STAGE clay ok 35.5 s
+Blender 5.2.3 LTS (hash e13b728c6880 built 2026-10-22 01:37:16)
+
+Blender quit

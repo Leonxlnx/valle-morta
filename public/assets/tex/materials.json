@@ -1,0 +1,134 @@
+{
+ "bark_conifer": {
+  "full_size": 1024,
+  "relief_m": 0.03411,
+  "size": 1024,
+  "tile_m": 1.0
+ },
+ "bark_deciduous": {
+  "full_size": 1024,
+  "relief_m": 0.03619,
+  "size": 1024,
+  "tile_m": 1.0
+ },
+ "cobblestone": {
+  "full_size": 2048,
+  "relief_m": 0.05356,
+  "size": 2048,
+  "tile_m": 4.0
+ },
+ "concrete_old": {
+  "full_size": 1024,
+  "relief_m": 0.01602,
+  "size": 1024,
+  "tile_m": 2.0
+ },
+ "dirt_mud": {
+  "full_size": 2048,
+  "relief_m": 0.08687,
+  "size": 2048,
+  "tile_m": 4.0
+ },
+ "forest_floor": {
+  "full_size": 2048,
+  "relief_m": 0.09347,
+  "size": 2048,
+  "tile_m": 4.0
+ },
+ "grass_ground": {
+  "full_size": 2048,
+  "relief_m": 0.09168,
+  "size": 2048,
+  "tile_m": 4.0
+ },
+ "gravel_road": {
+  "full_size": 2048,
+  "relief_m": 0.05584,
+  "size": 2048,
+  "tile_m": 4.0
+ },
+ "moss": {
+  "full_size": 1024,
+  "relief_m": 0.09632,
+  "size": 1024,
+  "tile_m": 2.0
+ },
+ "plaster_damaged": {
+  "full_size": 2048,
+  "relief_m": 0.10428,
+  "size": 2048,
+  "tile_m": 4.0
+ },
+ "plaster_old": {
+  "full_size": 2048,
+  "relief_m": 0.01782,
+  "size": 2048,
+  "tile_m": 4.0
+ },
+ "riverbed_pebbles": {
+  "full_size": 2048,
+  "relief_m": 0.10096,
+  "size": 2048,
+  "tile_m": 4.0
+ },
+ "rock_limestone": {
+  "full_size": 2048,
+  "relief_m": 0.40421,
+  "size": 2048,
+  "tile_m": 6.0
+ },
+ "roof_tiles": {
+  "full_size": 2048,
+  "relief_m": 0.11616,
+  "size": 2048,
+  "tile_m": 4.0
+ },
+ "rubble": {
+  "full_size": 2048,
+  "relief_m": 0.23153,
+  "size": 2048,
+  "tile_m": 4.0
+ },
+ "rust_metal": {
+  "full_size": 2048,
+  "relief_m": 0.00643,
+  "size": 2048,
+  "tile_m": 2.0
+ },
+ "slate_dark": {
+  "full_size": 1024,
+  "relief_m": 0.01506,
+  "size": 1024,
+  "tile_m": 2.0
+ },
+ "stone_blocks": {
+  "full_size": 2048,
+  "relief_m": 0.03456,
+  "size": 2048,
+  "tile_m": 4.0
+ },
+ "stone_masonry": {
+  "full_size": 2048,
+  "relief_m": 0.08591,
+  "size": 2048,
+  "tile_m": 4.0
+ },
+ "wood_beam": {
+  "full_size": 1024,
+  "relief_m": 0.02116,
+  "size": 1024,
+  "tile_m": 2.0
+ },
+ "wood_charred": {
+  "full_size": 1024,
+  "relief_m": 0.04913,
+  "size": 1024,
+  "tile_m": 2.0
+ },
+ "wood_planks": {
+  "full_size": 2048,
+  "relief_m": 0.02282,
+  "size": 2048,
+  "tile_m": 2.0
+ }
+}

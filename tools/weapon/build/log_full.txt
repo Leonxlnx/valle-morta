@@ -1,0 +1,88 @@
+00:05.984  blend            | Read blend: "E:\fable\shootinggame\tools\weapon\build\weapon.blend"
+E:\fable\shootinggame\tools\weapon\build_rifle.py:170: DeprecationWarning: 'Material.use_nodes' is expected to be removed in Blender 6.0
+  m = bpy.data.materials.new('BAKE_' + an); m.use_nodes = True; nt = m.node_tree; nt.nodes.clear()
+Could not find platform independent libraries <prefix>
+rifle texels 2535975 cover 0.60 edge pct [0.002 0.325 1.146 1.999] ao pct [0.   0.62 1.  ]
+rifle done, mm/texel 0.398 mean col [0.259 0.21  0.177] 41.4 s
+hands texels 2405693 cover 0.57 edge pct [0.002 0.234 1.39  1.453] ao pct [0.   0.94 1.  ]
+hands done, mm/texel 0.352 mean col [0.197 0.197 0.141] 69.5 s
+05:57.312  blend            | Read blend: "E:\fable\shootinggame\tools\weapon\build\weapon.blend"
+E:\fable\shootinggame\tools\weapon\build_rifle.py:200: DeprecationWarning: 'Material.use_nodes' is expected to be removed in Blender 6.0
+  m = bpy.data.materials.new(name); m.use_nodes = True; nt = m.node_tree; nt.nodes.clear()
+boolean True 194 308
+ATLAS rifle tris 31796 pids (array([ 1.,  2.,  3.,  4.,  5., 11., 14.], dtype=float32), array([10002,  2468,   609,   642,   170,   154,   277]))
+  node RifleBody tris 24918
+  node Bolt tris 1320
+  node Magazine tris 5378
+  node Trigger tris 180
+ATLAS hands tris 17472 pids (array([ 6.,  7.,  8.,  9., 10., 12., 13.], dtype=float32), array([1916, 1740,  880, 2080,  524,  968,  224]))
+  node HandR tris 8736
+  node HandL tris 8736
+Info: Saved as "weapon.blend"
+STAGE geo ok 1.2 s
+Info: Baking map saved to internal image, save it externally or pack it
+baked rifle pid 1.1 s cover 0.604623556137085
+Info: Baking map saved to internal image, save it externally or pack it
+baked rifle pos 2.7 s cover 0.604623556137085
+Info: Baking map saved to internal image, save it externally or pack it
+baked rifle nrm 3.9 s cover 0.604623556137085
+Info: Baking map saved to internal image, save it externally or pack it
+baked rifle bev 36.8 s cover 0.604623556137085
+Info: Baking map saved to internal image, save it externally or pack it
+baked rifle ao 135.0 s cover 0.4548368453979492
+Info: Baking map saved to internal image, save it externally or pack it
+baked hands pid 1.1 s cover 0.5735619068145752
+Info: Baking map saved to internal image, save it externally or pack it
+baked hands pos 3.0 s cover 0.5735619068145752
+Info: Baking map saved to internal image, save it externally or pack it
+baked hands nrm 4.3 s cover 0.5735619068145752
+Info: Baking map saved to internal image, save it externally or pack it
+baked hands bev 39.8 s cover 0.5735619068145752
+Info: Baking map saved to internal image, save it externally or pack it
+baked hands ao 139.5 s cover 0.4517498016357422
+STAGE bake ok 274.8 s
+textures rc 0
+STAGE tex ok 76.6 s
+Info: Saved as "weapon_final.blend"
+INFO Draco is available, use library at C:\Program Files\Blender Foundation\Blender 5.2\5.2\scripts\addons_core\io_scene_gltf2\bf_intern_draco_bridge.dll
+INFO MeshOptimizer is available, use library at C:\Program Files\Blender Foundation\Blender 5.2\5.2\scripts\addons_core\io_scene_gltf2\bf_intern_meshopt_bridge.dll
+07:44:21 | INFO: Starting glTF 2.0 export
+07:44:21 | INFO: Extracting primitive: Bolt.001
+07:44:21 | WARNING: More than one shader node tex image used for a texture. The resulting glTF sampler will behave like the first shader node tex image.
+07:44:22 | INFO: Primitives created: 1
+07:44:22 | INFO: Extracting primitive: HandL
+07:44:22 | WARNING: More than one shader node tex image used for a texture. The resulting glTF sampler will behave like the first shader node tex image.
+07:44:23 | INFO: Primitives created: 1
+07:44:23 | INFO: Extracting primitive: HandR
+07:44:23 | INFO: Primitives created: 1
+07:44:23 | INFO: Extracting primitive: Magazine.001
+07:44:23 | INFO: Primitives created: 1
+07:44:23 | INFO: Extracting primitive: RifleBody.001
+07:44:23 | INFO: Primitives created: 1
+07:44:23 | INFO: Extracting primitive: Trigger.001
+07:44:23 | INFO: Primitives created: 1
+07:44:23 | INFO: Finished glTF 2.0 export in 1.9906551837921143 s
+06:01.891  blend            | Read blend: "E:\fable\shootinggame\tools\weapon\build\weapon_final.blend"
+E:\fable\shootinggame\tools\weapon\build_rifle.py:110: DeprecationWarning: 'World.use_nodes' is expected to be removed in Blender 6.0
+  w = bpy.data.worlds.new('W'); sc.world = w; w.use_nodes = True; nt = w.node_tree; nt.nodes.clear()
+06:11.031  render           | Saved: 'E:\fable\shootinggame\tools\_preview\weapon\tex_fp.png'
+06:20.984  render           | Saved: 'E:\fable\shootinggame\tools\_preview\weapon\tex_ads.png'
+06:34.578  render           | Saved: 'E:\fable\shootinggame\tools\_preview\weapon\tex_beauty.png'
+06:58.969  render           | Saved: 'E:\fable\shootinggame\tools\_preview\weapon\tex_closeR.png'
+07:14.641  render           | Saved: 'E:\fable\shootinggame\tools\_preview\weapon\tex_closeL.png'
+07:27.062  render           | Saved: 'E:\fable\shootinggame\tools\_preview\weapon\tex_top.png'
+Could not find platform independent libraries <prefix>
+sheet E:\fable\shootinggame\tools\_preview\weapon\tex_sheet.png (1000, 843)
+
+exported E:\fable\shootinggame\public\assets\models\rifle.glb 4.7 MB
+STAGE export ok 4.6 s
+rendered fp 9.1 s
+rendered ads 10.0 s
+rendered beauty 13.6 s
+rendered closeR 24.4 s
+rendered closeL 15.7 s
+rendered top 12.4 s
+STAGE render ok 86.2 s
+Blender 5.2.3 LTS (hash e13b728c6880 built 2026-10-22 01:37:16)
+
+Blender quit
