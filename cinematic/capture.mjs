@@ -86,7 +86,7 @@ try {
   } else {
     const fps = 24;
     const x265 = `hdr10=1:hdr10-opt=1:repeat-headers=1:colorprim=bt2020:transfer=smpte2084:colormatrix=bt2020nc:master-display=G(13250,34500)B(7500,3000)R(34000,16000)WP(15635,16450)L(10000000,1):max-cll=1000,400:pools=8:log-level=error`;
-    const vf = (SUB > 1 ? `vflip,tmix=frames=${SUB},select=eq(mod(n\\,${SUB})\\,${SUB - 1}),setpts=N/(${fps}*TB),` : 'vflip,') + 'scale=out_color_matrix=bt2020nc:out_range=tv,format=yuv420p10le';
+    const vf = (SUB > 1 ? `vflip,tmix=frames=${SUB},select=eq(mod(n\\,${SUB})\\,${SUB - 1}),setpts=N/(${fps}*TB),` : 'vflip,') + 'scale=out_color_matrix=bt2020:out_range=tv,format=yuv420p10le';
     for (let i = 0; i < info.shots.length; i++) {
       if (only && !only.includes(i)) continue;
       const seg = `${OUT}/seg_${String(i + 1).padStart(2, '0')}.mkv`;
@@ -99,6 +99,9 @@ try {
         '-color_primaries', 'bt2020', '-color_trc', 'smpte2084', '-colorspace', 'bt2020nc', part], { stdio: ['pipe', 'inherit', 'inherit'] });
       const done = new Promise((r) => ff.on('exit', r));
       sink = ff;
+      // if the encoder dies, stop accepting frames so the page fails fast
+      ff.stdin.on('error', () => {});
+      ff.on('exit', () => { if (sink === ff) sink = null; });
       const t0 = Date.now();
       await page.evaluate((i) => window.__vm.film.begin(i), i);
       const n = info.shots[i].frames;
