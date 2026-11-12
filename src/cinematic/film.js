@@ -6,6 +6,13 @@
 import * as THREE from 'three';
 import { G } from '../engine/shared.js';
 import { mulberry32 } from '../core/noise.js';
+import { Pass } from '../engine/pass.js';
+
+const ADD_FS = /* glsl */`
+uniform sampler2D tSrc;
+uniform float uW;
+out vec4 outColor;
+void main() { outColor = vec4(texture(tSrc, vUv).rgb * uW, 1.0); }`;
 
 const V = (x, y, z) => new THREE.Vector3(x, y, z);
 const ease = (t) => { t = Math.min(1, Math.max(0, t)); return t * t * (3 - 2 * t); };
@@ -137,7 +144,39 @@ export function createFilm(vm) {
 
   const film = { shots: SHOTS, fps: 24, sub: 3, t: 0, shot: null, target: null, total: acc, hdr: false };
 
-  film.prepare = (w, h, hdr) => {
+  // quality overrides for the offline renderer, e.g. { msaa: 0, volScale: 3, shadow: 2048 }
+  film.retune = (over = {}) => {
+    Object.assign(engine.q, over);
+    if (over.shadow) {
+      engine.sun.shadow.mapSize.set(over.shadow, over.shadow);
+      if (engine.sun.shadow.map) { engine.sun.shadow.map.dispose(); engine.sun.shadow.map = null; }
+    }
+    engine.renderScale = 1;
+    engine.resize(engine.outW, engine.outH);
+  };
+
+  // average milliseconds per sub-frame: scene render, float read-back, 16-bit conversion
+  film.bench = (n = 3) => {
+    const gl = engine.gl, w = engine.rw, h = engine.rh, px = new Float32Array(4);
+    let tr = 0, td = 0, tc = 0;
+    for (let i = 0; i <= n; i++) {
+      const t0 = performance.now();
+      film.advance(1 / 72, true, JITTER[i % 3]);
+      engine.renderer.setRenderTarget(film.target);
+      gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.FLOAT, px);
+      const t1 = performance.now();
+      gl.readPixels(0, 0, w, h, gl.RGBA, gl.FLOAT, film.f32);
+      engine.renderer.setRenderTarget(null);
+      const t2 = performance.now();
+      const src = film.f32, dst = film.u16, m = w * h;
+      for (let k = 0, a = 0, b = 0; k < m; k++, a += 4, b += 3) { dst[b] = src[a] * 65535; dst[b + 1] = src[a + 1] * 65535; dst[b + 2] = src[a + 2] * 65535; }
+      const t3 = performance.now();
+      if (i > 0) { tr += t1 - t0; td += t2 - t1; tc += t3 - t2; }
+    }
+    return { render: Math.round(tr / n), read: Math.round(td / n), convert: Math.round(tc / n) };
+  };
+
+  film.prepare = (w, h, hdr, over = null) => {
     vm.stop();
     engine.syncSky = true;
     game.ui = null;
@@ -145,14 +184,19 @@ export function createFilm(vm) {
       engine.q.msaa = Math.min(engine.q.msaa, 2);
       engine.renderScale = 1;
       engine.resize(w, h);
+      if (over) film.retune(over);
     }
     film.hdr = !!hdr;
     const ps = engine.post.settings;
     if (hdr) {
       ps.mode = 3; ps.peak = 4.0; ps.paperWhite = 203;
-      film.target = new THREE.WebGLRenderTarget(engine.rw, engine.rh, { type: THREE.FloatType, format: THREE.RGBAFormat, depthBuffer: false });
+      const rt = () => new THREE.WebGLRenderTarget(engine.rw, engine.rh, { type: THREE.HalfFloatType, format: THREE.RGBAFormat, depthBuffer: false, minFilter: THREE.NearestFilter, magFilter: THREE.NearestFilter });
+      film.target = rt();   // one tone-mapped PQ sub-frame
+      film.acc = rt();      // average of the sub-frames of one output frame
+      film.addPass = new Pass(ADD_FS, { tSrc: { value: null }, uW: { value: 1 } }, { blending: THREE.AdditiveBlending });
       film.f32 = new Float32Array(engine.rw * engine.rh * 4);
       film.u16 = new Uint16Array(engine.rw * engine.rh * 3);
+      film.yuv = new Uint16Array((engine.rw * engine.rh * 3) / 2);
     } else { ps.mode = 0; film.target = null; }
     return { w: engine.rw, h: engine.rh, shots: SHOTS.map((s) => ({ name: s.name, frames: Math.round(s.dur * film.fps) })) };
   };
@@ -197,22 +241,44 @@ export function createFilm(vm) {
 
   // Renders output frame f of the current shot: `sub` jittered sub-frames,
   // each read back as 16-bit PQ RGB and posted to the encoder.
+  // The sub-frames are averaged on the GPU, read back once and converted here
+  // to planar 10-bit BT.2020 Y'CbCr 4:2:0 (limited range), which the encoder
+  // takes as is.
   film.frame = async (f, url) => {
     const dt = 1 / (film.fps * film.sub);
-    const gl = engine.gl, w = engine.rw, h = engine.rh;
+    const r = engine.renderer, gl = engine.gl, w = engine.rw, h = engine.rh;
+    r.setRenderTarget(film.acc); r.setClearColor(0x000000, 0); r.clear(true, false, false);
+    film.addPass.uniforms.uW.value = 1 / film.sub;
     for (let k = 0; k < film.sub; k++) {
       film.advance(dt, true, JITTER[k % JITTER.length]);
-      engine.renderer.setRenderTarget(film.target);
-      gl.readPixels(0, 0, w, h, gl.RGBA, gl.FLOAT, film.f32);
-      engine.renderer.setRenderTarget(null);
-      const src = film.f32, dst = film.u16, n = w * h;
-      for (let i = 0, a = 0, b = 0; i < n; i++, a += 4, b += 3) {
-        const r = src[a] * 65535 + 0.5, g = src[a + 1] * 65535 + 0.5, bl = src[a + 2] * 65535 + 0.5;
-        dst[b] = r > 65535 ? 65535 : r; dst[b + 1] = g > 65535 ? 65535 : g; dst[b + 2] = bl > 65535 ? 65535 : bl;
-      }
-      const res = await fetch(url, { method: 'POST', body: dst });
-      if (!res.ok) throw new Error('encoder refused frame');
+      film.addPass.uniforms.tSrc.value = film.target.texture;
+      film.addPass.render(r, film.acc);
     }
+    r.setRenderTarget(film.acc);
+    gl.readPixels(0, 0, w, h, gl.RGBA, gl.FLOAT, film.f32);
+    r.setRenderTarget(null);
+    const src = film.f32, out = film.yuv;
+    const W2 = w >> 1, H2 = h >> 1, U0 = w * h, V0 = U0 + W2 * H2;
+    for (let by = 0; by < H2; by++) {
+      // GL rows run bottom-up, video rows top-down
+      const g0 = (h - 1 - 2 * by) * w * 4, g1 = (h - 2 - 2 * by) * w * 4;
+      const y0 = 2 * by * w, y1 = y0 + w;
+      for (let bx = 0; bx < W2; bx++) {
+        const x = 2 * bx, a = g0 + x * 4, b = g1 + x * 4;
+        const r0 = src[a], G0 = src[a + 1], b0 = src[a + 2], r1 = src[a + 4], G1 = src[a + 5], b1 = src[a + 6];
+        const r2 = src[b], G2 = src[b + 1], b2 = src[b + 2], r3 = src[b + 4], G3 = src[b + 5], b3 = src[b + 6];
+        const Y0 = 0.2627 * r0 + 0.678 * G0 + 0.0593 * b0, Y1 = 0.2627 * r1 + 0.678 * G1 + 0.0593 * b1;
+        const Y2 = 0.2627 * r2 + 0.678 * G2 + 0.0593 * b2, Y3 = 0.2627 * r3 + 0.678 * G3 + 0.0593 * b3;
+        out[y0 + x] = 64.5 + 876 * (Y0 > 1 ? 1 : Y0); out[y0 + x + 1] = 64.5 + 876 * (Y1 > 1 ? 1 : Y1);
+        out[y1 + x] = 64.5 + 876 * (Y2 > 1 ? 1 : Y2); out[y1 + x + 1] = 64.5 + 876 * (Y3 > 1 ? 1 : Y3);
+        const cb = (b0 + b1 + b2 + b3 - Y0 - Y1 - Y2 - Y3) * 0.25 / 1.8814;
+        const cr = (r0 + r1 + r2 + r3 - Y0 - Y1 - Y2 - Y3) * 0.25 / 1.4746;
+        out[U0 + by * W2 + bx] = 512.5 + 896 * cb;
+        out[V0 + by * W2 + bx] = 512.5 + 896 * cr;
+      }
+    }
+    const res = await fetch(url, { method: 'POST', body: out });
+    if (!res.ok) throw new Error('encoder refused frame');
     return true;
   };
 
