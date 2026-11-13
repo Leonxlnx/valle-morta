@@ -1,6 +1,6 @@
 Could not find platform independent libraries <prefix>
 weights: 7199 verts; per-bone vertex counts:
-Hips=510 Spine=342 Chest=442 Neck=235 Head=1155 Jaw=243 Shoulder.L=25 UpperArm.L=290 LowerArm.L=323 Hand.L=561 Shoulder.R=25 UpperArm.R=261 LowerArm.R=196 Hand.R=550 UpperLeg.L=370 LowerLeg.L=463 Foot.L=117 Toe.L=60 UpperLeg.R=332 LowerLeg.R=434 Foot.R=106 Toe.R=58
+Hips=510 Spine=342 Chest=439 Neck=235 Head=1184 Jaw=243 Shoulder.L=25 UpperArm.L=290 LowerArm.L=323 Hand.L=561 Shoulder.R=25 UpperArm.R=261 LowerArm.R=196 Hand.R=550 UpperLeg.L=370 LowerLeg.L=463 Foot.L=117 Toe.L=60 UpperLeg.R=332 LowerLeg.R=434 Foot.R=106 Toe.R=58
 Could not find platform independent libraries <prefix>
 walker: leg scale 1.000, clips: Idle 3.000s, Walk 1.100s, Run 0.600s, Attack 0.900s, HitBody 0.400s, HitHead 0.400s, DeathBack 2.200s, DeathFront 2.400s, Sprint 0.500s
   Walk   T 1.100s  stride 1.100 m -> ground speed 1.00 m/s (engine estimate 1.00, stance 0.55)  plant error 0.0 mm  max leg ext 0.991  pelvis -0.075 m  hips z 0.88..0.93

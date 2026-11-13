@@ -66,7 +66,7 @@ for s, sd in (('L', 1.0), ('R', -1.0)):
 # ---- spine chain gets the remainder
 rest = np.clip(1.0 - arm_total - leg_total, 0, 1)
 b1 = np.where(lower, 0.0, sstep(1.00, 1.10, z)); b2 = sstep(1.16, 1.27, z)
-b3 = sstep(1.455, 1.51, z) * sstep(0.105, 0.06, ax)
+b3 = sstep(1.455, 1.51, z) * np.maximum(sstep(0.105, 0.06, ax), sstep(1.56, 1.62, z))        # ears belong to the head, not the chest
 zb = 1.572 + np.where(y < 0, 0.45, 0.25) * y
 b4 = sstep(zb - 0.03, zb + 0.012, z)
 W[:, IDX['Hips']] = rest * (1 - b1); W[:, IDX['Spine']] = rest * b1 * (1 - b2); W[:, IDX['Chest']] = rest * b2 * (1 - b3)

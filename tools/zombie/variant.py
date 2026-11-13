@@ -36,8 +36,8 @@ _SCALES = {
         'Hand': 1.38, 'UpperLeg': ('ax', 1.18, 1.45), 'LowerLeg': ('ax', 1.18, 1.42), 'Foot': 1.25, 'Toe': 1.25,
     },
     'boss': {
-        'Hips': (1.62, 1.68, 1.36), 'Spine': (1.74, 1.85, 1.40), 'Chest': (2.02, 1.98, 1.52), 'Neck': ('ax', 1.15, 2.05),
-        'Head': 1.22, 'Jaw': 1.22, 'Shoulder': ('ax', 2.12, 2.25), 'Shoulder.R': ('ax', 2.25, 2.50),
+        'Hips': (1.62, 1.68, 1.36), 'Spine': (1.74, 1.85, 1.40), 'Chest': (1.90, 1.96, 1.52), 'Neck': ('ax', 1.15, 2.05),
+        'Head': 1.22, 'Jaw': 1.22, 'Shoulder': ('ax', 1.92, 2.20), 'Shoulder.R': ('ax', 2.04, 2.45),
         'UpperArm': ('ax', 1.50, 2.00), 'LowerArm': ('ax', 1.50, 2.05), 'Hand': 1.62,
         'UpperArm.R': ('ax', 1.62, 2.50), 'LowerArm.R': ('ax', 1.70, 2.85), 'Hand.R': 2.10,
         'UpperLeg': ('ax', 1.42, 1.78), 'LowerLeg': ('ax', 1.42, 1.72), 'Foot': 1.50, 'Toe': 1.50,

@@ -216,7 +216,7 @@ def hook_rifle(c):
     c.stamp = np.maximum(c.stamp, tick)
     mg = tag == 4; c.xw[mg] += 0.3 * ss(-90, -5, z[mg]) * ss(0.4, 0.7, fbm(p[mg], (1 / 1.2, 1 / 30., 1 / 30.), 3, 78))
     top = (c.pid == MAGS) & (z > -6); c.a[top] = np.maximum(c.a[top], 0.7)
-    common(c, (0.17, 0.175, 0.19)); engrave(c)
+    common(c, look=2); engrave(c)
     inner = (tag == 21) & (c.pid == STEEL); c.col[inner] *= 0.6
 
 

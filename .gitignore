@@ -18,3 +18,5 @@ cinematic/*.mp4
 *.ply
 *.exr
 *.f32
+tools/zombie/build*/
+tools/weapon/build/
