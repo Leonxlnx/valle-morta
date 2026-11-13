@@ -5,8 +5,9 @@ import bpy, sys, os
 import numpy as np
 from mathutils import Vector
 HERE = os.path.dirname(os.path.abspath(__file__)); sys.path.insert(0, HERE)
-BUILD = os.path.join(HERE, 'build')
-from skeleton import J, BONES, PARENT, TAIL
+import variant
+BUILD = variant.BUILD
+from skeleton import J, J0, BONES, PARENT, TAIL
 
 ob = bpy.data.objects['Zombie']; me = ob.data
 wz = np.load(os.path.join(BUILD, 'weights.npz'))
@@ -33,6 +34,10 @@ for v in range(len(idx)):
     for k in range(4):
         if w[v, k] > 0:
             groups[idx[v, k]].add([v], float(w[v, k]), 'REPLACE')
+if variant.NAME != 'walker':                         # canonical mesh -> this type's proportions
+    co = np.empty(len(me.vertices) * 3, np.float32); me.vertices.foreach_get('co', co)
+    co = variant.warp_points(co.reshape(-1, 3), idx, w, J0, BONES, PARENT, TAIL)
+    me.vertices.foreach_set('co', co.astype(np.float32).ravel()); me.update()
 ob.parent = arm
 mod = ob.modifiers.new('Armature', 'ARMATURE'); mod.object = arm
 

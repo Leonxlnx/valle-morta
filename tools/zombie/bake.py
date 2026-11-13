@@ -16,7 +16,8 @@ from model import MAT
 from body import hp, mm, EYE_C, EYE_R, HEAD_O, WR, EL, SH, ARM_DIR, mx, KNEE
 
 RES = 2048
-BUILD = os.path.join(HERE, 'build'); TEX = os.path.join(BUILD, 'tex'); os.makedirs(TEX, exist_ok=True)
+import variant, extras
+BUILD = variant.BUILD; TEX = os.path.join(BUILD, 'tex'); os.makedirs(TEX, exist_ok=True)
 GEO = os.path.join(BUILD, 'bake_geo.npz')
 T0 = time.time()
 
@@ -147,6 +148,10 @@ VARIANTS = {
     'b': dict(seed=40, shirt=srgb(104, 98, 90), trousers=srgb(72, 62, 44), boots=srgb(38, 34, 31)),
     'c': dict(seed=80, shirt=srgb(172, 163, 140), trousers=srgb(47, 52, 62), boots=srgb(62, 42, 26)),
 }
+
+
+if variant.COLORS:
+    VARIANTS = {k: {m: (v[m] if m == 'seed' else srgb(*v[m])) for m in v} for k, v in variant.COLORS.items()}
 
 
 def blood_layer(c, r, P, amount, seed, thick=0.5):
@@ -450,6 +455,7 @@ def paint_pass(only=None):
         m = mat == MAT['belt']
         if m.any():
             c[m], r[m], me[m] = paint_belt(P[m], no[m], ao[m], cav[m], sd)
+        c, r, me = extras.paint_extra(c, r, me, P, no, ao, cav, mat, sd, V, dict(blood_layer=blood_layer, srgb=srgb))
         c *= (0.72 + 0.28 * ao)[:, None]                       # a little baked occlusion keeps crevices grounded
         write_image(iy, ix, to_srgb8(c), os.path.join(TEX, 'albedo_%s.jpg' % vn), quality=90, subsampling=0)
         if vn == 'a':

@@ -7,9 +7,10 @@ import os, sys, json, struct, shutil
 import numpy as np
 from scipy.spatial.transform import Rotation as Rot
 HERE = os.path.dirname(os.path.abspath(__file__)); sys.path.insert(0, HERE)
-BUILD = os.path.join(HERE, 'build'); TEX = os.path.join(BUILD, 'tex')
+import variant
+BUILD = variant.BUILD; TEX = os.path.join(BUILD, 'tex')
 OUT_DIR = os.path.abspath(os.path.join(HERE, '..', '..', 'public', 'assets', 'models'))
-OUT = os.path.join(OUT_DIR, 'zombie.glb')
+OUT = os.path.join(OUT_DIR, variant.OUT + '.glb')
 REQ_BONES = ['Hips', 'Spine', 'Chest', 'Neck', 'Head', 'Jaw', 'Shoulder.L', 'UpperArm.L', 'LowerArm.L', 'Hand.L', 'Shoulder.R', 'UpperArm.R',
              'LowerArm.R', 'Hand.R', 'UpperLeg.L', 'LowerLeg.L', 'Foot.L', 'Toe.L', 'UpperLeg.R', 'LowerLeg.R', 'Foot.R', 'Toe.R']
 REQ_CLIPS = ['Idle', 'Walk', 'Run', 'Attack', 'HitBody', 'HitHead', 'DeathBack', 'DeathFront']
@@ -92,7 +93,7 @@ def patch():
     js['animations'] = []
     for cname, dur in zip(an['names'], an['durations']):
         cname = str(cname); pos = an[cname + '_pos']; rot = an[cname + '_rot']; nf = len(pos)
-        ti = add_acc(js, bn, np.arange(nf) / 30.0, 'SCALAR', True)
+        ti = add_acc(js, bn, np.arange(nf) / float(an['fps']), 'SCALAR', True)
         A = {'name': cname, 'samplers': [], 'channels': []}
         A['samplers'].append({'input': ti, 'output': add_acc(js, bn, conv_v(pos), 'VEC3'), 'interpolation': 'LINEAR'})
         A['channels'].append({'sampler': 0, 'target': {'node': names['Hips'], 'path': 'translation'}})
@@ -109,8 +110,9 @@ def patch():
     js['asset']['generator'] = 'Valle Morta zombie pipeline (tools/zombie)'
     os.makedirs(OUT_DIR, exist_ok=True)
     write_glb(OUT, js, bn)
-    shutil.copyfile(os.path.join(TEX, 'albedo_b.jpg'), os.path.join(OUT_DIR, 'zombie_col_b.jpg'))
-    shutil.copyfile(os.path.join(TEX, 'albedo_c.jpg'), os.path.join(OUT_DIR, 'zombie_col_c.jpg'))
+    for v in 'bc':
+        if os.path.exists(os.path.join(TEX, 'albedo_%s.jpg' % v)):
+            shutil.copyfile(os.path.join(TEX, 'albedo_%s.jpg' % v), os.path.join(OUT_DIR, '%s_col_%s.jpg' % (variant.OUT, v)))
 
 
 def acc_data(js, bn, i):
@@ -140,7 +142,7 @@ def verify():
         t = acc_data(js, bn, a['samplers'][0]['input'])
         print('clip %-10s %.3f s  %d frames  %d channels' % (a['name'], float(t.max()), len(t), len(a['channels'])))
     cl = [a['name'] for a in js.get('animations', [])]
-    ok &= cl == REQ_CLIPS
+    ok &= all(c in cl for c in REQ_CLIPS)
     print('images:', [(im['name'], im['mimeType'], js['bufferViews'][im['bufferView']]['byteLength'] // 1024) for im in js.get('images', [])], 'kB')
     print('material:', json.dumps(js['materials'][0])[:300])
     # numeric FK check of the exported clips against the authoring rig
@@ -161,7 +163,7 @@ def verify():
                     Pw[b] = Pw[pn] + Rw[pn].apply(tr); Rw[b] = Rw[pn] * r
                 else:
                     Pw[b] = tr; Rw[b] = r
-            pos, L = fn(f / 30.0); P, _ = A.fk(pos, L)
+            pos, L = fn(f / float(A.FPS)); P, _ = A.fk(pos, L)
             for i, b in enumerate(A.BONES):
                 ref = np.array([P[i][0], P[i][2], -P[i][1]])
                 worst = max(worst, float(np.linalg.norm(Pw[b] - ref)))

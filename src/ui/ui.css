@@ -6,6 +6,7 @@
   --line: rgba(243, 242, 239, 0.14);
   --panel: rgba(13, 14, 15, 0.72);
   --danger: #d8695c;
+  --accent: #cdbf93;
   --font: "Inter Variable", "Inter", system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   --ease: cubic-bezier(0.2, 0.7, 0.2, 1);
   --hud-shadow: 0 1px 2px rgba(0, 0, 0, 0.6), 0 0 16px rgba(0, 0, 0, 0.5);
@@ -44,7 +45,7 @@ h1, h2, h3, p, dl, dd { margin: 0; }
 .btn.primary { color: #0d0e0f; background: var(--ink); padding: 12px 34px; border-radius: 999px; font-weight: 560; margin-bottom: 10px; }
 .btn.primary:hover, .btn.primary:focus-visible { transform: none; background: #fff; }
 
-.pause, .over, .panel { align-items: center; justify-content: center; background: rgba(8, 9, 10, 0.5); backdrop-filter: blur(14px) saturate(0.85); -webkit-backdrop-filter: blur(14px) saturate(0.85); }
+.pause, .over, .debrief, .panel { align-items: center; justify-content: center; background: rgba(8, 9, 10, 0.5); backdrop-filter: blur(14px) saturate(0.85); -webkit-backdrop-filter: blur(14px) saturate(0.85); }
 .sheet { width: min(420px, 88vw); padding: 34px 38px 28px; background: var(--panel); border: 1px solid var(--line); border-radius: 18px; }
 .sheet.wide { width: min(560px, 92vw); max-height: 94vh; overflow: auto; padding: 30px 38px 22px; }
 .sheet h2 { font-size: 26px; font-weight: 560; letter-spacing: -0.03em; margin-bottom: 16px; }
@@ -128,7 +129,36 @@ h1, h2, h3, p, dl, dd { margin: 0; }
 .hurt { position: absolute; inset: 0; opacity: 0; background: radial-gradient(ellipse at center, rgba(120, 12, 8, 0) 42%, rgba(120, 12, 8, 0.5) 100%); }
 .fps { position: absolute; right: 36px; top: 28px; font-size: 13px; color: rgba(243, 242, 239, 0.9); font-variant-numeric: tabular-nums; text-shadow: var(--hud-shadow); display: none; }
 
+/* ---------- the two modes on the menu */
+.modes { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 4px; }
+.mode { appearance: none; display: grid; align-content: start; gap: 7px; padding: 16px 18px 18px; text-align: left; font: inherit; color: var(--ink); border: 1px solid rgba(243, 242, 239, 0.2); border-radius: 14px; background: rgba(13, 14, 15, 0.52); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); cursor: pointer; transition: background 0.25s, border-color 0.25s, color 0.25s, transform 0.25s var(--ease); }
+.mode strong { font-size: 20px; font-weight: 580; letter-spacing: -0.025em; }
+.mode span { font-size: 14px; line-height: 1.4; color: var(--ink-dim); text-wrap: pretty; transition: color 0.25s; }
+.mode:hover, .mode:focus-visible { background: var(--ink); border-color: var(--ink); color: #0d0e0f; transform: translateY(-2px); outline: none; }
+.mode:hover span, .mode:focus-visible span { color: rgba(13, 14, 15, 0.7); }
+
+/* ---------- Operation: debrief and HUD */
+.debrief .sub { margin: -8px 0 12px; font-size: 15px; line-height: 1.5; color: var(--ink-dim); text-wrap: pretty; }
+.debrief .sum dt { color: var(--ink); }
+.debrief .sum dd { color: var(--accent); }
+.salvage { position: absolute; left: 36px; top: 53px; display: none; align-items: baseline; gap: 6px; font-size: 15px; font-weight: 500; color: rgba(243, 242, 239, 0.84); text-shadow: var(--hud-shadow); font-variant-numeric: tabular-nums; }
+.hud.op .salvage { display: flex; }
+.salvage b { font-weight: 560; color: var(--accent); }
+.salvage i { font-style: normal; font-size: 13px; color: var(--accent); opacity: 0; }
+.salvage i.on { animation: gain 1.2s ease-out; }
+@keyframes gain { 0% { opacity: 1; transform: translateY(5px); } 25% { transform: none; } 70% { opacity: 1; } 100% { opacity: 0; } }
+.abil { position: absolute; left: 50%; bottom: 28px; transform: translateX(-50%); display: none; gap: 22px; }
+.hud.op .abil { display: flex; }
+.ab { --k: 0; display: grid; justify-items: center; gap: 5px; font-size: 12px; font-weight: 500; color: rgba(243, 242, 239, 0.86); text-shadow: var(--hud-shadow); transition: color 0.2s; }
+.ab u { position: relative; display: grid; place-items: center; width: 34px; height: 34px; font-size: 13px; font-weight: 560; text-decoration: none; }
+.ab u::before { content: ""; position: absolute; inset: 0; border-radius: 50%; background: conic-gradient(var(--ink) calc((1 - var(--k)) * 360deg), rgba(243, 242, 239, 0.24) 0); -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 3px), #000 calc(100% - 2.5px)); mask: radial-gradient(farthest-side, transparent calc(100% - 3px), #000 calc(100% - 2.5px)); filter: drop-shadow(0 0 2px rgba(0, 0, 0, 0.5)); }
+.ab.wait { color: var(--ink-faint); }
+.ab.live u::before { background: conic-gradient(var(--accent) calc(var(--k) * 360deg), rgba(243, 242, 239, 0.24) 0); }
+/* while the helicopter has the camera only the announcements stay */
+.hud.cine > :not(.toast) { opacity: 0 !important; }
+
 @media (max-width: 720px) {
+  .modes { grid-template-columns: 1fr; }
   .foot { display: none; }
   .rows .row { grid-template-columns: 1fr 130px 40px; }
 }

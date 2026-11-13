@@ -1,0 +1,21 @@
+00:03.359  blend            | Read blend: "E:\fable\shootinggame\tools\weapon\build\pistol.blend"
+Info: Baking map saved to internal image, save it externally or pack it
+baked pistol pid 0.9 s cover 0.735
+Info: Baking map saved to internal image, save it externally or pack it
+baked pistol pos 2.4 s cover 0.735
+Info: Baking map saved to internal image, save it externally or pack it
+baked pistol nrm 3.3 s cover 0.735
+Info: Baking map saved to internal image, save it externally or pack it
+baked pistol bev 30.9 s cover 0.735
+Info: Baking map saved to internal image, save it externally or pack it
+baked pistol ao 101.9 s cover 0.34
+STAGE pistol bake ok 102.0 s
+Could not find platform independent libraries <prefix>
+pistol texels 3082871 cover 0.74 edge pct [0.005 0.285 0.824 1.435] ao pct [0.   0.01 1.  ]
+pistol done, mm/texel 0.187 mean col [0.188 0.187 0.185] 44.4 s
+textures rc 0
+STAGE pistol tex ok 46.1 s
+TOTAL 148.1 s
+Blender 5.2.3 LTS (hash e13b728c6880 built 2026-10-22 01:37:16)
+
+Blender quit

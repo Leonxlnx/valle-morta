@@ -1,7 +1,7 @@
 """Clothing as solid shells in the same field: torn work shirt, trousers, belt, boots."""
 import numpy as np
 from sdf import *
-import body
+import body, extras
 from body import SH, EL, WR, HIPJ, KNEE, ANK, TOE_OUT, mx, unit, Xf
 
 mm = 1e-3
@@ -119,6 +119,7 @@ def shirt_field(P, sp, margin, detail, under=None):
     for c_, r_, sd in (((0.105, -0.085, 1.07), (0.016, 0.03, 0.035), 14), ((0.03, 0.125, 1.33), (0.035, 0.02, 0.014), 15),
                        ((0.30, -0.02, 1.33), (0.02, 0.03, 0.022), 16)):
         C = np.maximum(C, -Noisy(Ellipsoid(c_, r_), 0.004, 80.0, seed=sd)(P))
+    C = extras.shirt_cut(P, C)
     LAST['shirt_cut'] = C
     d = np.maximum(np.maximum(S, C), np.minimum(-(S + TH), C + EDGE))
     # collar: a doubled band of cloth hugging the shirt around the neck opening, longer points in front
@@ -258,5 +259,6 @@ def boots_field(P, margin, detail):
 def eval_cloth(P, sp, d_skin, margin, detail):
     tr, belt = trouser_belt(P, sp, margin, detail)
     under = np.minimum(tr, belt)
-    return [('shirt', shirt_field(P, sp, margin, detail, under)), ('trousers', tr), ('belt', belt),
+    out = [('shirt', shirt_field(P, sp, margin, detail, under)), ('trousers', tr), ('belt', belt),
             ('boots', boots_field(P, margin, detail))]
+    return out + extras.cloth_extra(P, d_skin, out, margin, detail)

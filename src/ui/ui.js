@@ -1,6 +1,7 @@
 // Interface: loading screen, main menu, settings, pause, HUD and the summary
 // screen. Plain DOM, one typeface, neutral palette.
 import { Vector3 } from 'three';
+import { BaseScreen } from './base.js';
 
 const DEFAULTS = {
   quality: 'high', renderScale: 1, fov: 72, sensitivity: 1, invertY: false,
@@ -17,8 +18,8 @@ const fmtTime = (t) => `${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padSt
 const _p = new Vector3();
 
 export class UI {
-  constructor(root, settings, handlers) {
-    this.root = root; this.settings = settings; this.h = handlers;
+  constructor(root, settings, handlers, progress) {
+    this.root = root; this.settings = settings; this.h = handlers; this.profile = progress;
     this.state = 'loading';
     root.innerHTML = '';
 
@@ -35,8 +36,11 @@ export class UI {
       <div class="menu-col">
         <h1 class="wordmark big">Valle Morta</h1>
         <p class="lede">The war emptied this valley. Something else moved in. Hold the ruins for as long as you can.</p>
+        <div class="modes">
+          <button class="mode" data-act="play"><strong>Survival</strong><span>Hold the village against wave after wave, for as long as you last.</span></button>
+          <button class="mode" data-act="operation"><strong>Operation</strong><span>Fly in, gather salvage, get out alive, and build up your kit at Base.</span></button>
+        </div>
         <nav class="menu-nav">
-          <button class="btn primary" data-act="play">Play</button>
           <button class="btn" data-act="settings">Settings</button>
           <button class="btn" data-act="howto">How to play</button>
         </nav>
@@ -65,6 +69,16 @@ export class UI {
         </nav>
       </div>`);
 
+    // ---- debrief and Base (Operation)
+    this.debrief = el('section', 'screen debrief', `
+      <div class="sheet">
+        <h2></h2>
+        <p class="sub"></p>
+        <dl class="stats"></dl>
+        <nav class="menu-nav"><button class="btn primary" data-act="base">Return to base</button></nav>
+      </div>`);
+    this.baseScreen = new BaseScreen(this.profile, this.h);
+
     // ---- how to play
     this.howto = el('section', 'screen panel', `
       <div class="sheet wide">
@@ -78,7 +92,8 @@ export class UI {
           <div><dt>Crouch / lie down</dt><dd>Ctrl or C / Z</dd></div>
           <div><dt>Dodge roll</dt><dd>V</dd></div>
           <div><dt>Use a bandage</dt><dd>H</dd></div>
-          <div><dt>Open a supply crate</dt><dd>F</dd></div>
+          <div><dt>Open a crate / board the helicopter</dt><dd>F</dd></div>
+          <div><dt>Abilities in Operation</dt><dd>G / 4 5</dd></div>
           <div><dt>Pause</dt><dd>Esc</dd></div>
         </dl>
         <p class="hint">Health comes back only to the top of the segment you are in; bandages do the rest. Each cleared wave leaves a supply crate nearby with ammunition and bandages. A roll as you land halves a hard fall. Music by Kevin MacLeod (incompetech.com), licensed under CC BY 4.0.</p>
@@ -120,12 +135,15 @@ export class UI {
       <div class="boss"><span></span><div class="boss-bar"><i></i></div></div>
       <div class="marker"><i></i><span></span></div>
       <div class="status"></div>
+      <div class="salvage"><b>0</b><span>salvage</span><i></i></div>
+      <div class="marker lz"><i></i><span></span></div>
+      <div class="abil"></div>
       <div class="toast"><strong></strong><span></span></div>
       <div class="prompt"></div>
       <div class="hurt"></div>
       <div class="fps"></div>`);
 
-    root.append(this.hud, this.menu, this.pause, this.over, this.howto, this.settingsEl, this.loading);
+    root.append(this.hud, this.menu, this.pause, this.over, this.debrief, this.baseScreen.el, this.howto, this.settingsEl, this.loading);
     this.q = (s, p = this.hud) => p.querySelector(s);
     this.cross = this.q('.cross'); this.hitEl = this.q('.hitmark'); this.hpNum = this.q('.hp-num'); this.hpSegs = [...this.hud.querySelectorAll('.hp i')];
     this.band = this.q('.band'); this.wname = this.q('.wname'); this.arcs = [...this.hud.querySelectorAll('.arcs i')];
@@ -133,6 +151,7 @@ export class UI {
     this.mag = this.q('.mag'); this.res = this.q('.res'); this.status = this.q('.status'); this.toastEl = this.q('.toast');
     this.prompt = this.q('.prompt'); this.hurtEl = this.q('.hurt'); this.fpsEl = this.q('.fps');
     this.hurtV = 0; this.hitT = 0; this.toastT = 0; this.back = 'menu';
+    this.salvNum = this.q('.salvage b'); this.salvGain = this.q('.salvage i'); this.lz = this.q('.marker.lz'); this.lzText = this.q('.marker.lz span'); this.abil = this.q('.abil'); this.abEls = [];
     this._last = {};
 
     root.addEventListener('click', (e) => {
@@ -143,6 +162,9 @@ export class UI {
       if (act === 'play') this.h.play();
       else if (act === 'resume') this.h.resume();
       else if (act === 'quit') this.h.quit();
+      else if (act === 'operation') this.h.operation();
+      else if (act === 'deploy') this.h.deploy();
+      else if (act === 'base') this.h.base();
       else if (act === 'settings') { this.back = this.state; this.show(this.settingsEl); }
       else if (act === 'howto') { this.back = this.state; this.show(this.howto); }
       else if (act === 'back') this.setState(this.back, this._summary);
@@ -176,7 +198,7 @@ export class UI {
   }
 
   show(screen) {
-    for (const s of [this.loading, this.menu, this.pause, this.over, this.howto, this.settingsEl]) s.classList.toggle('show', s === screen);
+    for (const s of [this.loading, this.menu, this.pause, this.over, this.debrief, this.baseScreen.el, this.howto, this.settingsEl]) s.classList.toggle('show', s === screen);
   }
 
   progress(p, note) {
@@ -201,6 +223,22 @@ export class UI {
         <div><dt>Accuracy</dt><dd>${s.accuracy ?? 0}%</dd></div>
         <div><dt>Time survived</dt><dd>${fmtTime(s.time ?? 0)}</dd></div>`;
       this.show(this.over);
+    } else if (state === 'base') {
+      this.baseScreen.open();
+      this.show(this.baseScreen.el);
+    } else if (state === 'debrief') {
+      const s = summary || {}, out = s.outcome === 'extract', diff = Math.abs((s.banked ?? 0) - (s.earned ?? 0));
+      this.debrief.querySelector('h2').textContent = out ? 'Extracted' : s.outcome === 'abandon' ? 'Run abandoned' : 'You fell in the valley';
+      this.debrief.querySelector('.sub').textContent = out ? 'Everything you gathered came out with you, and a premium on top.' : 'Half of what you gathered found its way back to Base.';
+      this.debrief.querySelector('.stats').innerHTML = `
+        <div><dt>Wave reached</dt><dd>${s.wave ?? 0}</dd></div>
+        <div><dt>Waves cleared</dt><dd>${s.cleared ?? 0}</dd></div>
+        <div><dt>Infected put down</dt><dd>${s.kills ?? 0}</dd></div>
+        <div><dt>Head shots</dt><dd>${s.headshots ?? 0}</dd></div>
+        <div><dt>Salvage gathered</dt><dd>${s.earned ?? 0}</dd></div>
+        <div><dt>${out ? 'Extraction bonus' : 'Lost in the valley'}</dt><dd>${out ? '+' : '−'}${diff}</dd></div>
+        <div class="sum"><dt>Banked</dt><dd>${s.banked ?? 0}</dd></div>`;
+      this.show(this.debrief);
     } else if (state === 'hidden') this.show(null);
   }
 
@@ -254,6 +292,32 @@ export class UI {
       const x = Math.max(-0.92, Math.min(0.92, behind ? -Math.sign(_p.x || 1) : _p.x)), y = behind ? -0.6 : Math.max(-0.8, Math.min(0.85, _p.y));
       this.marker.style.transform = `translate(${((x * 0.5 + 0.5) * window.innerWidth).toFixed(0)}px, ${((0.5 - y * 0.5) * window.innerHeight).toFixed(0)}px)`;
       set('crateD', Math.round(Math.hypot(crate.pos.x - p.pos.x, crate.pos.z - p.pos.z)), (v) => { this.markerText.textContent = `Supplies · ${v} m`; });
+    }
+    // Operation: salvage, the way to the helicopter, ability rings
+    const op = game.mode === 'operation' ? game.operation : null, ex = op ? op.extraction : null;
+    set('op', !!op, (v) => { this.hud.classList.toggle('op', v); });
+    set('cine', !!(op && op.cinematic), (v) => { this.hud.classList.toggle('cine', v); });
+    set('lz', ex ? ex.state : '', (v) => { this.lz.classList.toggle('on', !!v); });
+    if (ex) {
+      _p.set(ex.pos.x, ex.pos.y + 2.6, ex.pos.z).project(cam);
+      const behind = _p.z > 1;
+      const x = Math.max(-0.92, Math.min(0.92, behind ? -Math.sign(_p.x || 1) : _p.x)), y = behind ? -0.45 : Math.max(-0.8, Math.min(0.85, _p.y));
+      this.lz.style.transform = `translate(${((x * 0.5 + 0.5) * window.innerWidth).toFixed(0)}px, ${((0.5 - y * 0.5) * window.innerHeight).toFixed(0)}px)`;
+      set('lzText', ex.state === 'waiting' ? `Extraction · ${Math.round(ex.dist)} m · ${fmtTime(Math.max(0, Math.ceil(ex.timeLeft)))}` : `Helicopter inbound · ${Math.round(ex.dist)} m`, (v) => { this.lzText.textContent = v; });
+    }
+    if (op) {
+      set('salv', Math.round(op.salvage), (v) => { this.salvNum.textContent = v; });
+      set('gain', op.gainSeq, (v) => { if (!v) return; this.salvGain.textContent = `+${op.gain}`; this.salvGain.classList.remove('on'); void this.salvGain.offsetWidth; this.salvGain.classList.add('on'); });
+      const abs = op.abilities;
+      set('abs', abs.map((a) => a.id).join(), () => {
+        this.abil.innerHTML = abs.map((a) => `<div class="ab"><u>${a.key}</u><span>${a.short}</span></div>`).join('');
+        this.abEls = [...this.abil.children];
+        for (const k in L) if (k.startsWith('ab:')) delete L[k];
+      });
+      for (let i = 0; i < abs.length; i++) {
+        const a = abs[i], live = a.active > 0, k = live ? a.active / (a.duration || 1) : a.cooldown ? a.cd / a.cooldown : 0;
+        set('ab:' + i, (live ? 1000 : 0) + Math.round(k * 250), () => { const e = this.abEls[i]; e.style.setProperty('--k', k.toFixed(3)); e.classList.toggle('live', live); e.classList.toggle('wait', !live && a.cd > 0); });
+      }
     }
     this.hurtV = Math.max(0, this.hurtV - dt * 0.9);
     const low = p.health < 40 ? (40 - p.health) / 40 * 0.55 : 0;

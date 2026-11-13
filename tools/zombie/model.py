@@ -1,14 +1,14 @@
 """Full character field: combines skin / eyes / teeth / hair / clothing into (distance, material id)."""
 import numpy as np
 from sdf import *
-import body
+import body, extras
 
 try:
     import cloth
 except ImportError:           # sculpt-only previews before clothing exists
     cloth = None
 
-MATS = ['skin', 'eye', 'teeth', 'flesh', 'hair', 'shirt', 'trousers', 'boots', 'belt']
+MATS = ['skin', 'eye', 'teeth', 'flesh', 'hair', 'shirt', 'trousers', 'boots', 'belt', 'apron', 'rope']
 MAT = {n: i for i, n in enumerate(MATS)}
 
 BOUNDS_LO = np.array([-0.76, -0.27, -0.005]); BOUNDS_HI = np.array([0.76, 0.21, 1.80])
@@ -18,7 +18,7 @@ def eval_model(P, margin=0.01, detail=False, want_mat=True, naked=False):
     """P (N,3) float32 -> (d, mat).  detail=True adds micro displacement (for baking only)."""
     P = np.ascontiguousarray(P, F)
     sp = body.skin_parts(P, margin)
-    d_skin = body.skin_union(sp)
+    d_skin = extras.skin_extra(P, body.skin_union(sp), margin)
     if hasattr(body, 'skin_post'):
         d_skin = body.skin_post(P, d_skin, sp, margin, detail)
     stack = [d_skin, sp['eye'], sp['teeth']]

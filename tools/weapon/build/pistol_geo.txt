@@ -1,0 +1,22 @@
+boolean True 15 41
+boolean True 226 252
+boolean True 50 55
+boolean True 55 66
+boolean True 66 93
+boolean True 93 107
+  node PistolBody tris 7812
+  node Slide      tris 2656
+  node Barrel     tris 832
+  node Magazine   tris 1192
+  node MagRounds  tris 380
+  node Trigger    tris 540
+  node Hammer     tris 444
+  node SlideStop  tris 596
+  node Casing     tris 284
+ATLAS ATLAS_pistol tris 14736
+Info: Saved as "pistol.blend"
+STAGE pistol geo ok 0.8 s
+TOTAL 0.8 s
+Blender 5.2.3 LTS (hash e13b728c6880 built 2026-10-22 01:37:16)
+
+Blender quit

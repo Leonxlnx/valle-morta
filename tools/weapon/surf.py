@@ -73,6 +73,33 @@ def m_metal(c, m, base, bare=(0.52, 0.52, 0.51), rough=0.42, wear=1.0, rust=0.25
     return col, r, mt, 0.01 * (hf - 0.5) + 0.008 * (mf - 0.5) - 0.012 * w + 0.015 * ru - 0.01 * sc2
 
 
+def m_metal2(c, m, base, bare=(0.76, 0.75, 0.73), rough=0.44, wear=1.0, rust=0.08, oil=1.0, scratch=0.5, dirt=0.6, coat=0.6):
+    """service steel, look 2. Base colours are sRGB-encoded (the PNG is written as is), so a coated steel belongs at 0.2-0.35 and bare steel near 0.75;
+    every edge carries a lighter line, exposed corners wear to bare metal (c.xw adds holster wear), fine scratches, oil film as tint / roughness variation"""
+    p, n, e, a, g = c.p[m], c.n[m], c.e[m], c.a[m], c.g[m]; M = len(p); base = np.asarray(base, f4); bare = np.asarray(bare, f4)
+    lf = fbm(p, 1 / 40., 3, 1); mf = fbm(p, 1 / 7., 4, 2); hf = fbm(p, 1 / 0.8, 2, 3); pt = fbm(p, 1 / 16., 4, 4); cav = np.clip(1 - a, 0, 1); ex = ss(0.45, 0.85, a)
+    col = np.tile(base, (M, 1)) * (0.9 + 0.2 * mf)[:, None] * (0.95 + 0.1 * g)[:, None]
+    col = mixc(col, base * np.array([1.16, 1.05, 0.95], f4), ss(0.5, 0.8, lf) * 0.4)
+    ol = oil * ss(0.48, 0.7, fbm(p, (1 / 14., 1 / 45., 1 / 14.), 3, 21)) * (0.5 + 0.5 * pt)
+    col = col * (1 - 0.16 * ol)[:, None] + np.array([0.0, 0.004, 0.012], f4) * ol[:, None]
+    r = rough + 0.14 * (mf - 0.5) + 0.08 * (lf - 0.5) - 0.2 * ol; mt = np.full(M, coat, f4)
+    hi = ss(0.02, 0.16, e) * ex; col = mixc(col, base * 1.7 + 0.1, hi * 0.6); r = r - 0.08 * hi; mt = mix(mt, 0.9, hi * 0.6)
+    wf = ss(0.3, 0.7, fbm(p, 1 / 24., 3, 12))
+    w = wear * (ss(0.12, 0.36, e * (0.45 + 1.0 * mf) * (0.45 + 1.0 * wf)) * ex + 0.35 * ss(0.66, 0.82, pt) * ss(0.35, 0.7, hf + 0.4 * mf - 0.2) * wf * ex)
+    sc2 = scratch * c.scr[m] * (0.3 + 0.7 * ss(0.4, 0.7, fbm(p, 1 / 25., 2, 6))); w = np.clip(w + c.xw[m] * (0.35 + 0.9 * mf) + sc2, 0, 1)
+    col = mixc(col, bare * (0.82 + 0.3 * hf)[:, None], w); r = mix(r, 0.27 + 0.12 * hf, w); mt = mix(mt, 1.0, w)
+    ru = np.clip(3.0 * rust * ss(0.64, 0.8, fbm(p, 1 / 4.5, 4, 9)) * ss(0.5, 0.72, fbm(p, 1 / 35., 3, 10)) * (0.3 + 0.9 * cav + 0.5 * w), 0, 1)
+    col = mixc(col, np.array([0.36, 0.2, 0.11], f4) * (0.7 + 0.6 * hf)[:, None], ru); r = mix(r, 0.8, ru); mt = mix(mt, 0.2, ru)
+    du = np.clip(dirt * ss(0.25, 0.7, cav) * (0.4 + 0.6 * mf), 0, 0.6); col = mixc(col, (0.2, 0.185, 0.165), du); r = mix(r, 0.85, du); mt = mt * (1 - 0.7 * du)
+    return col, np.clip(r, 0.12, 1), mt, 0.01 * (hf - 0.5) + 0.006 * (mf - 0.5) - 0.014 * w + 0.012 * ru - 0.012 * sc2
+
+
+# look 2 presets per part id (sRGB): pass look=2 to common(); a hook may copy and change entries before the call
+LOOK2 = {STEEL: dict(base=(0.33, 0.335, 0.355), rough=0.42), MAGS: dict(base=(0.33, 0.33, 0.335), rough=0.5, wear=1.3, rust=0.2),
+         BLUED: dict(base=(0.17, 0.175, 0.20), rough=0.33, wear=0.9, rust=0.04, oil=1.3), PARK: dict(base=(0.25, 0.255, 0.25), rough=0.6, wear=0.8, rust=0.1, oil=0.5),
+         ALU: dict(base=(0.20, 0.20, 0.21), bare=(0.80, 0.80, 0.82), rough=0.5, wear=0.7, rust=0.0, scratch=0.35)}
+
+
 def m_poly(c, m, base, rough=0.62, grain=1.0):
     p, n, e, a = c.p[m], c.n[m], c.e[m], c.a[m]; hf = fbm(p, 1 / 0.45, 2, 91); mf = fbm(p, 1 / 8., 3, 92); lf = fbm(p, 1 / 45., 3, 93)
     col = np.asarray(base, f4) * (0.85 + 0.3 * mf + 0.12 * (hf - 0.5))[:, None]
@@ -93,14 +120,14 @@ def flat(c, m, col, rough, metal=0.0, noise=0.2):
     return np.asarray(col, f4) * (1 - noise / 2 + noise * hf)[:, None], np.full(int(m.sum()), rough, f4), np.full(int(m.sum()), metal, f4), 0.02 * (hf - 0.5)
 
 
-def common(c, steel=(0.125, 0.13, 0.145)):
-    """default material per part id; hooks override or extend"""
+def common(c, steel=(0.125, 0.13, 0.145), look=1):
+    """default material per part id; hooks override or extend. look=2: metals through m_metal2 with the LOOK2 presets (steel is ignored), lighter polymer"""
     pid = c.pid
     for pv, kw in ((STEEL, dict(base=steel, rough=0.46)), (MAGS, dict(base=(0.15, 0.15, 0.155), rough=0.5, wear=1.5, rust=0.4)),
                    (BLUED, dict(base=(0.055, 0.06, 0.075), rough=0.33, wear=0.8, rust=0.08, sheen=0.14)), (PARK, dict(base=(0.17, 0.175, 0.17), rough=0.62, wear=0.7, rust=0.15, sheen=0.05)),
                    (ALU, dict(base=(0.045, 0.047, 0.052), bare=(0.72, 0.73, 0.75), rough=0.45, wear=0.7, rust=0.0, sheen=0.08, scratch=0.2))):
         m = pid == pv
-        if m.any(): c.put(m, m_metal(c, m, **kw))
+        if m.any(): c.put(m, m_metal2(c, m, **LOOK2[pv]) if look == 2 else m_metal(c, m, **kw))
     m = pid == BOLT
     if m.any(): c.put(m, T.m_bolt(c.p[m], c.n[m], c.e[m], c.a[m], c.g[m], c.tag[m], c.scr[m] * 0.4, c.xw[m]))
     for pv in (BRASS, COPPER):
@@ -116,7 +143,7 @@ def common(c, steel=(0.125, 0.13, 0.145)):
         m = pid == pv
         if m.any(): c.put(m, flat(c, m, col, r, mt))
     m = pid == POLY
-    if m.any(): c.put(m, m_poly(c, m, (0.045, 0.047, 0.045)))
+    if m.any(): c.put(m, m_poly(c, m, (0.115, 0.115, 0.12) if look == 2 else (0.045, 0.047, 0.045)))
     m = pid == OLIVE
     if m.any(): c.put(m, m_poly(c, m, (0.17, 0.185, 0.115), 0.7, 2.2))
     m = pid == RUBBER
@@ -193,7 +220,37 @@ def hook_rifle(c):
     inner = (tag == 21) & (c.pid == STEEL); c.col[inner] *= 0.6
 
 
-def hook_pistol(c): common(c); engrave(c)
+def hook_pistol(c):
+    p, n, tag, pid, M = c.p, c.n, c.tag, c.pid, c.M; x, y, z = p[:, 0], p[:, 1], p[:, 2]; ax = np.abs(n[:, 0]); wave = lambda t: np.abs((t % 1.0) - 0.5) * 2
+    mv = (tag == 4) | (tag == 20) | (tag == 3); c.a[mv] = 0.7 + 0.3 * c.a[mv]        # magazine, rounds, barrel: baked inside the weapon, seen outside it
+    sl = (tag == 1) & (pid == STEEL); side = sl & (ax > 0.75) & (z > 32.5) & (z < 49.8)
+    rl = side & (np.abs(z - 34.2) < 0.9); c.hadd[rl] -= 0.2 * ss(0.9, 0.3, np.abs(z[rl] - 34.2)); c.xw[rl] += 0.2      # rail relief line along the slide
+    ser = side & (((y > -56) & (y < -27)) | ((y > 86) & (y < 110)))                                       # rear and front cocking serrations, slanted
+    gr = np.zeros(M, f4); gr[ser] = ss(0.5, 0.25, wave((y[ser] + 0.3 * (z[ser] - 40)) / 2.6))
+    c.hadd -= 0.26 * gr; c.xw[ser] += 0.3 * (1 - gr[ser]) * ss(0.4, 0.75, fbm(p[ser], 1 / 6., 2, 41))
+    top = sl & (n[:, 2] > 0.9) & (np.abs(x) < 5.2) & (y > -43) & (y < 104) & ~((y > 5) & (y < 43)); c.hadd[top] -= 0.1 * ss(0.5, 0.25, wave(x[top] / 1.1))   # anti-glare rib
+    rp = sl & (n[:, 1] < -0.9); c.hadd[rp] -= 0.25 * np.exp(-(T.sd_rbox(x[rp], z[rp], 0, 42, 7.5, 9.5, 2.0) / 0.3) ** 2)                               # rear plate outline
+    mg = (tag == 4) & (pid == MAGS) & (ax > 0.8); ms = -(y + 1.04) * 0.2691 - (z - 25) * 0.9631; mu = (y + 1.04) * 0.9631 - (z - 25) * 0.2691
+    for sg, u0 in ((1, -5.5), (-1, -3.5)):                                                                # round-count numbers beside the witness holes
+        k = mg & (n[:, 0] * sg > 0); c.stamp[k] = T.stamp_text(sg * mu[k], -ms[k], (-7, 7, -92, -30), [(t, u0, -s0 - 1.4, 3.0) for t, s0 in (('5', 38), ('10', 62), ('15', 86))])
+    Ls = sl & (n[:, 0] < -0.8) & (z < 49); Rs = sl & (n[:, 0] > 0.8) & (z < 49)
+    c.stamp[Ls] = T.stamp_text(-y[Ls], z[Ls], (-82, -2, 35, 48), [('VM9', -78, 38.6, 5.4), ('9mm PARA', -52, 39.6, 3.2)])
+    c.stamp[Rs] = T.stamp_text(y[Rs], z[Rs], (46, 84, 35, 46), [('VM 204817', 48, 38.6, 3.0)])
+    Fr = (tag == 2) & (n[:, 0] > 0.8) & (z > 18) & (y > 60); c.stamp[Fr] = T.stamp_text(y[Fr], z[Fr], (66, 114, 18.5, 29), [('VM204817', 72, 21.5, 2.8)])
+    for m, y0 in ((sl, 92.0), ((tag == 2) & (pid == PARK), 96.0)):                                        # holster wear towards the muzzle
+        c.xw[m] += 0.5 * ss(y0, y0 + 30, y[m]) * ss(0.42, 0.7, fbm(p[m], 1 / 10., 3, 42)) * ss(0.5, 0.9, c.a[m])
+    fsb = (tag == 2) & (pid == PARK) & (z < -6) & (z > -72) & (np.abs(n[:, 1]) > 0.75) & (y < 14)         # front and back strap grooves, palm wear
+    g2 = np.zeros(M, f4); g2[fsb] = ss(0.5, 0.25, wave(z[fsb] / 2.4)); c.hadd -= 0.2 * g2; c.xw[fsb] += 0.25 * ss(0.45, 0.7, fbm(p[fsb], 1 / 12., 3, 43))
+    ctl = (tag == 6) & (n[:, 2] > 0.55) & (ax < 0.5); g3 = np.zeros(M, f4); g3[ctl] = ss(0.5, 0.25, wave(y[ctl] / 1.5)); c.hadd -= 0.14 * g3   # lever pads, hammer spur, sight tops
+    gp = (tag == 5) & (ax > 0.8)                                                                          # chequered grip panels with a plain border
+    inn = gp & (y < 4.2 + 0.2794 * z) & (y > -33.0 + 0.2794 * z) & (z < -5) & (z > -64) & (np.hypot(y + 16, z + 12) > 5.5) & (np.hypot(y + 36.5, z + 56) > 5.5)
+    pyr = np.zeros(M, f4); pyr[inn] = 1 - np.maximum(wave((0.82 * y[inn] + 0.57 * z[inn]) / 1.8), wave((0.82 * y[inn] - 0.57 * z[inn]) / 1.8))
+    c.hadd += 0.2 * pyr - 0.07 * inn
+    common(c, look=2)
+    m = pid == BOLT                                                                                       # barrel: bright steel, hood polished by the slide
+    if m.any(): c.put(m, m_metal2(c, m, (0.56, 0.56, 0.55), rough=0.3, wear=0.6, rust=0.03, oil=0.6, coat=1.0, dirt=0.4))
+    c.col[inn] *= (0.8 + 0.4 * pyr[inn])[:, None]; c.col *= (1 - 0.4 * np.maximum(gr, np.maximum(g2, g3)))[:, None]; c.rough[inn] = np.clip(c.rough[inn] + 0.1, 0, 1); c.rough[top] = np.clip(c.rough[top] + 0.12, 0, 1)
+    engrave(c)
 def hook_sniper(c): common(c); engrave(c)
 
 

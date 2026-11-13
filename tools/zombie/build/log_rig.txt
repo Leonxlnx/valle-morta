@@ -1,0 +1,35 @@
+Could not find platform independent libraries <prefix>
+weights: 7199 verts; per-bone vertex counts:
+Hips=510 Spine=342 Chest=442 Neck=235 Head=1155 Jaw=243 Shoulder.L=25 UpperArm.L=290 LowerArm.L=323 Hand.L=561 Shoulder.R=25 UpperArm.R=261 LowerArm.R=196 Hand.R=550 UpperLeg.L=370 LowerLeg.L=463 Foot.L=117 Toe.L=60 UpperLeg.R=332 LowerLeg.R=434 Foot.R=106 Toe.R=58
+Could not find platform independent libraries <prefix>
+walker: leg scale 1.000, clips: Idle 3.000s, Walk 1.100s, Run 0.600s, Attack 0.900s, HitBody 0.400s, HitHead 0.400s, DeathBack 2.200s, DeathFront 2.400s, Sprint 0.500s
+  Walk   T 1.100s  stride 1.100 m -> ground speed 1.00 m/s (engine estimate 1.00, stance 0.55)  plant error 0.0 mm  max leg ext 0.991  pelvis -0.075 m  hips z 0.88..0.93
+  Run    T 0.600s  stride 1.800 m -> ground speed 3.00 m/s (engine estimate 2.95, stance 0.26)  plant error 0.0 mm  max leg ext 0.975  pelvis -0.078 m  hips z 0.87..0.92
+  Sprint T 0.500s  stride 2.100 m -> ground speed 4.20 m/s (engine estimate 4.13, stance 0.20)  plant error 0.0 mm  max leg ext 0.975  pelvis -0.091 m  hips z 0.85..0.91
+  ground contact (lowest clamp point, m): Idle 0.000, Walk 0.000, Run 0.000, Attack 0.000, HitBody 0.000, HitHead 0.000, Sprint 0.000
+E:\fable\shootinggame\tools\zombie\bl_rig_export.py:44: DeprecationWarning: 'Material.use_nodes' is expected to be removed in Blender 6.0
+  mat = bpy.data.materials.new('Zombie'); mat.use_nodes = True
+
+RIG_EXPORT_DONE
+Could not find platform independent libraries <prefix>
+file: E:\fable\shootinggame\public\assets\models\zombie.glb  8.07 MB
+meshes 1, primitives 1, triangles 14799, vertices 14591, attributes ['JOINTS_0', 'NORMAL', 'POSITION', 'TANGENT', 'TEXCOORD_0', 'WEIGHTS_0']
+bbox min [-0.671, 0.0, -0.146] max [0.672, 1.781, 0.194] (Y-up, metres)
+bones (22): Hips, Spine, Chest, Neck, Head, Jaw, Shoulder.L, UpperArm.L, LowerArm.L, Hand.L, Shoulder.R, UpperArm.R, LowerArm.R, Hand.R, UpperLeg.L, LowerLeg.L, Foot.L, Toe.L, UpperLeg.R, LowerLeg.R, Foot.R, Toe.R
+missing bones: [] extra: []
+max influences per vertex: 4
+clip Idle       3.000 s  181 frames  23 channels
+clip Walk       1.100 s  67 frames  23 channels
+clip Run        0.600 s  37 frames  23 channels
+clip Attack     0.900 s  55 frames  23 channels
+clip HitBody    0.400 s  25 frames  23 channels
+clip HitHead    0.400 s  25 frames  23 channels
+clip DeathBack  2.200 s  133 frames  23 channels
+clip DeathFront 2.400 s  145 frames  23 channels
+clip Sprint     0.500 s  31 frames  23 channels
+images: [('zombie_albedo', 'image/jpeg', 1002), ('zombie_normal', 'image/jpeg', 3915), ('zombie_orm', 'image/jpeg', 1604)] kB
+material: {"name": "Zombie", "doubleSided": false, "pbrMetallicRoughness": {"baseColorTexture": {"index": 0}, "metallicRoughnessTexture": {"index": 2}, "metallicFactor": 1.0, "roughnessFactor": 1.0}, "normalTexture": {"index": 1, "scale": 1.0}, "occlusionTexture": {"index": 2, "strength": 1.0}}
+animation FK check: worst joint position error 0.00000 m
+VERIFY OK
+
+

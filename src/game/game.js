@@ -136,6 +136,8 @@ export class Game {
     this.interact = null;      // what F would do right now: { kind, key, text }
     this.lastSpawn = null; this.packN = 0;
     this.onOver = null;        // called once when the summary screen comes up
+    this.operation = null;     // the Operation mode: run, salvage, helicopter (set by main)
+    this.lastSummary = null;
     this._on = {};
     this._boss = { name: '', health: 0, maxHealth: 1, frac: 0, state: '', pos: null };
   }
@@ -223,6 +225,7 @@ export class Game {
       this._bloodBehind(h.point, dir, k);
       this.audio.playAt('impact_flesh', h.point, { volume: 0.8, pitchVar: 0.1, ref: 6 });
       this.ui?.hitMarker(h.killed, h.part === 'head');
+      this.emit('hit', h, def, st, dir);
     }
     if (hits.length) this.stats.hits++;
     const stopped = hits.length >= bodies || (hits.length && bodies === 1);
@@ -260,8 +263,12 @@ export class Game {
     return [s[0], s[1], Math.atan2(-(tx - s[0]), -(tz - s[1]))];
   }
 
-  start() {
+  start(mode = 'survival') {
     const p = this.player;
+    const op = mode === 'operation' ? this.operation : null;
+    this.mode = op ? 'operation' : 'survival';
+    // an Operation run starts from the profile's upgrades, Survival from the stock kit
+    if (this.operation) this.operation.prepare(this.mode);
     this.audio.resume();
     this.audio.setMuffle(0);
     this.audio.preload(['rifle_shot', 'dry_fire', 'mag_out', 'mag_in', 'bolt_rack', 'impact_flesh', 'impact_dirt', 'impact_stone', 'step_grass', 'step_gravel', 'zombie_idle', 'zombie_alert', 'zombie_attack', 'zombie_death', 'zombie_hurt', 'bell_toll', 'shell_drop', 'player_hurt', 'roll', 'land_hard', 'step_wood', 'step_stone', 'step_water', 'weapon_switch', 'pistol_mag_out', 'pistol_mag_in', 'bolt_back', 'bolt_forward', 'zombie_run', 'brute_growl', 'blood_splat', 'pickup', 'pistol_shot', 'sniper_shot']);
@@ -277,7 +284,7 @@ export class Game {
     this.wave = 0; this.waveKind = ''; this.queue = 0; this.queueList = []; this.interT = 3.5; this.playTime = 0; this.overT = 0; this.cleared = false; this.interact = null; this.lastSpawn = null;
     this.stats = { kills: 0, headshots: 0, shots: 0, hits: 0 };
     this.state = 'playing';
-    this.audio.stopLoop('music_menu', 2); this.audio.stopLoop('music_over', 1);
+    this.audio.stopLoop('music_menu', 2); this.audio.stopLoop('music_base', 2); this.audio.stopLoop('music_over', 1);
     this.audio.loop('amb_wind', 0.6); this.audio.loop('amb_river', 0.0); this.audio.loop('music_combat', 0.0, 3);
     // a few wanderers so the village is never empty (well away from the player); the first bell wakes them
     for (let i = 0, n = 0; i < 30 && n < 5; i++) {
@@ -285,11 +292,17 @@ export class Game {
       const x = 46 + Math.cos(a) * r, z = -84 + Math.sin(a) * r;
       if (Math.hypot(x - p.pos.x, z - p.pos.z) > 34 && this.zombies.flow.walkable(x, z)) { this.zombies.spawn(x, z, { type: 'walker' }); n++; }
     }
+    if (op) op.begin();
     this.ui?.setState('playing');
   }
 
-  toMenu() {
-    this.state = 'menu';
+  // the backdrop behind the menu; Base (between Operation runs) shares it and has its own music
+  toMenu(state = 'menu') {
+    if (this.operation) {
+      if (this.operation.active) this.lastSummary = this.operation.finish('abandon');     // left mid-run: half is kept
+      this.operation.stop();
+    }
+    this.state = state;
     this.player.enabled = false; this.weapon.visible = false;
     this.zombies.clear();
     this.supply.clear();
@@ -300,10 +313,13 @@ export class Game {
       const x = -52 + (Math.random() - 0.5) * 34 + i * 4, z = 82 + (Math.random() - 0.5) * 22 - i * 5;
       if (this.zombies.flow.walkable(x, z)) this.zombies.spawn(x, z, { type: 'walker' });
     }
-    for (const n of ['amb_river', 'music_combat', 'music_over']) this.audio.stopLoop(n, 1.5);
-    this.audio.loop('amb_wind', 0.5); this.audio.loop('music_menu', 0.8, 3);
-    this.ui?.setState('menu');
+    const base = state === 'base';
+    for (const n of ['amb_river', 'music_combat', 'music_over', base ? 'music_menu' : 'music_base']) this.audio.stopLoop(n, 1.5);
+    this.audio.loop('amb_wind', 0.5); this.audio.loop(base ? 'music_base' : 'music_menu', base ? 0.7 : 0.8, 3);
+    this.ui?.setState(state);
   }
+
+  toBase() { this.toMenu('base'); }
 
   // heartbeat and laboured breathing swell as health drops under ~40
   _vitals(k) {
@@ -348,7 +364,7 @@ export class Game {
 
   _nextWave() {
     this.wave++;
-    const c = this._compose(this.wave);
+    const c = this.mode === 'operation' && this.operation ? this.operation.compose(this.wave) : this._compose(this.wave);
     this.waveKind = c.kind;
     this.queueList = c.list.reverse();      // taken from the end
     this.queue = this.queueList.length;
@@ -461,9 +477,24 @@ export class Game {
     return got;
   }
 
+  // The run is over: the summary (Survival) or the debrief (Operation: 'death' or 'extract').
+  endRun(outcome = 'death') {
+    const op = this.mode === 'operation' ? this.operation : null;
+    this.state = 'over'; this.weapon.visible = false;
+    this.audio.stopLoop('music_combat', 1.5);
+    if (outcome === 'death') {
+      const mo = this.audio.sounds.music_over;
+      if (mo) { if (mo.loop) this.audio.loop('music_over', 0.7, 2); else this.audio.play('music_over', { volume: 0.8 }); }
+    } else { this.audio.setMuffle(0); this._stopVitals(); }
+    this.lastSummary = op ? op.finish(outcome) : this.summary();
+    this.ui?.setState(op ? 'debrief' : 'over', this.lastSummary);
+    if (this.onOver) this.onOver();
+  }
+
   update(dt) {
     this.time += dt;
     const { player: p, zombies, weapon } = this;
+    const op = this.mode === 'operation' ? this.operation : null;
     if (this.state === 'playing' || this.state === 'film') {
       if (this.state === 'playing') {
         this.playTime += dt;
@@ -476,7 +507,7 @@ export class Game {
             const type = this.queueList.length ? this.queueList[this.queueList.length - 1] : 'walker';
             const pack = type === 'runner' ? this._packPoint() : null;
             const s = alive < cap ? pack || this._spawnPoint(type === 'walker' || type === 'brute') : null;
-            const z = s ? zombies.spawn(s[0], s[1], { aware: true, type }) : null;
+            const z = s ? zombies.spawn(s[0], s[1], op ? { aware: true, type, ...op.spawnOpts(type) } : { aware: true, type }) : null;
             if (z) {
               this.queueList.pop(); this.queue--;
               this.packN = pack ? this.packN + 1 : 1;
@@ -486,7 +517,7 @@ export class Game {
               if (z.def.boss) { this.ui?.toast(z.def.name, 'It charges in a straight line and pounds the ground: keep moving'); this.emit('bossSpawn', z); }
             } else this.spawnT = 0.3;
           }
-        } else if (alive === 0 || this.wave === 0) {
+        } else if (alive === 0 || this.wave === 0 || (op && op.fresh)) {
           if (this.wave > 0 && !this.cleared) {
             this.cleared = true;
             const crate = this._dropCrate();
@@ -518,14 +549,7 @@ export class Game {
         this._vitals(p.alive ? clamp((40 - p.health) / 40, 0, 1) : 0);
         if (!p.alive) {
           this.overT += dt;
-          if (this.overT > 2.6) {
-            this.state = 'over'; weapon.visible = false;
-            this.audio.stopLoop('music_combat', 1.5);
-            const mo = this.audio.sounds.music_over;
-            if (mo) { if (mo.loop) this.audio.loop('music_over', 0.7, 2); else this.audio.play('music_over', { volume: 0.8 }); }
-            this.ui?.setState('over', this.summary());
-            if (this.onOver) this.onOver();
-          }
+          if (this.overT > 2.6) this.endRun('death');
         }
       }
       p.update(dt);
@@ -544,7 +568,8 @@ export class Game {
         }
         if (this.interact && p.input.interact) { this._openCrate(this.interact.crate); this.interact = null; }
       }
-    } else if (this.state === 'menu') {
+      if (op && this.state === 'playing') op.update(dt);
+    } else if (this.state === 'menu' || this.state === 'base') {
       // slow drift across the meadow towards the village
       this.menuT += dt;
       const t = this.menuT;
@@ -557,6 +582,7 @@ export class Game {
       this.fx.update(dt);
     } else if (this.state === 'over') {
       zombies.update(dt); this.fx.update(dt); p.update(dt);
+      if (op) op.after(dt);
     }
     // crows somewhere up the valley, now and then
     this.crowT -= dt;

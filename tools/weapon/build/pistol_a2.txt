@@ -1,0 +1,68 @@
+00:04.672  blend            | Read blend: "E:\fable\shootinggame\tools\weapon\build\pistol.blend"
+GRIP fire     R seat 23 wrist (0.027 -0.081 -0.023) depth 4.1 mm reach {'Index': 1.5} | Th[75,-8,-115,59,3] In[18,100,50,16] Mi[88,66,46,0] Ri[88,54,62,0] Pi[74,50,34,0]
+GRIP trigger pulled residual 2.7 mm
+GRIP support  L seat 40 wrist (-0.059 -0.052 -0.016) depth 9.6 mm reach {} | Th[4,10,17,3,25] In[54,52,29,0] Mi[56,52,31,0] Ri[48,52,31,0] Pi[48,56,33,0]
+GRIP mag      L seat 41 wrist (-0.024 -0.089 -0.030) depth 1.2 mm reach {} | Th[56,-51,-100,63,43] In[84,80,48,0] Mi[88,82,47,0] Ri[86,82,45,0] Pi[38,86,47,0]
+GRIP palm     L seat 0 wrist (-0.024 -0.064 -0.087) depth -8.2 mm reach {} | Th[32,-14,-20,8,8] In[8,16,9,4] Mi[9,17,9,0] Ri[10,18,10,-3] Pi[12,20,10,-7]
+CLIP Idle         4.00s 240 fr | wrist bend R 33 L 44 deg | shoulder slid R 0 L 0 | deepest contact none >4.5mm
+CLIP Fire         0.30s  18 fr | wrist bend R 33 L 45 deg | shoulder slid R 0 L 0 | deepest contact R-body 5mm@0.12s
+CLIP Draw         0.30s  18 fr | wrist bend R 61 L 50 deg | shoulder slid R 0 L 0 | deepest contact R-body 6mm@0.25s
+CLIP Holster      0.30s  18 fr | wrist bend R 61 L 49 deg | shoulder slid R 0 L 0 | deepest contact R-body 7mm@0.05s
+CLIP Sprint       0.70s  42 fr | wrist bend R 31 L 49 deg | shoulder slid R 0 L 0 | deepest contact none >4.5mm
+CLIP Reload       1.70s 102 fr | wrist bend R 33 L 60 deg | shoulder slid R 0 L 0 | deepest contact R-body 9mm@0.25s R-Magazine 9mm@0.37s L-body 8mm@1.17s
+CLIP ReloadEmpty  2.10s 126 fr | wrist bend R 32 L 60 deg | shoulder slid R 0 L 0 | deepest contact R-body 9mm@0.40s R-Magazine 9mm@0.27s L-Magazine 12mm@0.70s L-body 8mm@1.28s
+CLIP Draw         differs from Idle pose: start 306.8 mm 93.5 deg, end 0.0 mm 0.0 deg
+CLIP Holster      differs from Idle pose: start 0.0 mm 0.0 deg, end 306.8 mm 93.5 deg
+CLIP Sprint       differs from Idle pose: start 159.5 mm 93.5 deg, end 159.5 mm 93.5 deg
+solved 7 clips 2.3 s
+00:09.172  render           | Saved: 'E:\fable\shootinggame\tools\weapon\build\tiles\pistol_Reload_000.png'
+00:11.000  render           | Saved: 'E:\fable\shootinggame\tools\weapon\build\tiles\pistol_Reload_011.png'
+00:12.859  render           | Saved: 'E:\fable\shootinggame\tools\weapon\build\tiles\pistol_Reload_023.png'
+00:14.593  render           | Saved: 'E:\fable\shootinggame\tools\weapon\build\tiles\pistol_Reload_034.png'
+00:16.156  render           | Saved: 'E:\fable\shootinggame\tools\weapon\build\tiles\pistol_Reload_045.png'
+00:17.843  render           | Saved: 'E:\fable\shootinggame\tools\weapon\build\tiles\pistol_Reload_057.png'
+00:19.578  render           | Saved: 'E:\fable\shootinggame\tools\weapon\build\tiles\pistol_Reload_068.png'
+00:21.156  render           | Saved: 'E:\fable\shootinggame\tools\weapon\build\tiles\pistol_Reload_079.png'
+00:22.609  render           | Saved: 'E:\fable\shootinggame\tools\weapon\build\tiles\pistol_Reload_091.png'
+00:23.937  render           | Saved: 'E:\fable\shootinggame\tools\weapon\build\tiles\pistol_Reload_102.png'
+Could not find platform independent libraries <prefix>
+sheet E:\fable\shootinggame\tools\_preview\weapon\final_pistol_Reload.png (900, 672)
+00:25.937  render           | Saved: 'E:\fable\shootinggame\tools\weapon\build\tiles\pistol_ReloadEmpty_000.png'
+00:27.484  render           | Saved: 'E:\fable\shootinggame\tools\weapon\build\tiles\pistol_ReloadEmpty_014.png'
+00:29.047  render           | Saved: 'E:\fable\shootinggame\tools\weapon\build\tiles\pistol_ReloadEmpty_028.png'
+00:30.578  render           | Saved: 'E:\fable\shootinggame\tools\weapon\build\tiles\pistol_ReloadEmpty_042.png'
+00:32.078  render           | Saved: 'E:\fable\shootinggame\tools\weapon\build\tiles\pistol_ReloadEmpty_056.png'
+00:33.578  render           | Saved: 'E:\fable\shootinggame\tools\weapon\build\tiles\pistol_ReloadEmpty_070.png'
+00:35.015  render           | Saved: 'E:\fable\shootinggame\tools\weapon\build\tiles\pistol_ReloadEmpty_084.png'
+00:36.437  render           | Saved: 'E:\fable\shootinggame\tools\weapon\build\tiles\pistol_ReloadEmpty_098.png'
+00:37.640  render           | Saved: 'E:\fable\shootinggame\tools\weapon\build\tiles\pistol_ReloadEmpty_112.png'
+00:38.843  render           | Saved: 'E:\fable\shootinggame\tools\weapon\build\tiles\pistol_ReloadEmpty_126.png'
+Could not find platform independent libraries <prefix>
+sheet E:\fable\shootinggame\tools\_preview\weapon\final_pistol_ReloadEmpty.png (900, 672)
+00:40.093  render           | Saved: 'E:\fable\shootinggame\tools\weapon\build\tiles\pistol_Idle_000.png'
+00:41.156  render           | Saved: 'E:\fable\shootinggame\tools\weapon\build\tiles\pistol_Fire_000.png'
+00:42.218  render           | Saved: 'E:\fable\shootinggame\tools\weapon\build\tiles\pistol_Fire_001.png'
+00:43.265  render           | Saved: 'E:\fable\shootinggame\tools\weapon\build\tiles\pistol_Fire_002.png'
+00:44.343  render           | Saved: 'E:\fable\shootinggame\tools\weapon\build\tiles\pistol_Fire_003.png'
+00:45.453  render           | Saved: 'E:\fable\shootinggame\tools\weapon\build\tiles\pistol_Fire_004.png'
+00:46.609  render           | Saved: 'E:\fable\shootinggame\tools\weapon\build\tiles\pistol_Fire_006.png'
+00:47.922  render           | Saved: 'E:\fable\shootinggame\tools\weapon\build\tiles\pistol_Fire_009.png'
+00:48.859  render           | Saved: 'E:\fable\shootinggame\tools\weapon\build\tiles\pistol_Draw_000.png'
+00:49.781  render           | Saved: 'E:\fable\shootinggame\tools\weapon\build\tiles\pistol_Draw_004.png'
+00:50.718  render           | Saved: 'E:\fable\shootinggame\tools\weapon\build\tiles\pistol_Draw_009.png'
+00:51.672  render           | Saved: 'E:\fable\shootinggame\tools\weapon\build\tiles\pistol_Draw_014.png'
+00:52.656  render           | Saved: 'E:\fable\shootinggame\tools\weapon\build\tiles\pistol_Draw_018.png'
+00:53.672  render           | Saved: 'E:\fable\shootinggame\tools\weapon\build\tiles\pistol_Holster_000.png'
+00:54.609  render           | Saved: 'E:\fable\shootinggame\tools\weapon\build\tiles\pistol_Holster_006.png'
+00:55.547  render           | Saved: 'E:\fable\shootinggame\tools\weapon\build\tiles\pistol_Holster_012.png'
+00:56.453  render           | Saved: 'E:\fable\shootinggame\tools\weapon\build\tiles\pistol_Holster_018.png'
+00:57.390  render           | Saved: 'E:\fable\shootinggame\tools\weapon\build\tiles\pistol_Sprint_000.png'
+00:58.312  render           | Saved: 'E:\fable\shootinggame\tools\weapon\build\tiles\pistol_Sprint_021.png'
+00:59.250  render           | Saved: 'E:\fable\shootinggame\tools\weapon\build\tiles\pistol_Sprint_042.png'
+Could not find platform independent libraries <prefix>
+sheet E:\fable\shootinggame\tools\_preview\weapon\final_pistol_misc.png (900, 404)
+STAGE pistol anim ok 55.1 s
+TOTAL 55.1 s
+Blender 5.2.3 LTS (hash e13b728c6880 built 2026-10-22 01:37:16)
+
+Blender quit

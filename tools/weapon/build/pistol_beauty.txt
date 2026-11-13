@@ -1,0 +1,11 @@
+00:04.328  blend            | Read blend: "E:\fable\shootinggame\tools\weapon\build\pistol.blend"
+00:08.032  render           | Saved: 'E:\fable\shootinggame\tools\weapon\build\tiles\pistol_beauty_right.png'
+00:11.282  render           | Saved: 'E:\fable\shootinggame\tools\weapon\build\tiles\pistol_beauty_left.png'
+00:14.047  render           | Saved: 'E:\fable\shootinggame\tools\weapon\build\tiles\pistol_beauty_rear_top.png'
+00:17.110  render           | Saved: 'E:\fable\shootinggame\tools\weapon\build\tiles\pistol_beauty_below.png'
+Could not find platform independent libraries <prefix>
+sheet E:\fable\shootinggame\tools\_preview\weapon\final_pistol_beauty.png (900, 600)
+beauty sheet done
+Blender 5.2.3 LTS (hash e13b728c6880 built 2026-10-22 01:37:16)
+
+Blender quit

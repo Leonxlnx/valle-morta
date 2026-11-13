@@ -4,6 +4,7 @@
 //   node tools/playtest.mjs                      everything
 //   node tools/playtest.mjs --only game          scripted gameplay only (auto mode, deterministic stepping)
 //   node tools/playtest.mjs --only ui            menu / settings / HUD / pause / summary flow only
+//   node tools/playtest.mjs --only operation     Operation mode: menu, Base, insertion, waves, salvage, extraction, death, saved profile
 //   --waves 3   waves the bot must clear        --q high   quality preset      --out dir
 //   --sec turn,fov,move,arms,feel,infected,blood,survival,core,nav,waves,perf   only these groups of the game run
 import puppeteer from 'puppeteer-core';
@@ -21,7 +22,7 @@ const arg = (name, def) => {
 const W = 1280, H = 720;
 const q = arg('q', 'high');
 const out = arg('out', 'tools/_preview/playtest');
-const only = String(arg('only', 'game,ui')).split(',');
+const only = String(arg('only', 'game,ui,operation')).split(',');
 const url = arg('url', 'http://127.0.0.1:5173/');
 const nWaves = Number(arg('waves', 3));
 const secs = arg('sec', '') ? String(arg('sec', '')).split(',') : null;
@@ -31,7 +32,7 @@ const { acquireGpuLock } = await import('./lib/gpulock.mjs');
 const release = await acquireGpuLock();
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const errors = [];
-const shots = { game: [], weapon: [], new: [], ui: [] };
+const shots = { game: [], weapon: [], new: [], ui: [], op: [] };
 
 const browser = await puppeteer.launch({
   executablePath: 'C:/Program Files/Google/Chrome/Application/chrome.exe',
@@ -1028,6 +1029,152 @@ const S_BLOOD_VILLAGE = () => {
 };
 
 // ------------------------------------------------------------------ run
+// ------------------------------------------------------------------ Operation mode (the real page, stepped through code)
+const S_OP_BASE = () => {
+  const vm = __vm, g = vm.game, P = vm.progress, cat = P.catalogue, per = {};
+  for (const i of cat) per[i.tab] = (per[i.tab] || 0) + 1;
+  return { state: g.state, baseShown: document.querySelector('.base').classList.contains('show'), loops: [...g.audio.want.keys()].join(','), entries: cat.length, levels: cat.reduce((s, i) => s + i.levels, 0), perTab: per, cardsShown: document.querySelectorAll('.base .card').length, bank: document.querySelector('.base .bank b').textContent };
+};
+// the first seconds of the flight in
+const S_OP_INSERT_A = () => {
+  const vm = __vm, g = vm.game, op = g.operation, p = g.player, h = op.heli, { r2 } = pt;
+  const o = { state: g.state, mode: g.mode, phase: op.phase, lz: op.lz.id, lzs: op._lzs().map((l) => `${l.id}@${r2(l.x, 0)},${r2(l.z, 0)} room ${r2(l.room, 1)} heading ${r2(l.yaw * 57.3, 0)}`), flight: { seconds: h.T, hover: r2(h.wv * h.T, 1) }, playerEnabled: p.enabled, weaponVisible: g.weapon.visible, wave: g.wave,
+    kit: { rifleDamage: r2(g.weapon.state.rifle.mod.damage), rifleMag: g.weapon.magSize, sniper: g.weapon.state.sniper.owned, maxHealth: p.maxHealth, abilities: op.abilities.map((a) => `${a.key}:${a.id}`) } };
+  const q = window.__ptOp = { minClear: 1e9, maxSpeed: 0, prev: h.group.position.clone(), t: 0 };
+  window.__ptTrack = (t, dt) => { const hp = h.group.position; if (h.state === 'in') { if (Math.hypot(hp.x - op.lz.x, hp.z - op.lz.z) > 9) q.minClear = Math.min(q.minClear, hp.y - h._top(hp.x, hp.z)); q.maxSpeed = Math.max(q.maxSpeed, hp.distanceTo(q.prev) / dt); } q.prev.copy(hp); q.t += dt; };
+  pt.sim(3.4, 1 / 60, window.__ptTrack);
+  o.at34 = { alt: r2(h.group.position.y - op.lz.y, 1), toLz: r2(Math.hypot(h.group.position.x - op.lz.x, h.group.position.z - op.lz.z), 0), camFromHeli: r2(vm.engine.camera.position.distanceTo(h.group.position)), hudHidden: document.querySelector('.hud').classList.contains('cine') };
+  return o;
+};
+// touch-down, hand-over, and the helicopter leaving
+const S_OP_INSERT_B = () => {
+  const vm = __vm, g = vm.game, op = g.operation, p = g.player, h = op.heli, { r2 } = pt, q = window.__ptOp;
+  p.script = () => {};
+  pt.sim(8, 1 / 60, (t, dt) => { window.__ptTrack(t, dt); return op.phase !== 'run'; });
+  const hp = h.group.position;
+  const o = { controlAfter: r2(q.t), minOverGroundAndRoofs: r2(q.minClear, 1), maxSpeed: r2(q.maxSpeed, 1), phase: op.phase, playerEnabled: p.enabled, weaponVisible: g.weapon.visible, playerAbove: r2(pt.above()), fromExit: r2(Math.hypot(p.pos.x - op.lz.exit.x, p.pos.z - op.lz.exit.z)), heli: h.state, skidsAboveGround: r2(hp.y - vm.terrain.heightAt(hp.x, hp.z)), solid: !!h.box, health: p.health, bandages: p.bandages, firstWaveIn: r2(g.interT, 1), hudHidden: document.querySelector('.hud').classList.contains('cine') };
+  const tgt = new vm.THREE.Vector3();
+  p.script = (dt, pl) => { tgt.copy(hp); tgt.y += 1.6; pl.lookAt(tgt, 12, dt); };
+  pt.hold(); pt.sim(3.4);
+  o.leaving = { heli: h.state, alt: r2(hp.y - op.lz.y, 1), dist: r2(hp.distanceTo(p.pos), 0), solid: !!h.box };
+  return o;
+};
+const S_OP_WAVES = (args) => {
+  const vm = __vm, g = vm.game, op = g.operation, p = g.player, Z = g.zombies, T = vm.THREE, { r2 } = pt;
+  pt.god = true; g.interT = 1; g.cleared = true;
+  const waves = [], types = {}; let hm = 1, tick = 0;
+  const nw = g._nextWave; g._nextWave = function () { nw.call(g); waves.push({ wave: g.wave, kind: g.waveKind, queue: g.queue, survivalWouldBe: g._compose(g.wave).list.length, salvage: Math.round(op.salvage) }); };
+  const sp = Z.spawn; Z.spawn = function (x, z, o2) { const r = sp.call(Z, x, z, o2); if (r && o2 && o2.aware) { types[r.type] = (types[r.type] || 0) + 1; hm = Math.max(hm, o2.healthMult || 1); } return r; };
+  const tmp = new T.Vector3(), fw = new T.Vector3(), f2 = new T.Vector3();
+  p.script = (dt, pl) => {
+    let best = null, bd = 1e9;
+    for (const z of Z.list) { if (!z.alive) continue; const d = z.pos.distanceTo(pl.pos); if (d < bd) { bd = d; best = z; } }
+    if (g.weapon.ammo === 0) { if (g.weapon.reserve > 0) pl.input.reload = true; else if (g.weapon.id === 'rifle') pl.input.slot = 2; }
+    if (!best) return;
+    if (best.bones.Head) { best.root.updateWorldMatrix(true, true); best.bones.Head.getWorldPosition(tmp); tmp.y += 0.07; } else tmp.set(best.pos.x, best.pos.y + 1.55, best.pos.z);
+    pl.lookAt(tmp, 16, dt);
+    if (bd > 75) return;
+    pl.input.ads = bd > 10;
+    const err = Math.acos(Math.min(1, pl.forward(f2).dot(fw.copy(tmp).sub(pl.eye).normalize())));
+    if (err < Math.min(0.2, 0.1 / bd) && g.collision.lineOfSight(pl.eye, tmp)) pl.input.fire = g.weapon.def.mode === 'auto' || (tick++ & 1) === 0;
+    if (bd < 6) pl.input.fwd = -1;
+  };
+  const simT = pt.sim(args.maxTime, 1 / 30, () => op.cleared < args.waves);
+  g._nextWave = nw; Z.spawn = sp;
+  return { waves, cleared: op.cleared, kills: g.stats.kills, headshots: g.stats.headshots, salvage: Math.round(op.salvage), hudSalvage: document.querySelector('.salvage b').textContent, hudStatus: document.querySelector('.status').textContent, spawned: types, healthMult: r2(hm), simSeconds: r2(simT, 0), heli: op.heli.state, crates: g.supply.crates.length, extraction: !!op.extraction };
+};
+// fast forward to the fifth cleared wave; the helicopter comes back and waits
+const S_OP_EXTRACT_A = () => {
+  const vm = __vm, g = vm.game, op = g.operation, p = g.player, Z = g.zombies, T = vm.THREE, { r2 } = pt;
+  const dir = new T.Vector3(1, 0, 0), s0 = Math.round(op.salvage);
+  p.script = () => {}; pt.god = true;
+  let boss = false;
+  const t = pt.sim(600, 1 / 30, () => {
+    if (Z.boss) boss = true;
+    if (!op.extraction) { g.interT = Math.min(g.interT, 0.4); g.spawnT = Math.min(g.spawnT, 0.05); for (const z of [...Z.list]) if (z.alive) Z.damage(z, 1e6, 'head', dir); }
+    return !op.extraction;
+  });
+  const ex = op.extraction, h = op.heli;
+  const o = { simSeconds: r2(t, 0), wave: g.wave, cleared: op.cleared, boss, salvageBefore: s0, salvage: Math.round(op.salvage), state0: ex && ex.state, lz: ex && ex.lz.id, nextWaveHeld: g.interT > 1e6 };
+  if (!ex) return o;
+  let minOver = 1e9;
+  const tIn = pt.sim(15, 1 / 60, () => { const hp = h.group.position; if (h.state === 'in' && Math.hypot(hp.x - ex.lz.x, hp.z - ex.lz.z) > 9) minOver = Math.min(minOver, hp.y - h._top(hp.x, hp.z)); return ex.state !== 'waiting'; });
+  Object.assign(o, { inboundSeconds: r2(tIn, 1), minOverGroundAndRoofs: r2(minOver, 1), state: ex.state, window: ex.window, heli: h.state });
+  const lz = ex.lz, tgt = new T.Vector3();
+  p.spawn(lz.exit.x + lz.rx * 12 - lz.fx * 5, lz.exit.z + lz.rz * 12 - lz.fz * 5, 0);
+  p.script = (dt, pl) => { tgt.copy(h.group.position); tgt.y += 1.7; pl.lookAt(tgt, 999, dt); };
+  pt.sim(1.5);
+  o.hud = { marker: document.querySelector('.marker.lz span').textContent, markerOn: document.querySelector('.marker.lz').classList.contains('on'), salvage: document.querySelector('.salvage b').textContent, timeLeft: r2(ex.timeLeft, 1), dist: r2(ex.dist, 1), prompt: document.querySelector('.prompt').textContent };
+  return o;
+};
+// up to the door, F, lift-off, debrief
+const S_OP_EXTRACT_B = () => {
+  const vm = __vm, g = vm.game, op = g.operation, p = g.player, P = vm.progress, { r2 } = pt;
+  const lz = op.heli.lz, bank0 = P.salvage, earned = Math.round(op.salvage);
+  p.spawn(lz.exit.x, lz.exit.z, lz.exitYaw + Math.PI); p.script = () => {}; pt.sim(0.2);
+  const o = { prompt: g.interact && g.interact.text, hudPrompt: document.querySelector('.prompt').textContent, timeLeft: r2(op.extraction.timeLeft, 1) };
+  let press = true; p.script = (dt, pl) => { pl.input.interact = press; press = false; };
+  const t = pt.sim(8, 1 / 60, () => g.state === 'playing');
+  const s = g.lastSummary || {};
+  return Object.assign(o, { secondsToDebrief: r2(t, 1), state: g.state, outcome: s.outcome, wave: s.wave, cleared: s.cleared, kills: s.kills, earned: s.earned, banked: s.banked, expectedBanked: Math.round(earned * 1.25), bankGain: P.salvage - bank0, bestWave: P.data.best.wave, runs: P.data.history.length, debriefShown: document.querySelector('.debrief').classList.contains('show'), title: document.querySelector('.debrief h2').textContent, playerEnabled: p.enabled, heli: op.heli.state, heliAlt: r2(op.heli.group.position.y - lz.y, 1) });
+};
+const S_OP_SQUARE = () => {
+  const vm = __vm, g = vm.game, op = g.operation, h = op.heli, { r2 } = pt;
+  const q = window.__ptSq = { minOver: 1e9 };
+  pt.sim(4.4, 1 / 60, () => { const hp = h.group.position; if (h.state === 'in' && Math.hypot(hp.x - op.lz.x, hp.z - op.lz.z) > 9) q.minOver = Math.min(q.minOver, hp.y - h._top(hp.x, hp.z)); });
+  return { lz: op.lz.id, flightSeconds: h.T, hoverSeconds: r2(h.wv * h.T, 1), phase: op.phase, alt: r2(h.group.position.y - op.lz.y, 1), toLz: r2(Math.hypot(h.group.position.x - op.lz.x, h.group.position.z - op.lz.z), 0) };
+};
+const S_OP_DEATH = () => {
+  const vm = __vm, g = vm.game, op = g.operation, p = g.player, Z = g.zombies, T = vm.THREE, h = op.heli, { r2 } = pt, q = window.__ptSq;
+  p.script = () => {};
+  pt.sim(8, 1 / 60, () => { const hp = h.group.position; if (h.state === 'in' && Math.hypot(hp.x - op.lz.x, hp.z - op.lz.z) > 9) q.minOver = Math.min(q.minOver, hp.y - h._top(hp.x, hp.z)); return op.phase !== 'run'; });
+  pt.hold();
+  const o = { phase: op.phase, minOverGroundAndRoofs: r2(q.minOver, 1), playerAbove: r2(pt.above()), playerFree: g.collision.resolveCapsule(p.pos.clone().setY(p.pos.y + 0.05), 0.35, 1.8).lengthSq() < 1e-8 };
+  // three walkers: two head shots and one body shot
+  const dir = new T.Vector3(1, 0, 0), zs = [];
+  for (let i = 0; i < 3; i++) { const z = Z.spawn(p.pos.x + 9 + i * 1.5, p.pos.z + 6, { type: 'walker', aware: true }); if (z) zs.push(z); }
+  zs.forEach((z, i) => Z.damage(z, 1e5, i < 2 ? 'head' : 'body', dir));
+  o.salvage = Math.round(op.salvage); o.expectedSalvage = 8 + 8 + 5;
+  const bank0 = vm.progress.salvage;
+  p.damage(999);
+  const t = pt.sim(6, 1 / 60, () => g.state === 'playing');
+  const s = g.lastSummary || {};
+  return Object.assign(o, { secondsToDebrief: r2(t, 1), state: g.state, outcome: s.outcome, earned: s.earned, banked: s.banked, bankGain: vm.progress.salvage - bank0, phaseAfter: op.phase });
+};
+const S_OP_PERSIST = (before) => {
+  const P = __vm.progress, C = P.constructor, mem = (s) => ({ getItem: () => s, setItem() {} });
+  const tolerant = ['{not json', 'null', '[]', '"x"', '{"v":99,"salvage":"lots","levels":{"rifle.damage":99,"nope":3,"body.health":-2},"loadout":["tank","adrenaline","adrenaline",7],"history":"x","best":null}']
+    .map((s) => { try { const q = new C(mem(s)); return `${q.salvage}/${q.level('rifle.damage')}/${q.level('body.health')}/${q.loadout.join('|')}`; } catch (e) { return 'THROWS ' + e.message; } });
+  return { salvageKept: P.salvage === before.salvage, salvage: P.salvage, levelsKept: JSON.stringify(P.data.levels) === before.levels, levels: P.data.levels, loadout: P.loadout, runs: P.data.totals.runs, history: P.data.history.map((h) => `${h.outcome}:w${h.wave}:+${h.banked}`), bestWave: P.data.best.wave, version: P.data.v, storedBytes: (localStorage.getItem('valle-morta-profile') || '').length, tolerant };
+};
+// the run after the reload carries the purchases; Survival afterwards is stock again
+const S_OP_NEXT = () => {
+  const vm = __vm, g = vm.game, op = g.operation, p = g.player, w = g.weapon, Z = g.zombies, T = vm.THREE, { r2 } = pt;
+  p.script = () => {};
+  const o = { rifleDamage: r2(w.state.rifle.mod.damage), rifleMag: w.magSize, burn: w.state.rifle.mod.burn, sniperOwned: w.state.sniper.owned, maxHealth: p.maxHealth, abilities: op.abilities.map((a) => `${a.key}:${a.id} L${a.level} cd${a.cooldown} dur${a.duration}`) };
+  pt.sim(9.5, 1 / 60, () => op.phase !== 'run'); pt.hold(); Z.passive = true;
+  o.health = p.health;
+  const z = Z.spawn(p.pos.x - Math.sin(p.yaw) * 8, p.pos.z - Math.cos(p.yaw) * 8, { type: 'walker' }); pt.still(z);
+  const tgt = new T.Vector3(); let fire = false, ab = 0;
+  p.script = (dt, pl) => { tgt.set(z.pos.x, z.pos.y + 1.15, z.pos.z); pl.lookAt(tgt, 999, dt); pl.input.ads = true; pl.input.fire = fire; pl.input.ability = ab; ab = 0; };
+  pt.sim(0.9); const h0 = z.health; fire = true; g.update(1 / 60); fire = false; const h1 = z.health; pt.sim(4.4);
+  o.shot = { dealt: r2(h0 - h1, 1), stockWouldBe: 36, burnedAfterwards: r2(h1 - z.health, 1), alive: z.alive };
+  // an ability with nothing plugged in does nothing; with an effect it runs and cools down
+  const a = op.abilities[0];
+  if (a) {
+    ab = a.slot + 1; pt.sim(0.1); o.unfitted = { cd: a.cd, uses: a.uses };
+    let started = 0, ended = 0; op.registerAbility(a.id, { start() { started++; }, end() { ended++; } });
+    ab = a.slot + 1; pt.sim(0.1);
+    o.used = { started, cd: r2(a.cd, 1), active: r2(a.active, 1), ready: a.ready, rings: document.querySelectorAll('.abil .ab').length, ringLive: document.querySelector('.abil .ab').classList.contains('live') };
+    pt.sim(a.duration + 0.3); o.afterwards = { ended, active: a.active, cd: r2(a.cd, 1) };
+    delete op.effects[a.id];
+  }
+  g.toMenu(); g.start('survival'); p.script = () => {}; pt.sim(0.3);
+  o.survival = { mode: g.mode, rifleDamage: w.state.rifle.mod.damage, rifleMag: w.magSize, burn: w.state.rifle.mod.burn, sniperOwned: w.state.sniper.owned, maxHealth: p.maxHealth, phase: op.phase, heli: op.heli.state, playerEnabled: p.enabled, hudOp: document.querySelector('.hud').classList.contains('op'), wave: g.wave };
+  g.toMenu();
+  return o;
+};
+
 try {
   if (only.includes('game')) {
     const page = await open(`q=${q}&auto=1`, 'game');
@@ -1179,6 +1326,72 @@ try {
     await page.evaluate(() => { try { localStorage.removeItem('valle-morta-settings'); } catch (e) { /* */ } });
     await page.close();
   }
+
+  if (only.includes('operation')) {
+    const page = await open(`q=${q}`, 'op');
+    const ready = async () => { await page.waitForFunction('window.__vm && window.__vm.ready && window.__vm.game.state === "menu"', { timeout: 240000, polling: 250 }); await page.evaluate(LIB); };
+    const say = async (name, fn, ...a) => { try { console.log(`## op ${name}: ` + JSON.stringify(await page.evaluate(fn, ...a))); } catch (e) { console.log(`## op ${name}: FAILED ${String((e && e.message) || e).slice(0, 600)}`); } };
+    const shot = async (name) => { const file = path.join(out, `op_${name}.jpg`); await page.screenshot({ path: file, type: 'jpeg', quality: 88 }); shots.op.push(file); };
+    // the stepped game stands still: render it as it is for a few frames, grab it, freeze again
+    const shotWorld = async (name) => {
+      await page.evaluate(async () => { const vm = window.__vm; window.__ptState = vm.game.state; vm.game.state = 'paused'; vm.start(); for (let i = 0; i < 6; i++) await new Promise((r) => requestAnimationFrame(r)); });
+      await shot(name);
+      await page.evaluate(() => { const vm = window.__vm; vm.stop(); vm.game.state = window.__ptState; });
+    };
+    const click = async (sel, wait = 150) => { await page.click(sel); await sleep(wait); };
+    const deploy = async (lz) => {
+      // headless Chrome has no pointer lock: pretend it was granted, then take the clock away from the page
+      await page.evaluate((lz) => { Object.defineProperty(document, 'pointerLockElement', { configurable: true, get: () => document.getElementById('view') }); __vm.operation.nextLz = lz; }, lz);
+      await page.click('.base [data-act="deploy"]');
+      await page.evaluate(() => { __vm.stop(); });
+      await sleep(700);        // the Base screen fades out in real time
+    };
+    await ready();
+    await page.evaluate(() => { __vm.progress.reset(); });
+    await sleep(1500);
+    await say('menu', () => [...document.querySelectorAll('.menu .mode')].map((b) => `${b.dataset.act}: ${b.querySelector('strong').textContent} / ${b.querySelector('span').textContent}`));
+    await shot('menu');
+    await click('.menu [data-act="operation"]', 900);
+    await section(page, 'op base', S_OP_BASE);
+    await click('.base [data-buy="rifle.damage"]');                       // nothing in the bank yet: refused
+    await say('refused', () => ({ level: __vm.progress.level('rifle.damage'), salvage: __vm.progress.salvage }));
+    await page.evaluate(() => { __vm.progress.grant(4000); });
+    for (const id of ['rifle.damage', 'rifle.damage', 'rifle.mag', 'rifle.fire']) await click(`.base [data-buy="${id}"]`);
+    await click('.base [data-group="sniper"]'); await click('.base [data-buy="sniper.unlock"]'); await click('.base [data-group="rifle"]', 1200);
+    await shot('base_weapons');
+    await click('.base [data-tab="body"]'); await click('.base [data-buy="body.health"]');
+    await click('.base [data-tab="abilities"]'); await click('.base [data-buy="ability.adrenaline"]'); await click('.base [data-buy="ability.jump"]', 1200);
+    await shot('base_abilities');
+    await say('purchases', () => { const P = __vm.progress; return { salvage: P.salvage, levels: P.data.levels, loadout: P.loadout, bank: document.querySelector('.base .bank b').textContent, slots: [...document.querySelectorAll('.base .slot span')].map((s) => s.textContent) }; });
+
+    await deploy('meadow');
+    await section(page, 'op insertion', S_OP_INSERT_A); await shotWorld('insertion');
+    await section(page, 'op hand-over', S_OP_INSERT_B); await shotWorld('heli_leaves');
+    await section(page, 'op waves', S_OP_WAVES, { waves: 2, maxTime: 400 });
+    await section(page, 'op extraction', S_OP_EXTRACT_A); await shotWorld('extraction');
+    await section(page, 'op board', S_OP_EXTRACT_B);
+    await page.evaluate(() => { __vm.start(); }); await sleep(1000); await shot('debrief');
+    await click('.debrief [data-act="base"]', 700); await click('.base [data-tab="run"]', 500);
+    await say('base after extraction', () => ({ state: __vm.game.state, bank: document.querySelector('.base .bank b').textContent, salvage: __vm.progress.salvage, runs: [...document.querySelectorAll('.base .runs li')].map((l) => l.textContent), heli: __vm.operation.heli.state, loops: [...__vm.game.audio.want.keys()].join(',') }));
+    await shot('base_run');
+
+    await deploy('square');
+    await section(page, 'op second approach', S_OP_SQUARE); await shotWorld('insertion_2');
+    await section(page, 'op death', S_OP_DEATH);
+    await page.evaluate(() => { __vm.start(); }); await sleep(900);
+    await say('debrief after death', () => ({ shown: document.querySelector('.debrief').classList.contains('show'), title: document.querySelector('.debrief h2').textContent, rows: [...document.querySelectorAll('.debrief .stats div')].map((d) => d.textContent.trim().replace(/\s+/g, ' ')) }));
+    await click('.debrief [data-act="base"]', 600);
+    const before = await page.evaluate(() => ({ state: __vm.game.state, salvage: __vm.progress.salvage, levels: JSON.stringify(__vm.progress.data.levels) }));
+    console.log('## op base after death: ' + JSON.stringify(before));
+
+    await page.reload({ waitUntil: 'domcontentloaded' }); await ready();
+    await section(page, 'op saved profile', S_OP_PERSIST, before);
+    await click('.menu [data-act="operation"]', 700);
+    await deploy('meadow');
+    await section(page, 'op next run', S_OP_NEXT);
+    await page.evaluate(() => { __vm.progress.reset(); });
+    await page.close();
+  }
 } catch (e) {
   console.log('PLAYTEST ABORTED:', String((e && e.stack) || e).slice(0, 1500));
 } finally {
@@ -1190,5 +1403,5 @@ console.log(uniq.length ? `--- console (${uniq.length}):\n` + uniq.slice(0, 20).
 for (const [name, files] of Object.entries(shots)) {
   if (!files.length) continue;
   const file = path.join(out, `sheet_${name}.jpg`);
-  try { execFileSync(process.execPath, ['tools/sheet.mjs', file, '640', '2', ...files], { stdio: 'pipe' }); console.log('sheet:', file); } catch (e) { console.log('sheet failed:', String(e.message).slice(0, 300)); }
+  try { execFileSync(process.execPath, ['tools/sheet.mjs', file, '640', name === 'op' ? '3' : '2', ...files], { stdio: 'pipe' }); console.log('sheet:', file); } catch (e) { console.log('sheet failed:', String(e.message).slice(0, 300)); }
 }

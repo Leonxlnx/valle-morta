@@ -5,7 +5,8 @@ HERE = os.path.dirname(os.path.abspath(__file__)); sys.path.insert(0, HERE)
 import numpy as np
 import model, body
 from model import MAT
-from skeleton import J, BONES
+from skeleton import J0 as J, BONES
+import variant
 from body import HEAD_O, ANK, TOE_OUT, mm
 
 IDX = {b: i for i, b in enumerate(BONES)}
@@ -20,7 +21,7 @@ def seg_dist(P, a, b):
     return np.linalg.norm(P - a - h[:, None] * ab, axis=1)
 
 
-low = np.load(os.path.join(HERE, 'build', 'low.npz'))
+low = np.load(os.path.join(variant.BUILD, 'low.npz'))
 V = low['pos'].astype(np.float64); n = len(V)
 _, mat = model.eval_chunked(V.astype(np.float32), chunk=4000, margin=0.006)
 x, y, z = V[:, 0], V[:, 1], V[:, 2]; ax = np.abs(x)
@@ -49,6 +50,7 @@ leg_total = np.zeros(n)
 for s, sd in (('L', 1.0), ('R', -1.0)):
     side = np.where(z > 0.80, sstep(-0.012, 0.03, x * sd), (x * sd > 0).astype(float))
     lw = sstep(0.99, 0.86, z) * side * lower
+    lw = np.where(mat == MAT['apron'], 0.75 * sstep(0.95, 0.80, z) * sstep(-0.11, 0.11, x * sd), lw)      # apron skirt follows both thighs
     k = sstep(0.545, 0.455, z)
     f = sstep(0.19, 0.10, z) * (mat == MAT['boots'])
     c, sn = np.cos(np.radians(TOE_OUT * sd)), np.sin(np.radians(TOE_OUT * sd))
@@ -88,6 +90,6 @@ W[teeth] = W0[teeth]
 W /= np.maximum(W.sum(1, keepdims=True), 1e-9)
 idx = np.argsort(-W, 1)[:, :4]; w4 = np.take_along_axis(W, idx, 1)
 w4[w4 < 0.02] = 0; w4 /= w4.sum(1, keepdims=True)
-np.savez(os.path.join(HERE, 'build', 'weights.npz'), idx=idx.astype(np.int32), w=w4.astype(np.float32), mat=mat)
+np.savez(os.path.join(variant.BUILD, 'weights.npz'), idx=idx.astype(np.int32), w=w4.astype(np.float32), mat=mat)
 print('weights: %d verts; per-bone vertex counts:' % n)
 print(' '.join('%s=%d' % (b, int((W[:, i] > 0.5).sum())) for i, b in enumerate(BONES)))

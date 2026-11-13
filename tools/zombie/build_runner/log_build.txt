@@ -1,0 +1,2 @@
+CPU 2% | RAM free 31,3/61,8 GB | GPU 3D 9% | GPU mem dedicated 1,57 GB shared 2,19 GB
+Could not find platform independent libraries <prefix>

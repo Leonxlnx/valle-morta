@@ -1,5 +1,6 @@
-"""Bone list shared by rigging, animation and export."""
-from body import J
+"""Bone list shared by rigging, animation and export.  J0 = canonical (walker) joints, J = this type's joints (variant.py)."""
+from body import J as J0
+import variant
 
 BONES = ['Hips', 'Spine', 'Chest', 'Neck', 'Head', 'Jaw', 'Shoulder.L', 'UpperArm.L', 'LowerArm.L', 'Hand.L',
          'Shoulder.R', 'UpperArm.R', 'LowerArm.R', 'Hand.R', 'UpperLeg.L', 'LowerLeg.L', 'Foot.L', 'Toe.L',
@@ -10,3 +11,4 @@ TAIL = {'Hips': 'Spine', 'Spine': 'Chest', 'Chest': 'Neck', 'Neck': 'Head', 'Hea
         'Shoulder.R': 'UpperArm.R', 'UpperArm.R': 'LowerArm.R', 'LowerArm.R': 'Hand.R', 'Hand.R': 'HandTip.R',
         'UpperLeg.L': 'LowerLeg.L', 'LowerLeg.L': 'Foot.L', 'Foot.L': 'Toe.L', 'Toe.L': 'ToeTip.L',
         'UpperLeg.R': 'LowerLeg.R', 'LowerLeg.R': 'Foot.R', 'Foot.R': 'Toe.R', 'Toe.R': 'ToeTip.R'}
+J, _S = variant.warp_joints(J0, BONES, PARENT, TAIL)

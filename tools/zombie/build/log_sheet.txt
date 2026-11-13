@@ -1,0 +1,20 @@
+21:41:44 | INFO: Data are loaded, start creating Blender stuff
+21:41:44 | INFO: Blender create Mesh node Zombie.007
+21:41:44 | INFO: glTF import finished in 0.28s
+E:\fable\shootinggame\tools\zombie\bl_sheet.py:33: DeprecationWarning: 'World.use_nodes' is expected to be removed in Blender 6.0
+  w.use_nodes = True
+E:\fable\shootinggame\tools\zombie\bl_sheet.py:44: DeprecationWarning: 'Material.use_nodes' is expected to be removed in Blender 6.0
+  gm.use_nodes = True
+00:15.391  render           | Saved: 'E:\fable\shootinggame\tools\_preview\zombie\_tile.png'
+00:21.719  render           | Saved: 'E:\fable\shootinggame\tools\_preview\zombie\_tile.png'
+00:28.735  render           | Saved: 'E:\fable\shootinggame\tools\_preview\zombie\_tile.png'
+00:35.000  render           | Saved: 'E:\fable\shootinggame\tools\_preview\zombie\_tile.png'
+00:41.813  render           | Saved: 'E:\fable\shootinggame\tools\_preview\zombie\_tile.png'
+00:48.266  render           | Saved: 'E:\fable\shootinggame\tools\_preview\zombie\_tile.png'
+MODEL height 1.718 m, width 0.581 m, depth 0.497 m (idle pose), min z 0.000
+SHEET E:\fable\shootinggame\tools\_preview\zombie\final2_walker_Walk.png 900 714
+SHEET E:\fable\shootinggame\tools\_preview\zombie\final2_walker_Run.png 900 714
+SHEET E:\fable\shootinggame\tools\_preview\zombie\final2_walker_Sprint.png 900 714
+Blender 5.2.3 LTS (hash e13b728c6880 built 2026-10-22 01:37:16)
+
+Blender quit

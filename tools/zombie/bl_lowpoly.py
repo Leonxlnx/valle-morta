@@ -5,10 +5,11 @@ Outputs build/low.blend and build/low.npz
 import bpy, bmesh, sys, os, time
 import numpy as np
 HERE = os.path.dirname(os.path.abspath(__file__)); sys.path.insert(0, HERE)
-BUILD = os.path.join(HERE, 'build')
+import variant
+BUILD = variant.BUILD
 import model
 
-TARGET = 14800
+TARGET = variant.TARGET_TRIS
 t0 = time.time()
 bpy.ops.wm.read_factory_settings(use_empty=True)
 d = np.load(os.path.join(BUILD, 'hi.npz'))

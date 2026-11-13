@@ -8,6 +8,8 @@ import { createLayout } from './world/layout.js';
 import { buildWorld } from './world/world.js';
 import { Game } from './game/game.js';
 import { UI, loadSettings } from './ui/ui.js';
+import { Progress } from './game/progress.js';
+import { Operation } from './game/operation.js';
 import { createFilm } from './cinematic/film.js';
 
 // an inline icon keeps the browser from asking the server for a favicon that does not exist
@@ -49,13 +51,18 @@ async function boot() {
     if (k === 'grain' || k === 'all') engine.post.settings.grain = settings.grain ? 0.012 : 0;
     if (game && (k === 'master' || k === 'music' || k === 'sfx' || k === 'all')) game.audio.setVolumes({ master: settings.master, music: settings.music, sfx: settings.sfx });
   };
+  const progress = new Progress();
   const ui = new UI(document.getElementById('ui'), settings, {
-    play: () => { game.start(); lock(); },
+    play: () => { game.start('survival'); lock(); },
+    operation: () => { game.toBase(); },
+    deploy: () => { game.start('operation'); lock(); },
+    base: () => { game.toBase(); },
+    sound: (name, volume = 0.5) => { game?.audio.resume(); game?.audio.play(name, { volume }); },
     resume: () => { lock(); game.resume(); },
     quit: () => { document.exitPointerLock?.(); game.toMenu(); },
     settings: applySetting,
     click: () => { game?.audio.resume(); game?.audio.play('ui_click', { volume: 0.5 }); },
-  });
+  }, progress);
   if (AUTO) document.getElementById('ui').style.display = 'none';
 
   ui.progress(0.05, 'Starting renderer');
@@ -79,6 +86,8 @@ async function boot() {
   ui.progress(0.82, 'Waking the valley');
   game = new Game({ engine, terrain, layout, world, settings });
   await game.init((p) => ui.progress(0.82 + p * 0.16));
+  game.progress = progress;
+  game.operation = new Operation(game, progress);
   game.ui = AUTO ? null : ui;
   // the summary screen needs the cursor back
   game.onOver = () => { document.exitPointerLock?.(); };
@@ -152,7 +161,7 @@ async function boot() {
   requestAnimationFrame(frame);
 
   window.__vm = {
-    engine, terrain, layout, world, game, ui, THREE, G, stats, setView, VIEWS, step,
+    engine, terrain, layout, world, game, ui, THREE, G, stats, setView, VIEWS, step, progress, operation: game.operation,
     // absolute camera; pass y as height above ground with ground=true
     cam(x, y, z, lx, ly, lz, ground = false) {
       engine.camera.position.set(x, ground ? terrain.heightAt(x, z) + y : y, z);
