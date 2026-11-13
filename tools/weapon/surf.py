@@ -1,0 +1,203 @@
+# Procedural PBR surfacing of the view-model atlases from baked geometry maps (part id, position, normal,
+# bevel curvature, AO):  python surf.py <build dir> <atlas> [...]     atlases: arms rifle pistol sniper
+import numpy as np, json, sys, os, time
+from PIL import Image
+from scipy import ndimage as ndi
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import textures as T, rigdef as RD
+from textures import ss, mix, mixc, fbm, tri, plain, f4
+
+D = sys.argv[1]; T0 = time.time()
+STEEL, MAGS, BOLT, WOOD, GRIPW, FABRIC, LEATHER, PAD, SLEEVE, CUFF, BRASS, FABRIC2, HEM, VENT = range(1, 15)
+POLY, RUBBER, GLASS, BLUED, ALU, COPPER, GLOVE, WHITE, DARK, PARK, RED, OLIVE = range(15, 27)
+
+
+class Ctx:
+    def put(c, m, res):
+        if m.any(): c.col[m], c.rough[m], c.metal[m], c.hgt[m] = res
+
+
+def load(an):
+    c = Ctx(); meta = json.load(open(os.path.join(D, an + '_meta.json'))); bmin = np.array(meta['bmin'], f4); bmax = np.array(meta['bmax'], f4)
+    L = lambda s: np.load(os.path.join(D, an + '_' + s + '.npy')).astype(f4)
+    pidi = L('pid'); c.H, c.W = pidi.shape[:2]; c.valid = pidi[..., 0] > 0.4 / 32
+    c.iy, c.ix = ndi.distance_transform_edt(~c.valid, return_distances=False, return_indices=True)
+    c.P = (bmin + L('pos')[c.iy, c.ix] * (bmax - bmin)) * 1000.0
+    N = L('nrm')[c.iy, c.ix] * 2 - 1; N /= np.maximum(np.linalg.norm(N, axis=2, keepdims=True), 1e-4)
+    BV = L('bev')[c.iy, c.ix] * 2 - 1; BV /= np.maximum(np.linalg.norm(BV, axis=2, keepdims=True), 1e-4)
+    edge = np.linalg.norm(BV - N, axis=2).astype(f4); vf = c.valid.astype(f4)
+    ao = ndi.gaussian_filter(L('ao')[..., 0] * vf, 1.0) / np.maximum(ndi.gaussian_filter(vf, 1.0), 1e-3)
+    edge = ndi.gaussian_filter(edge * vf, 0.8) / np.maximum(ndi.gaussian_filter(vf, 0.8), 1e-3)
+    c.vi = np.nonzero(c.valid); c.M = M = len(c.vi[0])
+    c.p = c.P[c.vi]; c.n = N[c.vi]; c.e = edge[c.vi]; c.a = np.clip(ao[c.vi], 0, 1)
+    c.pid = np.rint(pidi[..., 0][c.vi] * 32).astype(np.int32); c.g = pidi[..., 1][c.vi]; c.tag = np.rint(pidi[..., 2][c.vi] * 32).astype(np.int32)
+    c.col = np.zeros((M, 3), f4); c.rough = np.full(M, 0.5, f4); c.metal = np.zeros(M, f4); c.hgt = np.zeros(M, f4)
+    c.scr = T.scratch_image(c.H, c.W, 5, 500)[c.vi]; c.xw = np.zeros(M, f4); c.stamp = np.zeros(M, f4); c.hadd = np.zeros(M, f4)
+    print(an, 'texels', M, 'cover %.2f' % (M / (c.H * c.W)), 'edge pct', np.percentile(c.e, [50, 90, 97, 99.5]).round(3), 'ao pct', np.percentile(c.a, [5, 50, 95]).round(2), flush=True)
+    return c
+
+
+def finish(c, an, hscale, aofloor=0.68):
+    c.col *= (aofloor + (1 - aofloor) * c.a ** 0.8)[:, None]
+
+    def img(vals, ch):
+        o = np.zeros((c.H, c.W, ch), f4) if ch > 1 else np.zeros((c.H, c.W), f4); o[c.vi] = vals; return o[c.iy, c.ix]
+    Hh = ndi.gaussian_filter(img(c.hgt * hscale, 1), 0.55); P = c.P
+    du = np.linalg.norm(np.roll(P, -1, 1) - np.roll(P, 1, 1), axis=2) / 2; dv = np.linalg.norm(np.roll(P, -1, 0) - np.roll(P, 1, 0), axis=2) / 2
+    med = float(np.median(du[c.valid])); du = np.clip(du, 0.6 * med, 3 * med); dv = np.clip(dv, 0.6 * med, 3 * med)
+    gx = np.clip((np.roll(Hh, -1, 1) - np.roll(Hh, 1, 1)) / 2 / du, -1.2, 1.2); gy = np.clip((np.roll(Hh, -1, 0) - np.roll(Hh, 1, 0)) / 2 / dv, -1.2, 1.2)
+    nz = 1 / np.sqrt(1 + gx * gx + gy * gy); nm = np.stack([-gx * nz, -gy * nz, nz], 2) * 0.5 + 0.5
+    orm = np.stack([np.clip(img(c.a, 1), 0.12, 1), np.clip(img(c.rough, 1), 0.06, 1), np.clip(img(c.metal, 1), 0, 1)], 2)
+
+    def save(arr, suf): Image.fromarray((np.clip(arr, 0, 1) * 255 + 0.5).astype(np.uint8)[::-1]).save(os.path.join(D, an + '_' + suf + '.png'))
+    save(img(c.col, 3), 'base'); save(nm, 'nrm'); save(orm, 'orm')
+    print(an, 'done, mm/texel %.3f' % med, 'mean col', c.col.mean(0).round(3), round(time.time() - T0, 1), 's', flush=True)
+
+
+# ------------------------------------------------------------------ generic materials
+def m_metal(c, m, base, bare=(0.52, 0.52, 0.51), rough=0.42, wear=1.0, rust=0.25, sheen=0.12, scratch=0.3, dirt=1.0):
+    p, n, e, a, g = c.p[m], c.n[m], c.e[m], c.a[m], c.g[m]; M = len(p); base = np.asarray(base, f4)
+    lf = fbm(p, 1 / 40., 3, 1); mf = fbm(p, 1 / 7., 4, 2); hf = fbm(p, 1 / 0.8, 2, 3); pt = fbm(p, 1 / 16., 4, 4); cav = np.clip(1 - a, 0, 1)
+    col = np.tile(base, (M, 1)) * (0.82 + 0.36 * mf)[:, None] * (0.9 + 0.2 * g)[:, None]
+    col = mixc(col, base * np.array([1.25, 1.05, 0.95], f4), ss(0.5, 0.78, lf) * 0.5)
+    r = rough + 0.2 * (mf - 0.5) + 0.1 * (lf - 0.5) - sheen * ss(0.55, 0.75, pt); mt = np.full(M, 0.9, f4)
+    wf = ss(0.3, 0.72, fbm(p, 1 / 24., 3, 12))
+    w = wear * (ss(0.14, 0.42, e * (0.25 + 1.2 * mf) * (0.3 + 1.1 * wf)) * ss(0.4, 0.8, a) + 0.5 * ss(0.68, 0.84, pt) * ss(0.3, 0.7, hf + 0.4 * mf - 0.2) * wf)
+    thin = np.clip(ss(0.03, 0.25, e) * (0.25 + 0.5 * wf), 0, 1) * min(wear, 1.5); col = mixc(col, base * 1.9 + 0.05, thin * 0.5)
+    sc2 = scratch * c.scr[m] * ss(0.45, 0.7, fbm(p, 1 / 25., 2, 6)); w = np.clip(w + c.xw[m] + sc2, 0, 1)
+    col = mixc(col, np.asarray(bare, f4) * (0.8 + 0.35 * hf)[:, None], w); r = mix(r, 0.26 + 0.14 * hf, w); mt = mix(mt, 1.0, w)
+    ru = np.clip(3.0 * rust * ss(0.64, 0.8, fbm(p, 1 / 4.5, 4, 9)) * ss(0.48, 0.72, fbm(p, 1 / 35., 3, 10)) * (0.35 + 0.9 * cav + 0.6 * w), 0, 1)
+    col = mixc(col, np.array([0.30, 0.165, 0.09], f4) * (0.7 + 0.6 * hf)[:, None], ru); r = mix(r, 0.82, ru); mt = mix(mt, 0.15, ru)
+    du = np.clip(dirt * (ss(0.18, 0.6, cav) * (0.4 + 0.7 * mf) + 0.1 * ss(0.6, 0.95, n[:, 2]) * lf), 0, 0.85)
+    col = mixc(col, (0.25, 0.225, 0.19), du); r = mix(r, 0.88, du); mt = mt * (1 - du)
+    return col, r, mt, 0.01 * (hf - 0.5) + 0.008 * (mf - 0.5) - 0.012 * w + 0.015 * ru - 0.01 * sc2
+
+
+def m_poly(c, m, base, rough=0.62, grain=1.0):
+    p, n, e, a = c.p[m], c.n[m], c.e[m], c.a[m]; hf = fbm(p, 1 / 0.45, 2, 91); mf = fbm(p, 1 / 8., 3, 92); lf = fbm(p, 1 / 45., 3, 93)
+    col = np.asarray(base, f4) * (0.85 + 0.3 * mf + 0.12 * (hf - 0.5))[:, None]
+    wm = np.clip(ss(0.1, 0.36, e * (0.5 + mf)) + 0.5 * ss(0.62, 0.8, fbm(p, 1 / 14., 3, 94)), 0, 1); col = mixc(col, col * 1.7 + 0.035, wm * 0.5)
+    du = np.clip(ss(0.2, 0.62, 1 - a) * (0.5 + 0.6 * mf) + 0.1 * ss(0.6, 0.95, n[:, 2]) * lf, 0, 0.8); col = mixc(col, (0.27, 0.245, 0.2), du * 0.7)
+    return col, rough + 0.1 * (mf - 0.5) - 0.18 * wm + 0.2 * du, np.zeros(len(p), f4), grain * 0.03 * (hf - 0.5)
+
+
+def m_glass(c, m, axis_c):
+    """multi-coated lens: colour drifts from violet in the centre to green at the rim"""
+    p = c.p[m]; rr = np.hypot(p[:, 0] - axis_c[0], p[:, 2] - axis_c[1]); k = np.clip(rr / max(rr.max(), 1e-3), 0, 1)[:, None]
+    col = (1 - k) * np.array([0.20, 0.05, 0.42], f4) + k * np.array([0.05, 0.30, 0.22], f4)
+    return col * 0.8, np.full(len(p), 0.07, f4), np.ones(len(p), f4), np.zeros(len(p), f4)
+
+
+def flat(c, m, col, rough, metal=0.0, noise=0.2):
+    hf = fbm(c.p[m], 1 / 1.2, 2, 80)
+    return np.asarray(col, f4) * (1 - noise / 2 + noise * hf)[:, None], np.full(int(m.sum()), rough, f4), np.full(int(m.sum()), metal, f4), 0.02 * (hf - 0.5)
+
+
+def common(c, steel=(0.125, 0.13, 0.145)):
+    """default material per part id; hooks override or extend"""
+    pid = c.pid
+    for pv, kw in ((STEEL, dict(base=steel, rough=0.46)), (MAGS, dict(base=(0.15, 0.15, 0.155), rough=0.5, wear=1.5, rust=0.4)),
+                   (BLUED, dict(base=(0.055, 0.06, 0.075), rough=0.33, wear=0.8, rust=0.08, sheen=0.14)), (PARK, dict(base=(0.17, 0.175, 0.17), rough=0.62, wear=0.7, rust=0.15, sheen=0.05)),
+                   (ALU, dict(base=(0.045, 0.047, 0.052), bare=(0.72, 0.73, 0.75), rough=0.45, wear=0.7, rust=0.0, sheen=0.08, scratch=0.2))):
+        m = pid == pv
+        if m.any(): c.put(m, m_metal(c, m, **kw))
+    m = pid == BOLT
+    if m.any(): c.put(m, T.m_bolt(c.p[m], c.n[m], c.e[m], c.a[m], c.g[m], c.tag[m], c.scr[m] * 0.4, c.xw[m]))
+    for pv in (BRASS, COPPER):
+        m = pid == pv
+        if m.any():
+            col, r, mt, h = T.m_brass(c.p[m], c.n[m], c.e[m], c.a[m])
+            if pv == COPPER: col = col * np.array([0.95, 0.62, 0.5], f4)
+            c.put(m, (col, r, mt, h))
+    for pv, grip in ((WOOD, False), (GRIPW, True)):
+        m = pid == pv
+        if m.any(): c.put(m, T.m_wood(c.p[m], c.n[m], c.e[m], c.a[m], c.tag[m], grip))
+    for pv, col, r, mt in ((VENT, (0.06, 0.045, 0.035), 0.85, 0.0), (DARK, (0.02, 0.02, 0.022), 0.8, 0.0), (WHITE, (0.82, 0.82, 0.78), 0.55, 0.0), (RED, (0.55, 0.06, 0.04), 0.5, 0.0)):
+        m = pid == pv
+        if m.any(): c.put(m, flat(c, m, col, r, mt))
+    m = pid == POLY
+    if m.any(): c.put(m, m_poly(c, m, (0.045, 0.047, 0.045)))
+    m = pid == OLIVE
+    if m.any(): c.put(m, m_poly(c, m, (0.17, 0.185, 0.115), 0.7, 2.2))
+    m = pid == RUBBER
+    if m.any(): c.put(m, m_poly(c, m, (0.03, 0.03, 0.032), 0.8, 1.5))
+
+
+def engrave(c):
+    c.hgt += c.hadd - 0.16 * c.stamp; c.col *= (1 - 0.5 * c.stamp)[:, None]; c.rough[:] = mix(c.rough, 0.8, c.stamp * 0.7); c.metal *= (1 - 0.5 * c.stamp)
+
+
+# ------------------------------------------------------------------ arms
+def hook_arms(c):
+    q = c.p.copy(); q[:, 0] -= RD.OFFX; x, y, z = q[:, 0], q[:, 1], q[:, 2]; n = c.n; M = c.M
+    glove = c.pid == GLOVE; sl = ~glove; sm = np.zeros(M, f4); d = -y
+    sm[sl & ((np.abs(d - 34.5) < 0.8) | (np.abs(d - 30.5) < 0.8))] = 0.7
+    under = sl & (z < 0) & (d > 38); sm[under & (np.abs(np.abs(x) - 3.4) < 0.7)] = 0.7; sm[under & (np.abs(x) < 0.7)] = 1.0
+    c.put(sl, T.m_cloth(c.p[sl], n[sl], c.e[sl], c.a[sl], sm[sl], (0.27, 0.29, 0.165), 1.7, 0.92, 'sleeve'))
+    gi = np.nonzero(glove)[0]; xg, yg, zg = x[gi], y[gi], z[gi]; ng = n[gi]; G = len(gi)
+    Tt, Sc, Zb, idx = RD.fields(q[gi].astype(np.float64)); ar = np.arange(G)
+    nd = ng[:, 2].copy(); th = idx == 0; nd[th] = ng[th] @ RD.chain('Thumb')[3][1].astype(f4)
+    t = np.where(idx >= 0, Tt[np.maximum(idx, 0), ar], 0.0); tot = np.array([RD.cumlen(RD.chain(f)[0])[3] for f in RD.FN])[np.maximum(idx, 0)]
+    l0 = np.array([RD.cumlen(RD.chain(f)[0])[1] for f in RD.FN])[np.maximum(idx, 0)]
+    cuff = yg < -3; strap = cuff & (yg > -24.5); tab = strap & (zg > 21.4) & (np.abs(xg - 2) < 18.5) & (np.abs(yg + 13.5) < 9)
+    ptop = 14.2 * (1 - np.clip(np.abs(xg) / 43.0, 0, 0.999) ** 2.7) ** (1 / 2.7); ky = np.interp(xg, [-29, -8, 12, 30], [92, 96, 92, 82]) - 8
+    guard = (~cuff) & (zg > ptop + 0.9) & (np.abs(yg - ky) < 12.8) & (np.abs(xg) < 41) & (zg > 9)
+    back = (~cuff) & (~guard) & (nd > 0.28); palm = (~cuff) & (~guard) & (nd < -0.30); side = (~cuff) & (~guard) & (~back) & (~palm)
+    s = np.zeros(G, f4)
+    s[(~cuff) & ((np.abs(nd - 0.28) < 0.05) | (np.abs(nd + 0.30) < 0.05)) & (yg > 6)] = 0.7
+    s[np.abs(yg + 3) < 0.7] = 1.0; s[cuff & (np.abs(np.abs(yg + 14.2) - 9.2) < 0.55)] = 0.7
+    sd = T.sd_rbox(xg, yg, 10, 36, 24, 24, 9); patch = palm & (sd < 0) & (idx < 0); s[palm & (idx < 0) & (np.abs(sd + 2.0) < 0.55)] = 0.7
+    tip = palm & (idx >= 0) & (idx <= 2) & (t > tot - 26); s[palm & (idx >= 0) & (idx <= 2) & (np.abs(t - (tot - 26)) < 0.6)] = 0.7
+    s[guard & (zg < ptop + 1.6)] = 1.0
+    P_, N_, E_, A_ = c.p[gi], ng, c.e[gi], c.a[gi]
+
+    def sub(m, res): c.put(gi_mask(m), res)
+
+    def gi_mask(m):
+        o = np.zeros(M, bool); o[gi[m]] = True; return o
+    for m, fn in ((back, lambda m: T.m_cloth(P_[m], N_[m], E_[m], A_[m], s[m], (0.30, 0.275, 0.185), 1.3, 0.88, 'glove')),
+                  (side, lambda m: T.m_cloth(P_[m], N_[m], E_[m], A_[m], s[m], (0.085, 0.087, 0.08), 1.1, 0.9, 'glove')),
+                  (palm, lambda m: T.m_leather(P_[m], N_[m], E_[m], A_[m], s[m])),
+                  (guard, lambda m: T.m_pad(P_[m], N_[m], E_[m], A_[m], s[m], False)),
+                  (cuff, lambda m: T.m_pad(P_[m], N_[m], E_[m], A_[m], s[m], True))):
+        if m.any():
+            col, r, mt, h = fn(m)
+            if m is palm:
+                col = col * np.where(patch[m] | tip[m], 0.62, 1.0)[:, None] * np.array([0.85, 0.9, 1.0], f4); h = h + np.where(patch[m] | tip[m], 0.05, 0.0)
+                dots = tip[m] * (np.sin(P_[m][:, 0] * 2.1) * np.sin(P_[m][:, 1] * 2.1) * np.sin(P_[m][:, 2] * 2.1) > 0.3); h = h + 0.07 * dots; r = r - 0.12 * dots
+            if m is guard: h = h + 0.07 * np.cos(2 * np.pi * xg[m] / 5.5) * (zg[m] > ptop[m] + 2.6)
+            if m is cuff:
+                st = strap[m] & ~tab[m]; col = np.where(st[:, None], col * 1.25 + 0.012, col); h = h + 0.05 * np.cos(2 * np.pi * yg[m] / 1.6) * (~strap[m])
+                col = np.where(tab[m][:, None], np.array([0.11, 0.11, 0.105], f4) * (0.8 + 0.4 * fbm(P_[m], 1 / 0.7, 2, 5))[:, None], col)
+            if m is back:
+                rib = (idx[m] >= 1) & (np.abs(t[m] - l0[m]) < 8.5); h = h + 0.09 * np.cos(2 * np.pi * (t[m] - l0[m]) / 4.2) * rib; col = col * np.where(rib, 0.8, 1.0)[:, None]
+            sub(m, (col, r, mt, h))
+
+
+# ------------------------------------------------------------------ rifle
+def hook_rifle(c):
+    p, n, tag, M = c.p, c.n, c.tag, c.M; x, y, z = p[:, 0], p[:, 1], p[:, 2]
+    Ls = (tag == 1) & (n[:, 0] < -0.8); Rs = (tag == 1) & (n[:, 0] > 0.8)
+    c.stamp[Ls] = T.stamp_text(-y[Ls], z[Ls], (-186, -140, 6, 44), [('^', -183, 33, 5.0), ('1976', -176, 33.5, 3.4), ('КН 4831', -183, 26, 3.4)])
+    c.stamp[Rs] = T.stamp_text(y[Rs], z[Rs], (72, 92, 0, 34), [('АВ', 75, 19, 3.6), ('ОД', 75, 3.5, 3.6)])
+    for m in (Ls, Rs):
+        sd = T.sd_rbox(y[m], z[m], 108, 22, 19, 6.5, 6.0); c.xw[m] += 0.4 * np.exp(-(sd / 0.7) ** 2); c.hadd[m] += -0.35 * ss(1.2, -1.2, sd)
+    rr = np.hypot(y + 28, z - 30); ang = np.degrees(np.arctan2(z - 30, y + 28)); arc = Rs & (ang > -34) & (ang < 6)
+    c.xw[arc] += np.exp(-((rr[arc] - 97.5) / 1.0) ** 2) * (0.5 + 0.8 * fbm(p[arc], 1 / 3., 2, 77))
+    leaf = (tag == 2) & (n[:, 2] > 0.6); tick = np.zeros(M, f4)
+    for k in range(9): tick[leaf] = np.maximum(tick[leaf], np.exp(-((y[leaf] - (164 + 5.6 * k)) / 0.22) ** 2) * (np.abs(x[leaf]) > 1.2))
+    c.stamp = np.maximum(c.stamp, tick)
+    mg = tag == 4; c.xw[mg] += 0.3 * ss(-90, -5, z[mg]) * ss(0.4, 0.7, fbm(p[mg], (1 / 1.2, 1 / 30., 1 / 30.), 3, 78))
+    top = (c.pid == MAGS) & (z > -6); c.a[top] = np.maximum(c.a[top], 0.7)
+    common(c, (0.17, 0.175, 0.19)); engrave(c)
+    inner = (tag == 21) & (c.pid == STEEL); c.col[inner] *= 0.6
+
+
+def hook_pistol(c): common(c); engrave(c)
+def hook_sniper(c): common(c); engrave(c)
+
+
+HOOKS = dict(arms=(hook_arms, 1.6), rifle=(hook_rifle, 3.0), pistol=(hook_pistol, 3.0), sniper=(hook_sniper, 3.0))
+if __name__ == '__main__':
+    for an in sys.argv[2:]:
+        c = load(an); HOOKS[an][0](c); finish(c, an, HOOKS[an][1])

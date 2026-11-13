@@ -1,0 +1,23 @@
+glove remesh 128892 -> 7000 tris
+ArmsMesh tris 17320 verts 8668
+Info: Saved as "arms.blend"
+STAGE arms geo ok 3.9 s
+00:34.000  blend            | Read blend: "E:\fable\shootinggame\tools\weapon\build\arms.blend"
+00:38.671  render           | Saved: 'E:\fable\shootinggame\tools\_preview\weapon\arms_rest_top.png'
+00:42.968  render           | Saved: 'E:\fable\shootinggame\tools\_preview\weapon\arms_rest_palm.png'
+00:47.437  render           | Saved: 'E:\fable\shootinggame\tools\_preview\weapon\arms_rest_side.png'
+00:51.296  render           | Saved: 'E:\fable\shootinggame\tools\_preview\weapon\arms_fp.png'
+00:56.921  render           | Saved: 'E:\fable\shootinggame\tools\_preview\weapon\arms_left_grip.png'
+01:01.484  render           | Saved: 'E:\fable\shootinggame\tools\_preview\weapon\arms_below.png'
+01:05.875  render           | Saved: 'E:\fable\shootinggame\tools\_preview\weapon\arms_fist.png'
+01:10.296  render           | Saved: 'E:\fable\shootinggame\tools\_preview\weapon\arms_fist_front.png'
+Could not find platform independent libraries <prefix>
+sheet E:\fable\shootinggame\tools\_preview\weapon\arms_test.png (1000, 374)
+seat step 51 left grip {'Thumb': [0, 0, 0, 5, 5], 'Index': [33, 74, 47, 0], 'Middle': [75, 72, 40, 0], 'Ring': [88, 57, 35, 0], 'Pinky': [89, 44, 24, 0]}
+R shoulder moved False
+L shoulder moved False
+STAGE arms test ok 36.9 s
+TOTAL 40.8 s
+Blender 5.2.3 LTS (hash e13b728c6880 built 2026-10-22 01:37:16)
+
+Blender quit

@@ -195,18 +195,66 @@ export class FlowField {
   reachable(x, z) { const c = this.cellOf(x, z); return c >= 0 && this.dist[c] < 65535; }
 }
 
+
+// ---------------------------------------------------------------- infected types
+// Everything that tells one kind from another lives here. `model` names the glTF
+// (public/assets/models/<model>.glb); until that file exists the villager stands in,
+// scaled to `tall` metres, widened by `bulk` and tinted. Extra clips are optional:
+// `clips.run` falls back to Run, `clips.roar` and `clips.slam` to Attack.
+// Convention for the boss clips: Roar lasts the charge wind-up (0.9 s), the fists of
+// Slam strike the ground 0.8 s into the clip.
+export const INFECTED = {
+  walker: {
+    name: 'Walker', model: 'zombie', tall: 0, bulk: 1, size: [0.95, 1.05], tint: null, gait: 'walk', voice: 1,
+    speed: [0.9, 1.3], accel: 3, brake: 7, turn: 3.4, health: 100, bodyMult: 1, mass: 1, radius: 0.3,
+    reach: 1.55, damage: [11, 17], knock: 0, attackRate: 1, flinch: 'any', slowOnHit: true,
+    clips: { run: 'Run' }, corpse: 22, pool: 0.5, drop: 0.04,
+  },
+  runner: {
+    name: 'Runner', model: 'runner', tall: 0, bulk: 0.9, size: [0.93, 1.0], tint: [1.0, 0.84, 0.78], gait: 'auto', voice: 1.15,
+    speed: [4.5, 5.5], accel: 9, brake: 12, turn: 6, health: 60, bodyMult: 1, mass: 0.8, radius: 0.28,
+    reach: 1.5, damage: [8, 12], knock: 0, attackRate: 1.25, flinch: 'any', slowOnHit: true, flank: true,
+    clips: { run: 'Sprint' }, corpse: 18, pool: 0.42, drop: 0.04,
+  },
+  brute: {
+    name: 'Brute', model: 'brute', tall: 2.1, bulk: 1.28, size: [0.98, 1.02], tint: [0.6, 0.58, 0.56], gait: 'auto', voice: 0.75,
+    speed: [1.6, 1.6], accel: 2.2, brake: 5, turn: 2.3, health: 450, bodyMult: 0.5, mass: 4, radius: 0.46,
+    reach: 2.0, damage: [26, 32], knock: 7.5, attackRate: 0.8, flinch: 'head', slowOnHit: false,
+    clips: { run: 'Run' }, corpse: 26, pool: 0.75, drop: 0.3,
+  },
+  boss: {
+    name: 'Abomination', model: 'boss', tall: 2.5, bulk: 1.3, size: [1, 1], tint: [0.5, 0.36, 0.34], gait: 'auto', voice: 0.55, boss: true,
+    speed: [2.5, 2.5], accel: 4, brake: 6, turn: 2.6, health: 2600, bodyMult: 1, mass: 12, radius: 0.6,
+    reach: 2.6, damage: [30, 36], knock: 8, attackRate: 0.8, flinch: 'none', slowOnHit: false,
+    charge: { min: 9, max: 34, windup: 0.9, speed: 7, accel: 12, turn: 0.9, time: 3.2, damage: 38, knock: 10, cooldown: 8, recover: 1.1 },
+    slam: { range: 4.6, radius: 6.5, windup: 0.8, damage: 34, knock: 7, cooldown: 6.5, recover: 0.9 },
+    clips: { run: 'Run', roar: 'Roar', slam: 'Slam' }, corpse: 40, pool: 1.1, drop: 1,
+  },
+};
+const POOL_SIZE = { zombie: 26, runner: 12, brute: 5, boss: 2 };
+const CLIP_LIMITS = { Walk: [0.2, 2.4], Run: [1.5, 7], Sprint: [2.5, 9] };
+
+async function fetchGlb(loader, name) {
+  try {
+    const res = await fetch(`./assets/models/${name}.glb`);
+    if (!res.ok) return null;
+    const buf = await res.arrayBuffer();
+    if (buf.byteLength < 20 || new DataView(buf).getUint32(0, true) !== 0x46546c67) return null;   // not a binary glTF
+    return await loader.parseAsync(buf, './assets/models/');
+  } catch (e) { return null; }
+}
+const wrapPi = (a) => Math.atan2(Math.sin(a), Math.cos(a));
+
 // ---------------------------------------------------------------- zombies
 export class Zombies {
   constructor(engine, collision, layout, fx, audio, player) {
     this.engine = engine; this.col = collision; this.layout = layout; this.fx = fx; this.audio = audio; this.player = player;
     this.list = [];
-    this.pool = [];
-    this.template = null;
-    this.clips = {}; this.materials = []; this.lods = null;
-    this.clipSpeed = { Walk: 0.45, Run: 3.4 };   // ground speed of the clips at time scale 1 (measured on load)
-    this.clipInfo = {};
+    this.sets = {};            // model name -> { template, clips, materials, tints, lods, clipSpeed, clipInfo, pool, height }
+    this._none = { name: '', template: null, clips: {}, materials: [], tints: {}, lods: null, clipSpeed: { Walk: 0.45, Run: 3.4 }, clipInfo: {}, pool: [], height: 1.8 };
     this.flow = null; this.flowT = 0;
-    this.kills = 0;
+    this.kills = 0; this.slams = 0;
+    this.boss = null;          // the boss in play (alive or just fallen), for the HUD
     this.onKill = null;
     this.onStuck = null;       // (zombie) => void, the director may move it
     this.maxActive = 26;
@@ -217,58 +265,82 @@ export class Zombies {
     this._sphere = new THREE.Sphere(new THREE.Vector3(), 3.2);
   }
 
+  // the villager set under the names the rest of the code knows
+  get base() { return this.sets.zombie || this._none; }
+  get template() { return this.base.template; }
+  get clips() { return this.base.clips; }
+  get materials() { return this.base.materials; }
+  get lods() { return this.base.lods; }
+  get clipSpeed() { return this.base.clipSpeed; }
+  get clipInfo() { return this.base.clipInfo; }
+  get pool() { return this.base.pool; }
+
   async load() {
-    let gltf = null;
-    try {
-      gltf = await new GLTFLoader().loadAsync('./assets/models/zombie.glb');
-    } catch (e) {
-      console.info('[zombies] zombie.glb missing, using placeholder bodies');
+    const loader = new GLTFLoader();
+    const names = [...new Set(Object.values(INFECTED).map((d) => d.model))];
+    const gltfs = await Promise.all(names.map((nm) => fetchGlb(loader, nm)));
+    names.forEach((nm, i) => { if (gltfs[i]) this.sets[nm] = this._makeSet(nm, gltfs[i]); });
+    if (!this.sets.zombie) { console.info('[zombies] zombie.glb missing, using placeholder bodies'); return; }
+    // build the whole pool up front so nothing is cloned or compiled mid-fight
+    for (const nm in this.sets) {
+      const set = this.sets[nm];
+      for (let i = 0; i < (POOL_SIZE[nm] || 4); i++) { const z = this._create(set); z.root.visible = false; set.pool.push(z); }
     }
-    if (!gltf) { this.template = null; return; }
-    this.template = gltf.scene;
-    for (const c of gltf.animations) this.clips[c.name] = c;
-    const loader = new THREE.TextureLoader();
-    const mats = [];
-    let base = null, mesh = null;
-    gltf.scene.traverse((o) => { if (o.isSkinnedMesh && !base) { base = o.material; mesh = o; } });
+  }
+
+  _makeSet(name, gltf) {
+    const set = { name, template: gltf.scene, clips: {}, materials: [], tints: {}, lods: null, clipSpeed: { Walk: 0.45, Run: 3.4 }, clipInfo: {}, pool: [], height: 1.8 };
+    for (const c of gltf.animations) set.clips[c.name] = c;
+    let base = null, mesh = null, head = null;
+    gltf.scene.traverse((o) => { if (o.isSkinnedMesh && !base) { base = o.material; mesh = o; } if (o.isBone && key(o.name) === 'Head') head = o; });
     if (base) {
-      mats.push(base);
-      for (const f of ['zombie_col_b.jpg', 'zombie_col_c.jpg']) {
-        const m = base.clone();
-        const t = loader.load(`./assets/models/${f}`, undefined, undefined, () => {});
-        t.flipY = false; t.colorSpace = THREE.SRGBColorSpace;
-        t.anisotropy = 4;
-        m.map = t;
-        mats.push(m);
+      const variants = [base];
+      if (name === 'zombie') {
+        const loader = new THREE.TextureLoader();
+        for (const f of ['zombie_col_b.jpg', 'zombie_col_c.jpg']) {
+          const m = base.clone();
+          const t = loader.load(`./assets/models/${f}`, undefined, undefined, () => {});
+          t.flipY = false; t.colorSpace = THREE.SRGBColorSpace;
+          t.anisotropy = 4;
+          m.map = t;
+          variants.push(m);
+        }
+        // tinted copies for the kinds that borrow this body (made before anything is compiled)
+        for (const type in INFECTED) {
+          const d = INFECTED[type];
+          if (d.tint && d.model !== 'zombie') set.tints[type] = variants.map((v) => { const m = v.clone(); m.color.multiply(new THREE.Color(d.tint[0], d.tint[1], d.tint[2])); return m; });
+        }
       }
-      mats.forEach((m, i) => {
+      const prep = (m, i) => {
         // skin and cloth are dielectric and matte: no metal, no mirror-like sheen
         m.metalness = 0; m.metalnessMap = null;
         m.roughness = 1; m.envMapIntensity = 0.85;
         if (m.map) m.map.anisotropy = 4;
         enhance(m, { key: 'zombie' }); m.userData.variant = i;
-      });
+      };
+      variants.forEach(prep);
+      for (const t in set.tints) set.tints[t].forEach(prep);
+      set.materials = variants;
       // coarser meshes for the distance: a crowd of sub-pixel triangles is what costs frame time
-      this.lods = LOD_CELL.map((cell) => (cell ? decimate(mesh.geometry, cell) : mesh.geometry));
+      set.lods = LOD_CELL.map((cell) => (cell ? decimate(mesh.geometry, cell) : mesh.geometry));
     }
-    this.materials = mats;
-    this._measureClips(gltf.scene);
-    // build the whole pool up front so nothing is cloned or compiled mid-fight
-    for (let i = 0; i < this.maxActive; i++) { const z = this._create(); z.root.visible = false; this.pool.push(z); }
+    gltf.scene.updateMatrixWorld(true);
+    if (head) { const y = head.getWorldPosition(_a).y; if (y > 0.8) set.height = y + 0.2; }
+    this._measureClips(gltf.scene, set);
+    return set;
   }
 
   // Ground speed of the locomotion clips: how fast the supporting foot travels
   // backwards under the body. Playing a clip at (speed / clipSpeed) keeps the
   // feet from sliding.
-  _measureClips(scene) {
+  _measureClips(scene, set) {
     const bones = {};
     scene.traverse((o) => { if (o.isBone) bones[key(o.name)] = o; });
     const feet = [bones.FootL, bones.FootR];
     if (!feet[0] || !feet[1]) return;
     const mixer = new THREE.AnimationMixer(scene);
-    const lim = { Walk: [0.2, 2.4], Run: [1.5, 7] };
-    for (const name of ['Walk', 'Run']) {
-      const clip = this.clips[name];
+    for (const name in CLIP_LIMITS) {
+      const clip = set.clips[name];
       if (!clip) continue;
       const a = mixer.clipAction(clip);
       a.play();
@@ -295,11 +367,11 @@ export class Zombies {
         for (let i = 0; i < N; i++) if (ys[f][i] < ymin + 0.03 && ys[f][i + 1] < ymin + 0.03) { planted += dtS; back += zs[f][i] - zs[f][i + 1]; }
       }
       const stance = planted / (2 * T);
-      this.clipInfo[name] = { duration: T, median, stride: range / 2, stance, strideSpeed: stance > 0.05 ? range / 2 / (stance * T) : 0 };
+      set.clipInfo[name] = { duration: T, median, stride: range / 2, stance, strideSpeed: stance > 0.05 ? range / 2 / (stance * T) : 0 };
       // a walk always has a foot down, so the median is right; a run has flight phases, so only planted samples count
       const speed = stance >= 0.4 || planted <= 0 ? median : back / planted;
-      this.clipInfo[name].speed = speed;
-      if (speed >= lim[name][0] && speed <= lim[name][1]) this.clipSpeed[name] = speed;
+      set.clipInfo[name].speed = speed;
+      if (speed >= CLIP_LIMITS[name][0] && speed <= CLIP_LIMITS[name][1]) set.clipSpeed[name] = speed;
     }
     mixer.stopAllAction();
     mixer.uncacheRoot(scene);
@@ -311,19 +383,19 @@ export class Zombies {
     this.flow = new FlowField(this.col, this.layout, c[0], c[1]);
   }
 
-  _create() {
-    const z = { root: new THREE.Group(), bones: {}, actions: {}, mixer: null, pos: new THREE.Vector3(), vel: new THREE.Vector3(), wander: new THREE.Vector3(1, 0, 0), tilt: new THREE.Quaternion(), lod: 0 };
-    if (this.template) {
-      const model = SkeletonUtils.clone(this.template);
+  _create(set) {
+    const z = { root: new THREE.Group(), bones: {}, actions: {}, mixer: null, pos: new THREE.Vector3(), vel: new THREE.Vector3(), wander: new THREE.Vector3(1, 0, 0), tilt: new THREE.Quaternion(), lod: 0, set };
+    if (set.template) {
+      const model = SkeletonUtils.clone(set.template);
       model.traverse((o) => {
         if (o.isBone) z.bones[key(o.name)] = o;
         if (o.isSkinnedMesh) { o.castShadow = true; o.receiveShadow = true; o.frustumCulled = false; z.mesh = o; }
       });
       z.root.add(model);
       z.mixer = new THREE.AnimationMixer(model);
-      for (const name in this.clips) {
-        const a = z.mixer.clipAction(this.clips[name]);
-        if (name.startsWith('Death') || name === 'Attack' || name.startsWith('Hit')) { a.setLoop(THREE.LoopOnce, 1); a.clampWhenFinished = true; }
+      for (const name in set.clips) {
+        const a = z.mixer.clipAction(set.clips[name]);
+        if (name.startsWith('Death') || name === 'Attack' || name.startsWith('Hit') || name === 'Roar' || name === 'Slam') { a.setLoop(THREE.LoopOnce, 1); a.clampWhenFinished = true; }
         z.actions[name] = a;
       }
     } else {
@@ -335,14 +407,15 @@ export class Zombies {
     return z;
   }
 
+  _release(z) { z.root.visible = false; z.set.pool.push(z); if (this.boss === z) this.boss = null; }
+
   // frees the oldest corpse when the list is full
   _recycle() {
     let best = -1, bt = -1;
     for (let i = 0; i < this.list.length; i++) { const z = this.list[i]; if (!z.alive && z.stateT > bt) { bt = z.stateT; best = i; } }
     if (best < 0) return false;
-    const z = this.list[best];
-    z.root.visible = false;
-    this.list.splice(best, 1); this.pool.push(z);
+    this._release(this.list[best]);
+    this.list.splice(best, 1);
     return true;
   }
 
@@ -350,32 +423,43 @@ export class Zombies {
     const gy = this.col.terrain.heightAt(x, zz);
     z.pos.set(x, this.col.floorAt(x, gy + 1.0, zz, 2.2), zz);
     z.vel.set(0, 0, 0);
+    z.spd = 0; z.gs = 0; z.yawV = 0; z.navX = 0; z.navZ = 0; z.losN = 0;
     z.floorY = z.pos.y; z.floorT = 0;
     z.probeX = x; z.probeZ = zz; z.probeT = 0; z.stuck = 0; z.avoidT = 0; z.losT = 0; z.direct = false;
     z.root.position.copy(z.pos);
   }
 
-  spawn(x, z, opts = {}) {
+  // opts: type ('walker' | 'runner' | 'brute' | 'boss'), aware, yaw, variant, speed, healthMult (older callers: runner true / false)
+  spawn(x, zz, opts = {}) {
+    const type = opts.type || ((opts.runner ?? Math.random() < 0.3) ? 'runner' : 'walker');
+    const def = INFECTED[type] || INFECTED.walker;
     if (this.list.length >= this.maxActive && !this._recycle()) return null;
-    const zb = this.pool.pop() || this._create();
-    const runner = opts.runner ?? Math.random() < 0.3;
-    this.place(zb, x, z);
+    const own = this.sets[def.model], set = own || this.base;
+    const zb = set.pool.pop() || this._create(set);
+    zb.type = type; zb.def = def; zb.runner = type === 'runner'; zb.borrowed = !own;
+    this.place(zb, x, zz);
     zb.yaw = opts.yaw ?? Math.random() * 6.28;
-    zb.state = 'idle'; zb.stateT = 0; zb.health = 100; zb.alive = true;
-    zb.runner = runner;
-    // speeds stay within what the clips can cover without the feet skating
-    const cs = this.clipSpeed;
-    zb.speed = opts.speed ?? (runner ? clamp(3.5 + Math.random() * 1.0, cs.Run * 0.8, cs.Run * 1.5) : clamp(0.85 + Math.random() * 0.35, cs.Walk * 0.8, cs.Walk * 2.3));
+    zb.state = 'idle'; zb.stateT = 0; zb.alive = true;
+    zb.maxHealth = def.health * (opts.healthMult ?? 1); zb.health = zb.maxHealth;
+    zb.scale = (zb.borrowed && def.tall ? def.tall / set.height : 1) * (def.size[0] + Math.random() * (def.size[1] - def.size[0]));
+    zb.bulk = zb.borrowed ? def.bulk : 1;
+    zb.rad = def.radius;
+    zb.root.scale.set(zb.scale * zb.bulk, zb.scale, zb.scale * zb.bulk);
+    zb.speed = opts.speed ?? (def.speed[0] + Math.random() * (def.speed[1] - def.speed[0]));
     zb.aware = opts.aware ?? false;
-    zb.attackHit = false; zb.attackCd = 0; zb.slow = 0; zb.groan = 2 + Math.random() * 6; zb.fade = 0; zb.corpseT = 22;
-    zb.scale = 0.95 + Math.random() * 0.1;
-    zb.root.scale.setScalar(zb.scale);
+    zb.attackHit = false; zb.attackCd = 0; zb.slow = 0; zb.groan = 2 + Math.random() * 6; zb.fade = 0; zb.corpseT = def.corpse; zb.pooled = false;
+    zb.chargeCd = 2.5 + Math.random() * 2.5; zb.slamCd = 1.5; zb.chargeHit = false; zb.recoverT = 0;
+    zb.side = Math.random() < 0.5 ? -1 : 1; zb.moving = false; zb.gait = '';
     zb.root.visible = true;
     zb.wander.set(Math.random() - 0.5, 0, Math.random() - 0.5).normalize();
     zb.wanderT = 0; zb.wanderGo = false; zb.seed = Math.random() * 100;
-    if (zb.mesh && this.materials.length && zb.mesh.isSkinnedMesh) zb.mesh.material = this.materials[opts.variant ?? Math.floor(Math.random() * this.materials.length)];
+    if (zb.mesh && zb.mesh.isSkinnedMesh && set.materials.length) {
+      const pick = (zb.borrowed && set.tints[type]) || set.materials;
+      zb.mesh.material = pick[(opts.variant ?? Math.floor(Math.random() * pick.length)) % pick.length];
+    }
     if (zb.mixer) { zb.mixer.stopAllAction(); zb.current = null; zb.currentName = ''; this._play(zb, 'Idle', 0); zb.mixer.update(Math.random() * 2); }
     zb.root.rotation.set(0, zb.yaw, 0);
+    if (def.boss) this.boss = zb;
     this.list.push(zb);
     return zb;
   }
@@ -394,43 +478,53 @@ export class Zombies {
   }
 
   clear() {
-    for (const z of this.list) { z.root.visible = false; this.pool.push(z); }
+    for (const z of this.list) this._release(z);
     this.list.length = 0;
+    this.boss = null;
   }
 
   get aliveCount() { let n = 0; for (const z of this.list) if (z.alive) n++; return n; }
 
+  // ray against one body's hit volumes -> distance (or -1); part and multiplier land in `out`
+  _rayBody(z, origin, dir, maxT, out) {
+    _a.set(z.pos.x, z.pos.y + 0.95 * z.scale, z.pos.z).sub(origin);
+    const t = _a.dot(dir), br = 1.25 * z.scale * Math.max(1, z.bulk);
+    if (t < -br || t > maxT + br) return -1;
+    if (_a.lengthSq() - t * t > br * br) return -1;
+    let bestT = maxT, found = false;
+    if (z.mixer) {
+      z.root.updateWorldMatrix(true, true);
+      const rk = z.scale * z.bulk;
+      for (const [part, ba, bb, r, mult] of HIT_PARTS) {
+        const A = z.bones[ba]; if (!A) continue;
+        A.getWorldPosition(_a);
+        if (bb && z.bones[bb]) {
+          z.bones[bb].getWorldPosition(_b);
+          if (part === 'torso') _b.lerp(_a, 0.3);   // the capsule's cap ends at the collar, below the skull
+        } else {
+          // the skull sits above and slightly in front of the head joint
+          _b.set(0, 0.13, 0.02).applyQuaternion(A.getWorldQuaternion(_q)).multiplyScalar(z.scale).add(_a);
+          _a.lerp(_b, 0.35);
+        }
+        const hit = rayCapsule(origin, dir, _a, _b, r * rk, bestT);
+        if (hit >= 0 && hit < bestT) { bestT = hit; found = true; out.part = part; out.mult = mult; }
+      }
+    } else {
+      _a.set(z.pos.x, z.pos.y + 0.3, z.pos.z); _b.set(z.pos.x, z.pos.y + 1.5, z.pos.z);
+      const hit = rayCapsule(origin, dir, _a, _b, 0.3, bestT);
+      if (hit >= 0 && hit < bestT) { bestT = hit; found = true; const head = origin.y + dir.y * hit > z.pos.y + 1.45; out.part = head ? 'head' : 'torso'; out.mult = head ? 4 : 1; }
+    }
+    return found ? bestT : -1;
+  }
+
   // nearest zombie hit along a ray -> { zombie, part, mult, distance, point } | null
   raycast(origin, dir, maxDist) {
     let best = null, bestT = maxDist;
+    const tmp = this._rb || (this._rb = {});
     for (const z of this.list) {
       if (!z.alive) continue;
-      // broad phase: sphere around the body
-      _a.set(z.pos.x, z.pos.y + 0.95, z.pos.z).sub(origin);
-      const t = _a.dot(dir);
-      if (t < -1.2 || t > bestT + 1.2) continue;
-      if (_a.lengthSq() - t * t > 1.25 * 1.25) continue;
-      if (z.mixer) {
-        z.root.updateWorldMatrix(true, true);
-        for (const [part, ba, bb, r, mult] of HIT_PARTS) {
-          const A = z.bones[ba]; if (!A) continue;
-          A.getWorldPosition(_a);
-          if (bb && z.bones[bb]) {
-            z.bones[bb].getWorldPosition(_b);
-            if (part === 'torso') _b.lerp(_a, 0.3);   // the capsule's cap ends at the collar, below the skull
-          } else {
-            // the skull sits above and slightly in front of the head joint
-            _b.set(0, 0.13, 0.02).applyQuaternion(A.getWorldQuaternion(_q)).multiplyScalar(z.scale).add(_a);
-            _a.lerp(_b, 0.35);
-          }
-          const hit = rayCapsule(origin, dir, _a, _b, r * z.scale, bestT);
-          if (hit >= 0 && hit < bestT) { bestT = hit; best = { zombie: z, part, mult }; }
-        }
-      } else {
-        _a.set(z.pos.x, z.pos.y + 0.3, z.pos.z); _b.set(z.pos.x, z.pos.y + 1.5, z.pos.z);
-        const hit = rayCapsule(origin, dir, _a, _b, 0.3, bestT);
-        if (hit >= 0 && hit < bestT) { bestT = hit; const head = origin.y + dir.y * hit > z.pos.y + 1.45; best = { zombie: z, part: head ? 'head' : 'torso', mult: head ? 4 : 1 }; }
-      }
+      const t = this._rayBody(z, origin, dir, bestT, tmp);
+      if (t >= 0 && t < bestT) { bestT = t; best = { zombie: z, part: tmp.part, mult: tmp.mult }; }
     }
     if (!best) return null;
     best.distance = bestT;
@@ -438,32 +532,50 @@ export class Zombies {
     return best;
   }
 
+  // every body the ray passes through, nearest first (a bullet that keeps going)
+  raycastAll(origin, dir, maxDist, max = 3) {
+    const hits = [], tmp = this._rb || (this._rb = {});
+    for (const z of this.list) {
+      if (!z.alive) continue;
+      const t = this._rayBody(z, origin, dir, maxDist, tmp);
+      if (t >= 0) hits.push({ zombie: z, part: tmp.part, mult: tmp.mult, distance: t, point: origin.clone().addScaledVector(dir, t) });
+    }
+    hits.sort((a, b) => a.distance - b.distance);
+    if (hits.length > max) hits.length = max;
+    return hits;
+  }
+
+  // returns the health actually taken
   damage(z, amount, part, dir) {
-    if (!z.alive) return;
+    if (!z.alive) return 0;
+    const def = z.def;
+    if (part !== 'head') amount *= def.bodyMult;
     z.health -= amount;
     z.aware = true;
-    if (z.health <= 0) { this._kill(z, dir, part); return; }
-    z.slow = 0.5;
-    if (z.state !== 'attack' || part === 'head') {
+    if (z.health <= 0) { this._kill(z, dir, part); return amount; }
+    if (def.slowOnHit) z.slow = 0.5;
+    const flinch = def.flinch === 'any' || (def.flinch === 'head' && part === 'head');
+    if (flinch && (z.state !== 'attack' || part === 'head')) {
       z.state = 'hit'; z.stateT = 0;
       this._play(z, part === 'head' ? 'HitHead' : 'HitBody', 0.08, 1, true);
     }
-    this.audio?.playAt('zombie_hurt', z.pos, { volume: 0.7, pitchVar: 0.1 });
+    this.audio?.playAt('zombie_hurt', z.pos, { volume: 0.7, pitchVar: 0.1, rate: def.voice });
+    return amount;
   }
 
   _kill(z, dir, part) {
     z.alive = false; z.state = 'dead'; z.stateT = 0; z.fade = 0;
-    z.vel.set(0, 0, 0);
+    z.vel.set(0, 0, 0); z.spd = 0;
     // fall away from the shot
     const fx = Math.sin(z.yaw), fz = Math.cos(z.yaw);
     const fromFront = dir ? dir.x * fx + dir.z * fz < 0 : true;
-    this._play(z, fromFront ? 'DeathBack' : 'DeathFront', 0.1, 1 + Math.random() * 0.2, true);
+    this._play(z, fromFront ? 'DeathBack' : 'DeathFront', 0.1, (1 + Math.random() * 0.2) / Math.max(1, z.scale), true);
     // the body settles onto the slope it dies on
     const T = this.col.terrain, gy = T.heightAt(z.pos.x, z.pos.z);
     z.hasTilt = z.pos.y - gy < 0.2;
     if (z.hasTilt) z.tilt.setFromUnitVectors(UP, T.normalAt(z.pos.x, z.pos.z, _a));
     this.kills++;
-    this.audio?.playAt('zombie_death', z.pos, { volume: 0.9, pitchVar: 0.12 });
+    this.audio?.playAt('zombie_death', z.pos, { volume: 0.9, pitchVar: 0.12, rate: z.def.voice });
     if (this.onKill) this.onKill(z, part);
   }
 
@@ -474,6 +586,24 @@ export class Zombies {
     _a.y += 0.8; _b.y += 0.8;
     return this.col.lineOfSight(_a, _b);
   }
+
+  // route direction from the flow field, blended with the cell ahead so the path bends before a corner, not on it
+  _flowDir(z, out) {
+    const f = this.flow;
+    if (!f || !f.dir(z.pos.x, z.pos.z, _c)) return false;
+    let fx = _c.x, fz = _c.z;
+    if (f.dir(z.pos.x + fx * f.cell, z.pos.z + fz * f.cell, _d)) { fx += _d.x * 0.8; fz += _d.z * 0.8; }
+    const l = Math.hypot(fx, fz) || 1;
+    out.set(fx / l, 0, fz / l);
+    return true;
+  }
+
+  _strike(z, p, dx, dz, dist, dmg, knock) {
+    p.damage(dmg, _a.set(dx, 0, dz).normalize());
+    if (knock > 0 && dist > 1e-3) p.knock(dx / dist, dz / dist, knock, 3);
+  }
+
+  _recover(z, time) { z.state = 'recover'; z.stateT = 0; z.recoverT = time; }
 
   update(dt) {
     this.time += dt;
@@ -488,23 +618,24 @@ export class Zombies {
     const fovK = Math.tan(THREE.MathUtils.degToRad(cam.fov) / 2) / 0.7265;
     const frame = this.engine.renderer.info.render.frame;
     for (let i = this.list.length - 1; i >= 0; i--) {
-      const z = this.list[i];
+      const z = this.list[i], def = z.def, set = z.set;
       z.stateT += dt;
       const dx = p.pos.x - z.pos.x, dz = p.pos.z - z.pos.z;
       const dist = Math.hypot(dx, dz);
-      this._sphere.center.set(z.pos.x, z.pos.y + 0.9, z.pos.z);
+      this._sphere.center.set(z.pos.x, z.pos.y + 0.9 * z.scale, z.pos.z);
+      this._sphere.radius = 3.2 * z.scale;
       const seen = this.noCull || this._frustum.intersectsSphere(this._sphere);
       z.root.visible = seen;
       const camD = Math.sqrt(z.pos.distanceToSquared(camPos));
-      if (this.lods && seen && z.mesh) {
-        const d = camD * fovK;
+      if (set.lods && seen && z.mesh) {
+        const d = (camD * fovK) / z.scale;
         let l = z.lod;
         if (z.lodLock !== undefined) l = z.lodLock;        // inspection only
         else {
           while (l < 3 && d > LOD_DIST[l] * 1.1) l++;
           while (l > 0 && d < LOD_DIST[l - 1] * 0.92) l--;
         }
-        if (l !== z.lod || z.mesh.geometry !== this.lods[l]) { z.lod = l; z.mesh.geometry = this.lods[l]; }
+        if (l !== z.lod || z.mesh.geometry !== set.lods[l]) { z.lod = l; z.mesh.geometry = set.lods[l]; }
         z.mesh.castShadow = camD < 45;
       }
       if (!z.alive) {
@@ -517,113 +648,192 @@ export class Zombies {
           }
           z.root.position.copy(z.pos);
         }
+        // blood gathers under the torso once the body is down
+        if (!z.pooled && z.stateT > 1.3) {
+          z.pooled = true;
+          if (def.pool > 0) {
+            if (z.bones.Hips) { z.root.updateWorldMatrix(true, true); z.bones.Hips.getWorldPosition(_a); } else _a.copy(z.pos);
+            if (z.hasTilt) { _a.y = T.heightAt(_a.x, _a.z); T.normalAt(_a.x, _a.z, _b); } else { _a.y = z.pos.y; _b.set(0, 1, 0); }
+            if (_b.y > 0.9 && this.col.waterDepth(_a.x, _a.z) <= 0.02) z.pool = this.fx.bloodPool(_a, _b, def.pool * (0.8 + Math.random() * 0.4) * (_b.y * _b.y));
+          }
+        }
         if (z.stateT > z.corpseT) {
           z.fade += dt;
           z.pos.y -= dt * 0.28;
           z.root.position.y = z.pos.y;
-          if (z.fade > 3.2) { z.root.visible = false; this.list.splice(i, 1); this.pool.push(z); continue; }
+          if (z.fade > 3.2 * Math.max(1, z.scale)) { this._release(z); this.list.splice(i, 1); continue; }
         }
         if (z.mixer && z.stateT < 5) z.mixer.update(dt);
         continue;
       }
       // awareness: sight / hearing radius
-      if (!z.aware && hunting && (dist < 30 || (dist < 90 && p.input.fire && p.enabled))) { z.aware = true; if (dist < 60) this.audio?.playAt('zombie_alert', z.pos, { volume: 0.8, pitchVar: 0.12 }); }
+      if (!z.aware && hunting && (dist < 30 || (dist < 90 && p.input.fire && p.enabled))) { z.aware = true; if (dist < 60) this.audio?.playAt('zombie_alert', z.pos, { volume: 0.8, pitchVar: 0.12, rate: def.voice }); }
       z.groan -= dt;
-      if (z.groan <= 0) { z.groan = 4 + Math.random() * 9; if (dist < 70 && !this.passive) this.audio?.playAt('zombie_idle', z.pos, { volume: 0.55, pitchVar: 0.15 }); }
+      if (z.groan <= 0) { z.groan = 4 + Math.random() * 9; if (dist < 70 && !this.passive) this.audio?.playAt('zombie_idle', z.pos, { volume: 0.55, pitchVar: 0.15, rate: def.voice }); }
       z.slow = Math.max(0, z.slow - dt);
-      z.avoidT -= dt; z.attackCd -= dt;
+      z.avoidT -= dt; z.attackCd -= dt; z.chargeCd -= dt; z.slamCd -= dt;
 
-      let wishX = 0, wishZ = 0, speed = 0;
-      if (z.state === 'attack') {
-        const dur = this.clips.Attack ? this.clips.Attack.duration : 0.9;
+      const reach = def.reach, level = Math.abs(p.pos.y - z.pos.y) < 1.6 * Math.max(1, z.scale);
+      let wishX = 0, wishZ = 0, target = 0, turn = def.turn, accel = def.accel, face = false;
+      const st = z.state;
+      if (st === 'attack') {
+        const dur = (set.clips.Attack ? set.clips.Attack.duration : 0.9) / def.attackRate;
+        face = true;
         if (!z.attackHit && z.stateT > dur * 0.45) {
           z.attackHit = true;
-          if (dist < 2.1 && p.alive && Math.abs(p.pos.y - z.pos.y) < 1.8) { p.damage(11 + Math.random() * 6, _a.set(dx, 0, dz).normalize()); this.audio?.play('player_hurt', { volume: 0.9 }); }
+          if (dist < reach + 0.55 && p.alive && level) this._strike(z, p, dx, dz, dist, def.damage[0] + Math.random() * (def.damage[1] - def.damage[0]), def.knock);
         }
-        if (z.stateT >= dur) { z.state = 'idle'; z.stateT = 0; z.attackCd = 0.45 + Math.random() * 0.45; }
-      } else if (z.state === 'hit') {
+        if (z.stateT >= dur) { z.state = 'idle'; z.stateT = 0; z.attackCd = (0.45 + Math.random() * 0.45) / def.attackRate; }
+      } else if (st === 'hit') {
         if (z.stateT >= 0.38) { z.state = 'idle'; z.stateT = 0; }
+      } else if (st === 'roar') {
+        // the wind-up that gives a charge away
+        face = true;
+        if (z.stateT >= def.charge.windup) { z.state = 'charge'; z.stateT = 0; z.chargeHit = false; }
+      } else if (st === 'charge') {
+        // a straight run that can barely steer: side-step or roll and it thunders past
+        const ch = def.charge, ahead = dx * Math.sin(z.yaw) + dz * Math.cos(z.yaw);
+        if (dist > 1e-3) { wishX = dx / dist; wishZ = dz / dist; }
+        target = ch.speed; turn = dist > 12 ? ch.turn : ch.turn * 0.35; accel = ch.accel;      // committed over the last metres
+        if (dist < reach + 0.3 && level && p.alive && !z.chargeHit) {
+          z.chargeHit = true;
+          this._strike(z, p, dx, dz, dist, ch.damage, ch.knock);
+          this._recover(z, ch.recover * 0.7); target = 0;
+        } else if (z.stateT > ch.time || ahead < -1.5 || (z.stateT > 0.6 && z.gs < 1.2)) { this._recover(z, ch.recover); target = 0; }
+      } else if (st === 'slam') {
+        const sl = def.slam;
+        face = z.stateT < sl.windup * 0.6;
+        if (!z.attackHit && z.stateT >= sl.windup) {
+          z.attackHit = true; this.slams++;
+          this.fx.slam(z.pos, sl.radius);
+          const nm = this.audio?.exact('boss_slam') ? 'boss_slam' : 'impact_dirt';
+          this.audio?.playAt(nm, z.pos, { volume: 1.2, rate: nm === 'boss_slam' ? 1 : 0.45, ref: 12 });
+          p.shake = Math.min(1.4, p.shake + 1.1 * clamp(1 - dist / 22, 0, 1));
+          // the shock runs along the ground: anyone standing inside is thrown, a jump clears it
+          const feet = p.pos.y - T.heightAt(p.pos.x, p.pos.z);
+          if (p.alive && dist < sl.radius && level && (p.onGround || feet < 0.45)) this._strike(z, p, dx, dz, Math.max(dist, 0.1), sl.damage * (1 - 0.6 * dist / sl.radius), sl.knock);
+        }
+        if (z.stateT >= sl.windup + sl.recover) { z.state = 'idle'; z.stateT = 0; z.slamCd = sl.cooldown; }
+      } else if (st === 'recover') {
+        if (z.stateT >= z.recoverT) { z.state = 'idle'; z.stateT = 0; }
       } else if (z.aware && hunting) {
-        const reach = dist < 1.55 && Math.abs(p.pos.y - z.pos.y) < 1.6;
-        if (reach && z.attackCd <= 0) {
+        const near = dist < reach && level;
+        if (def.slam && z.slamCd <= 0 && dist < def.slam.range && level) {
+          z.state = 'slam'; z.stateT = 0; z.attackHit = false;
+          const c = set.clips[def.clips.slam] ? def.clips.slam : 'Attack', cd = set.clips[c] ? set.clips[c].duration : 0.9;
+          this._play(z, c, 0.15, c === 'Attack' ? (cd * 0.45) / def.slam.windup : 1, true);
+          this.audio?.playAt('zombie_attack', z.pos, { volume: 1, rate: def.voice });
+        } else if (def.charge && z.chargeCd <= 0 && dist > def.charge.min && dist < def.charge.max && z.direct && level) {
+          z.state = 'roar'; z.stateT = 0; z.chargeCd = def.charge.cooldown;
+          const c = set.clips[def.clips.roar] ? def.clips.roar : 'Attack', cd = set.clips[c] ? set.clips[c].duration : 0.9;
+          this._play(z, c, 0.2, c === 'Attack' ? cd / def.charge.windup : 1, true);
+          const nm = this.audio?.exact('boss_roar') ? 'boss_roar' : 'zombie_alert';
+          this.audio?.playAt(nm, z.pos, { volume: 1.2, rate: nm === 'boss_roar' ? 1 : 0.5, ref: 14 });
+        } else if (near && z.attackCd <= 0) {
           z.state = 'attack'; z.stateT = 0; z.attackHit = false;
-          this._play(z, 'Attack', 0.12, 1, true);
-          this.audio?.playAt('zombie_attack', z.pos, { volume: 0.9, pitchVar: 0.1 });
-        } else if (reach && dist < 1.25) {
-          z.state = 'idle';                     // gathering itself between swings
+          this._play(z, 'Attack', 0.12, def.attackRate, true);
+          this.audio?.playAt('zombie_attack', z.pos, { volume: 0.9, pitchVar: 0.1, rate: def.voice });
+        } else if (near && dist < reach * 0.8) {
+          z.state = 'idle'; face = true;            // gathering itself between swings
         } else {
           // walk straight at the player when the way is clear, otherwise follow the flow field
           z.losT -= dt;
           if (z.losT <= 0) {
-            z.losT = 0.35 + Math.random() * 0.3;
-            z.direct = dist < 2.5 || (dist < 60 && z.avoidT <= 0 && this._clear(z, p));
+            z.losT = 0.3 + Math.random() * 0.3;
+            const clear = dist < 2.5 || (dist < 60 && z.avoidT <= 0 && this._clear(z, p));
+            // two checks in a row have to agree before the route changes (no dithering at a corner)
+            if (clear === z.direct) z.losN = 0; else if (++z.losN >= 2 || dist < 2.5) { z.direct = clear; z.losN = 0; }
           }
-          if (!z.direct && this.flow && this.flow.dir(z.pos.x, z.pos.z, _a)) { wishX = _a.x; wishZ = _a.z; } else if (dist > 1e-3) { wishX = dx / dist; wishZ = dz / dist; }
-          speed = z.speed * (z.slow > 0 ? 0.45 : 1);
-          z.state = z.runner ? 'run' : 'walk';
+          let tx = dx, tz = dz;
+          if (z.direct) {
+            // packs come in on an arc and close from the side
+            if (def.flank && dist > 7) { const off = Math.min(dist * 0.5, 9) * z.side; tx += (-dz / dist) * off; tz += (dx / dist) * off; }
+          } else if (this._flowDir(z, _a)) { tx = _a.x; tz = _a.z; }
+          const tl = Math.hypot(tx, tz) || 1, k = 1 - Math.exp(-dt * 6);
+          z.navX += (tx / tl - z.navX) * k; z.navZ += (tz / tl - z.navZ) * k;
+          const nl = Math.hypot(z.navX, z.navZ);
+          if (nl > 1e-3) { wishX = z.navX / nl; wishZ = z.navZ / nl; }
+          // ease off on the last metres so it arrives able to stop
+          target = Math.min(z.speed * (z.slow > 0 ? 0.45 : 1), Math.sqrt(2 * def.brake * Math.max(0, dist - reach * 0.7)) + 0.7);
+          z.state = z.speed > 2 ? 'run' : 'walk';
           // progress probe: stop pushing against something, and tell the director if it never clears
           z.probeT += dt;
           if (z.probeT >= 1.5) {
             const moved = Math.hypot(z.pos.x - z.probeX, z.pos.z - z.probeZ);
             if (moved < 0.2 * z.speed * z.probeT) z.stuck += z.probeT; else z.stuck = 0;
             z.probeX = z.pos.x; z.probeZ = z.pos.z; z.probeT = 0;
-            if (z.stuck >= 1.5 && z.direct) { z.avoidT = 5; z.direct = false; }
+            if (z.stuck >= 1.5 && z.direct) { z.avoidT = 5; z.direct = false; z.losN = 0; }
             if (z.stuck >= 7.5) { z.stuck = 0; if (this.onStuck) this.onStuck(z); }
           }
         }
       } else {
-        // idle wandering
+        // idle wandering, never into a wall
         z.wanderT -= dt;
         if (z.wanderT <= 0) { z.wanderT = 3 + Math.random() * 6; z.wander.set(Math.random() - 0.5, 0, Math.random() - 0.5).normalize(); z.wanderGo = Math.random() < 0.6; }
-        if (z.wanderGo) { wishX = z.wander.x; wishZ = z.wander.z; speed = this.clipSpeed.Walk * 1.1; z.state = 'walk'; } else z.state = 'idle';
+        if (z.wanderGo && this.flow && !this.flow.walkable(z.pos.x + z.wander.x * 1.8, z.pos.z + z.wander.z * 1.8)) { z.wanderGo = false; z.wanderT = Math.min(z.wanderT, 0.6 + Math.random()); }
+        if (z.wanderGo) { wishX = z.wander.x; wishZ = z.wander.z; target = Math.min(z.speed, 0.8); z.state = 'walk'; } else z.state = 'idle';
       }
 
-      if (speed > 0) {
-        // separation from neighbours
-        for (const o of this.list) {
-          if (o === z || !o.alive) continue;
-          const ox = z.pos.x - o.pos.x, oz = z.pos.z - o.pos.z;
-          const d2 = ox * ox + oz * oz;
-          if (d2 < 0.81 && d2 > 1e-4) { const d = Math.sqrt(d2); wishX += (ox / d) * (0.9 - d) * 1.6; wishZ += (oz / d) * (0.9 - d) * 1.6; }
-        }
-        const l = Math.hypot(wishX, wishZ) || 1;
-        wishX /= l; wishZ /= l;
-        const water = this.col.waterDepth(z.pos.x, z.pos.z) > 0.3 ? 0.55 : 1;
-        const k = 1 - Math.exp(-6 * dt);
-        z.vel.x += (wishX * speed * water - z.vel.x) * k;
-        z.vel.z += (wishZ * speed * water - z.vel.z) * k;
-        const want = Math.atan2(wishX, wishZ);
-        let dy = want - z.yaw; dy = Math.atan2(Math.sin(dy), Math.cos(dy));
-        z.yaw += dy * Math.min(1, dt * (z.runner ? 7 : 4.5));
-      } else {
-        z.vel.x *= Math.exp(-8 * dt); z.vel.z *= Math.exp(-8 * dt);
-        if ((z.state === 'attack' || z.state === 'idle') && z.aware && hunting && dist > 0.1) {
-          let dy = Math.atan2(dx, dz) - z.yaw; dy = Math.atan2(Math.sin(dy), Math.cos(dy));
-          z.yaw += dy * Math.min(1, dt * 6);
-        }
-      }
+      // ---- locomotion: turn towards where it wants to go and move along the facing.
+      // The turn rate eases in and out, speed changes by acceleration, nothing slides sideways.
+      let tspd = 0;
+      if (target > 0 || face) {
+        const want = target > 0 ? Math.atan2(wishX, wishZ) : Math.atan2(dx, dz);
+        const dy = wrapPi(want - z.yaw);
+        const lim = target > 0 ? turn : def.turn * 1.5;
+        z.yawV += (clamp(dy * 5, -lim, lim) - z.yawV) * (1 - Math.exp(-dt * 10));
+        const stepY = z.yawV * dt;
+        z.yaw += Math.abs(stepY) > Math.abs(dy) ? dy : stepY;
+        if (target > 0) tspd = target * (this.col.waterDepth(z.pos.x, z.pos.z) > 0.3 ? 0.55 : 1) * clamp((Math.cos(dy) - 0.2) / 0.6, 0, 1);
+      } else z.yawV *= Math.exp(-dt * 10);
+      z.spd += clamp(tspd - z.spd, -def.brake * dt, accel * dt);
+      const hx = Math.sin(z.yaw), hz = Math.cos(z.yaw);
+      z.vel.x = hx * z.spd; z.vel.z = hz * z.spd;
       const ox = z.pos.x, oz = z.pos.z;
       z.pos.x += z.vel.x * dt; z.pos.z += z.vel.z * dt;
-      // bodies do not overlap the player
-      if (dist < 0.72 && dist > 1e-3 && p.alive && p.enabled && Math.abs(p.pos.y - z.pos.y) < 1.5) {
-        const push = (0.72 - dist) * 0.5;
-        z.pos.x -= (dx / dist) * push; z.pos.z -= (dz / dist) * push;
-        p.pos.x += (dx / dist) * push; p.pos.z += (dz / dist) * push;
+      const ax0 = z.pos.x, az0 = z.pos.z;
+      // bodies make room for each other (the heavy give way less): a steady push, never a jump
+      let sx = 0, sz = 0;
+      for (const o of this.list) {
+        if (o === z || !o.alive) continue;
+        const ax = z.pos.x - o.pos.x, az = z.pos.z - o.pos.z, rr = z.rad + o.rad + 0.12;
+        const d2 = ax * ax + az * az;
+        if (d2 < rr * rr && d2 > 1e-6) { const d = Math.sqrt(d2), push = (rr - d) * (o.def.mass / (z.def.mass + o.def.mass)) * Math.min(1, dt * 7); sx += (ax / d) * push; sz += (az / d) * push; }
       }
-      const c = this.col.resolveCapsule(z.pos, 0.3, 1.7);
+      z.pos.x += sx; z.pos.z += sz;
+      // bodies do not overlap the player; the big ones are not pushed aside
+      const minD = 0.42 + z.rad;
+      if (dist < minD && dist > 1e-3 && p.alive && p.enabled && Math.abs(p.pos.y - z.pos.y) < 1.5) {
+        const push = minD - dist, share = def.mass >= 4 ? 0 : 0.5;
+        z.pos.x -= (dx / dist) * push * share; z.pos.z -= (dz / dist) * push * share;
+        p.pos.x += (dx / dist) * push * (1 - share); p.pos.z += (dz / dist) * push * (1 - share);
+      }
+      const c = this.col.resolveCapsule(z.pos, Math.min(z.rad, 0.45), 1.7);
       if (c.lengthSq() > 0) { z.pos.x += c.x; z.pos.z += c.z; }
       z.floorT -= dt;
       if (z.floorT <= 0) { z.floorT = 0.15 + Math.random() * 0.1; z.floorY = this.col.floorAt(z.pos.x, z.pos.y + 0.6, z.pos.z, 2.5); }
       const ty = Math.max(z.floorY, T.heightAt(z.pos.x, z.pos.z));
       z.pos.y += (ty - z.pos.y) * Math.min(1, dt * 12);
 
-      // animation follows the distance actually covered, so feet stay planted
-      if (z.state === 'walk' || z.state === 'run' || z.state === 'idle') {
-        const v = Math.hypot(z.pos.x - ox, z.pos.z - oz) / Math.max(dt, 1e-4);
-        if (v > 0.15) {
-          const clip = z.runner && z.aware && z.state === 'run' ? 'Run' : 'Walk';
-          this._play(z, clip, 0.25, clamp(v / (this.clipSpeed[clip] || 1) / z.scale, 0.35, 2.6));
-        } else if (speed === 0 || z.stateT > 0.4) this._play(z, 'Idle', 0.3);
+      // ---- animation follows the ground actually covered along the facing, so feet stay planted
+      const adv = Math.max(0, ((z.pos.x - ox - sx) * hx + (z.pos.z - oz - sz) * hz) / Math.max(dt, 1e-4));
+      z.gs += (adv - z.gs) * (1 - Math.exp(-dt * 12));
+      if (adv < z.spd * 0.5 && (Math.abs(z.pos.x - sx - ax0) + Math.abs(z.pos.z - sz - az0)) > 1e-6) z.spd = Math.max(adv, z.spd - 25 * dt);   // held up by something solid: stop pushing, no treadmill
+      const s2 = z.state;
+      if (s2 === 'walk' || s2 === 'run' || s2 === 'idle' || s2 === 'charge' || s2 === 'recover') {
+        if (z.moving ? z.gs < 0.1 : z.gs > 0.26) z.moving = !z.moving;
+        if (z.moving) {
+          const runClip = set.clips[def.clips.run] ? def.clips.run : 'Run';
+          const tsW = z.gs / ((set.clipSpeed.Walk || 0.5) * z.scale), tsR = z.gs / ((set.clipSpeed[runClip] || 3.4) * z.scale);
+          // the gait whose playback rate is closer to natural, with a preference for the one already playing
+          let run = false;
+          if (def.gait !== 'walk' && set.clips[runClip]) {
+            const cw = Math.abs(Math.log(tsW)) * (z.gait === 'Walk' ? 1 : 1.3), cr = Math.abs(Math.log(tsR)) * (z.gait === runClip ? 1 : 1.3);
+            run = cr < cw;
+          }
+          z.gait = run ? runClip : 'Walk';
+          this._play(z, z.gait, 0.25, clamp(run ? tsR : tsW, 0.3, 3.2));
+        } else { z.gait = ''; this._play(z, 'Idle', 0.3); }
       }
       z.root.position.copy(z.pos);
       z.root.rotation.set(0, z.yaw, 0);

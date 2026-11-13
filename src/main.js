@@ -37,7 +37,8 @@ async function boot() {
   const settings = loadSettings();
   if (params.get('q')) settings.quality = params.get('q');
   let game = null, engine = null;
-  const lock = () => { try { const p = canvas.requestPointerLock(); if (p && p.catch) p.catch(() => {}); } catch (e) { /* not available */ } };
+  // the player asks for raw (unaccelerated) mouse input and falls back to the plain lock
+  const lock = () => { if (game && game.player) game.player.requestLock(); else { try { const p = canvas.requestPointerLock(); if (p && p.catch) p.catch(() => {}); } catch (e) { /* not available */ } } };
   const applySetting = (k) => {
     if (!engine) return;
     if (k === 'quality' || k === 'renderScale' || k === 'all') {

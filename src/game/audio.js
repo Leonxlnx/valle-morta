@@ -47,6 +47,22 @@ export class AudioSystem {
   }
 
   has(name) { return !!this._find(name); }
+  // the library holds a recording under exactly this name (no look-alike substitution)
+  exact(name) { return name in this.sounds; }
+
+  // one named sound, or a stand-in played at another rate until the real recording is added to the manifest
+  playFirst(name, fallback, opts = {}, fallbackOpts = {}) {
+    if (this.exact(name)) this.play(name, opts);
+    else if (fallback) this.play(fallback, { ...opts, ...fallbackOpts });
+  }
+
+  // 0 = clear, 1 = heavily muffled (low health, death)
+  setMuffle(k) {
+    k = Math.max(0, Math.min(1, k));
+    if (!this.ctx || !this.lp || Math.abs(k - (this._muffle ?? 0)) < 0.02) return;
+    this._muffle = k;
+    this.lp.frequency.setTargetAtTime(20000 * Math.pow(0.03, k), this.ctx.currentTime, 0.25);
+  }
 
   _ensureCtx() {
     if (this.ctx) return this.ctx;
@@ -56,7 +72,10 @@ export class AudioSystem {
     this.master = this.ctx.createGain();
     const comp = this.ctx.createDynamicsCompressor();
     comp.threshold.value = -14; comp.ratio.value = 5; comp.attack.value = 0.003; comp.release.value = 0.2;
-    this.master.connect(comp); comp.connect(this.ctx.destination);
+    // a low-pass between the mix and the limiter: closes as the player nears death
+    this.lp = this.ctx.createBiquadFilter();
+    this.lp.type = 'lowpass'; this.lp.frequency.value = 20000; this.lp.Q.value = 0.4;
+    this.master.connect(this.lp); this.lp.connect(comp); comp.connect(this.ctx.destination);
     this.bus = { sfx: this.ctx.createGain(), music: this.ctx.createGain(), ambient: this.ctx.createGain() };
     for (const k in this.bus) this.bus[k].connect(this.master);
     this.applyVolumes(true);

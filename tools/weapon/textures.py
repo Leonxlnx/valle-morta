@@ -5,7 +5,7 @@ from PIL import Image, ImageDraw, ImageFont
 from scipy import ndimage as ndi
 
 f4 = np.float32
-D = sys.argv[1]; T0 = time.time()
+D = sys.argv[1] if len(sys.argv) > 1 else '.'; T0 = time.time()
 STEEL, MAGS, BOLT, WOOD, GRIPW, FABRIC, LEATHER, PAD, SLEEVE, CUFF, BRASS, FABRIC2, HEM, VENT = range(1, 15)
 
 
@@ -268,4 +268,5 @@ def run(an):
     print(an, 'done, mm/texel %.3f' % med, 'mean col', col.mean(0).round(3), round(time.time() - T0, 1), 's', flush=True)
 
 
-for an in (sys.argv[2:] or ['rifle', 'hands']): run(an)
+if __name__ == '__main__':
+    for an in (sys.argv[2:] or ['rifle', 'hands']): run(an)

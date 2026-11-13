@@ -1,0 +1,87 @@
+{
+ "clips": {
+  "Idle": {
+   "duration": 4.0,
+   "loop": true,
+   "events": []
+  },
+  "Fire": {
+   "duration": 0.3,
+   "loop": false,
+   "events": [
+    {
+     "t": 0.033,
+     "name": "shell"
+    }
+   ]
+  },
+  "Draw": {
+   "duration": 0.45,
+   "loop": false,
+   "events": []
+  },
+  "Holster": {
+   "duration": 0.3,
+   "loop": false,
+   "events": []
+  },
+  "Sprint": {
+   "duration": 0.7,
+   "loop": true,
+   "events": []
+  },
+  "Reload": {
+   "duration": 2.4,
+   "loop": false,
+   "events": [
+    {
+     "t": 0.58,
+     "name": "mag_out"
+    },
+    {
+     "t": 1.72,
+     "name": "mag_in"
+    },
+    {
+     "t": 1.72,
+     "name": "ammo"
+    }
+   ]
+  },
+  "ReloadEmpty": {
+   "duration": 3.0,
+   "loop": false,
+   "events": [
+    {
+     "t": 0.539,
+     "name": "mag_out"
+    },
+    {
+     "t": 1.6,
+     "name": "mag_in"
+    },
+    {
+     "t": 1.6,
+     "name": "ammo"
+    },
+    {
+     "t": 2.34,
+     "name": "bolt_back"
+    },
+    {
+     "t": 2.44,
+     "name": "bolt_forward"
+    }
+   ]
+  }
+ },
+ "meta": {
+  "eye": [
+   -0.08,
+   -0.3,
+   0.135
+  ],
+  "fov": 52,
+  "note": "preview camera of the contact sheets: eye position relative to the model origin (Blender axes x right, y forward, z up); Sprint is a seamless loop in the sprint carry pose (cross-fade into it); MagRounds (child of Magazine) is scaled away for the empty magazine in ReloadEmpty"
+ }
+}

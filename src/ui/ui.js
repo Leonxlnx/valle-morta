@@ -1,5 +1,7 @@
 // Interface: loading screen, main menu, settings, pause, HUD and the summary
 // screen. Plain DOM, one typeface, neutral palette.
+import { Vector3 } from 'three';
+
 const DEFAULTS = {
   quality: 'high', renderScale: 1, fov: 72, sensitivity: 1, invertY: false,
   master: 0.8, music: 0.55, sfx: 0.9, grain: true, showFps: false,
@@ -12,6 +14,7 @@ function saveSettings(s) { try { localStorage.setItem('valle-morta-settings', JS
 
 const el = (tag, cls, html) => { const e = document.createElement(tag); if (cls) e.className = cls; if (html !== undefined) e.innerHTML = html; return e; };
 const fmtTime = (t) => `${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padStart(2, '0')}`;
+const _p = new Vector3();
 
 export class UI {
   constructor(root, settings, handlers) {
@@ -67,17 +70,18 @@ export class UI {
       <div class="sheet wide">
         <h2>How to play</h2>
         <dl class="keys">
-          <div><dt>Move</dt><dd>W A S D</dd></div>
-          <div><dt>Look</dt><dd>Mouse</dd></div>
-          <div><dt>Fire</dt><dd>Left mouse button</dd></div>
-          <div><dt>Aim down sights</dt><dd>Right mouse button</dd></div>
+          <div><dt>Move / look</dt><dd>W A S D / mouse</dd></div>
+          <div><dt>Fire / aim</dt><dd>Left / right mouse button</dd></div>
           <div><dt>Reload</dt><dd>R</dd></div>
-          <div><dt>Sprint</dt><dd>Shift</dd></div>
-          <div><dt>Jump</dt><dd>Space</dd></div>
-          <div><dt>Crouch</dt><dd>Ctrl or C</dd></div>
+          <div><dt>Next weapon / pick one</dt><dd>Q / 1 2 3</dd></div>
+          <div><dt>Sprint / jump</dt><dd>Shift / Space</dd></div>
+          <div><dt>Crouch / lie down</dt><dd>Ctrl or C / Z</dd></div>
+          <div><dt>Dodge roll</dt><dd>V</dd></div>
+          <div><dt>Use a bandage</dt><dd>H</dd></div>
+          <div><dt>Open a supply crate</dt><dd>F</dd></div>
           <div><dt>Pause</dt><dd>Esc</dd></div>
         </dl>
-        <p class="hint">A new wave leaves the village a few seconds after the last one falls. Head shots put them down for good; ammunition is resupplied between waves. Music by Kevin MacLeod (incompetech.com), licensed under CC BY 4.0.</p>
+        <p class="hint">Health comes back only to the top of the segment you are in; bandages do the rest. Each cleared wave leaves a supply crate nearby with ammunition and bandages. A roll as you land halves a hard fall. Music by Kevin MacLeod (incompetech.com), licensed under CC BY 4.0.</p>
         <nav class="menu-nav row"><button class="btn" data-act="back">Back</button></nav>
       </div>`);
 
@@ -92,7 +96,7 @@ export class UI {
               <button type="button" data-v="low">Low</button><button type="button" data-v="medium">Medium</button><button type="button" data-v="high">High</button><button type="button" data-v="ultra">Ultra</button>
             </span></div>
           <label class="row"><span>Render scale</span><input type="range" min="0.5" max="1" step="0.05" data-key="renderScale"><output></output></label>
-          <label class="row"><span>Field of view</span><input type="range" min="60" max="95" step="1" data-key="fov"><output></output></label>
+          <label class="row"><span>Field of view</span><input type="range" min="60" max="110" step="1" data-key="fov"><output></output></label>
           <label class="row"><span>Film grain</span><input type="checkbox" data-key="grain"></label>
           <label class="row"><span>Show frame rate</span><input type="checkbox" data-key="showFps"></label>
           <h3>Controls</h3>
@@ -110,8 +114,11 @@ export class UI {
     this.hud = el('section', 'hud', `
       <div class="cross"><i></i><i></i><i></i><i></i><b></b></div>
       <div class="hitmark"><i></i><i></i><i></i><i></i></div>
-      <div class="vitals"><span class="hp-num">100</span><div class="hp"><i></i></div></div>
-      <div class="ammo"><span class="mag">30</span><span class="res">120</span></div>
+      <div class="arcs"><i></i><i></i><i></i><i></i></div>
+      <div class="vitals"><div class="hp-row"><span class="hp-num">100</span><span class="band"></span></div><div class="hp"><b><i></i></b><b><i></i></b><b><i></i></b><b><i></i></b></div></div>
+      <div class="ammo"><span class="wname"></span><span class="mag">30</span><span class="res">120</span></div>
+      <div class="boss"><span></span><div class="boss-bar"><i></i></div></div>
+      <div class="marker"><i></i><span></span></div>
       <div class="status"></div>
       <div class="toast"><strong></strong><span></span></div>
       <div class="prompt"></div>
@@ -120,7 +127,9 @@ export class UI {
 
     root.append(this.hud, this.menu, this.pause, this.over, this.howto, this.settingsEl, this.loading);
     this.q = (s, p = this.hud) => p.querySelector(s);
-    this.cross = this.q('.cross'); this.hitEl = this.q('.hitmark'); this.hpNum = this.q('.hp-num'); this.hpBar = this.q('.hp i');
+    this.cross = this.q('.cross'); this.hitEl = this.q('.hitmark'); this.hpNum = this.q('.hp-num'); this.hpSegs = [...this.hud.querySelectorAll('.hp i')];
+    this.band = this.q('.band'); this.wname = this.q('.wname'); this.arcs = [...this.hud.querySelectorAll('.arcs i')];
+    this.bossEl = this.q('.boss'); this.bossName = this.q('.boss span'); this.bossBar = this.q('.boss-bar i'); this.marker = this.q('.marker'); this.markerText = this.q('.marker span');
     this.mag = this.q('.mag'); this.res = this.q('.res'); this.status = this.q('.status'); this.toastEl = this.q('.toast');
     this.prompt = this.q('.prompt'); this.hurtEl = this.q('.hurt'); this.fpsEl = this.q('.fps');
     this.hurtV = 0; this.hitT = 0; this.toastT = 0; this.back = 'menu';
@@ -213,16 +222,39 @@ export class UI {
 
   update(game, dt) {
     if (this.state !== 'playing') return;
-    const p = game.player, w = game.weapon, L = this._last;
+    const p = game.player, w = game.weapon, L = this._last, cam = game.engine.camera;
     const set = (key, val, fn) => { if (L[key] !== val) { L[key] = val; fn(val); } };
-    set('hp', Math.ceil(p.health), (v) => { this.hpNum.textContent = v; this.hpBar.style.transform = `scaleX(${v / 100})`; this.hud.classList.toggle('low', v <= 35); });
-    set('mag', w.ammo, (v) => { this.mag.textContent = v; this.mag.classList.toggle('empty', v <= 5); });
-    set('res', w.reserve, (v) => { this.res.textContent = v; });
+    // health in four segments, bandages beside it
+    const seg = p.maxHealth / 4;
+    set('hp', Math.ceil(p.health), (v) => { this.hpNum.textContent = v; this.hud.classList.toggle('low', v <= 35); });
+    for (let i = 0; i < 4; i++) set('seg' + i, Math.round(Math.max(0, Math.min(1, (p.health - i * seg) / seg)) * 50), (v) => { this.hpSegs[i].style.transform = `scaleX(${v / 50})`; });
+    set('band', p.bandaging > 0 ? 'Bandaging' : `${p.bandages} ${p.bandages === 1 ? 'bandage' : 'bandages'}`, (v) => { this.band.textContent = v; });
+    set('wname', w.name, (v) => { this.wname.textContent = v; });
+    set('mag', w.ammo, (v) => { this.mag.textContent = v; this.mag.classList.toggle('empty', v <= Math.max(1, w.magSize / 6)); });
+    set('res', w.reserve, (v) => { this.res.textContent = Number.isFinite(v) ? v : '∞'; });
     set('status', `${game.wave}|${game.stats.kills}`, () => { this.status.textContent = game.wave ? `Wave ${game.wave} · ${game.stats.kills} down` : ''; });
-    // crosshair opens with movement / fire, hides while aiming or sprinting
-    const spread = 7 + Math.min(1, p.speed / 6) * 9 + Math.min(5, w.burst) * 2.2 + (p.onGround ? 0 : 10);
-    this.cross.style.setProperty('--s', `${spread.toFixed(1)}px`);
-    this.cross.style.opacity = String(Math.max(0, 1 - p.adsT * 1.6) * (w.reloading || p.sprinting ? 0.25 : 0.9) * (p.alive ? 1 : 0));
+    // crosshair: its gap is the real spread cone; hidden while aiming, sprinting or behind the scope
+    const spread = Math.max(5, (w.spread / Math.tan((cam.fov * Math.PI) / 360)) * (window.innerHeight / 2));
+    this.cross.style.setProperty('--s', `${Math.min(80, spread).toFixed(1)}px`);
+    this.cross.style.opacity = String(Math.max(0, 1 - p.adsT * 1.6) * (w.ready && !p.sprinting ? 0.9 : 0.25) * (p.alive && !w.scoped ? 1 : 0));
+    // where the blows came from
+    for (let i = 0; i < this.arcs.length; i++) {
+      const a = p.damageArcs[i], e = this.arcs[i];
+      if (a && a.directional) { e.style.opacity = String(Math.max(0, 1 - a.age / a.life) * a.strength); e.style.transform = `rotate(${a.angle.toFixed(3)}rad) translateY(-190px)`; } else if (e.style.opacity !== '0') e.style.opacity = '0';
+    }
+    const boss = game.boss;
+    set('boss', boss ? boss.name : '', (v) => { this.bossEl.classList.toggle('on', !!v); this.bossName.textContent = v; });
+    if (boss) set('bossHp', Math.round(boss.frac * 200), (v) => { this.bossBar.style.transform = `scaleX(${v / 200})`; });
+    // the supply crate, pinned to where it is (or to the screen edge on that side)
+    const crate = game.supply.crates.find((c) => !c.opened);
+    set('crate', !!crate, (v) => { this.marker.classList.toggle('on', v); });
+    if (crate) {
+      _p.set(crate.pos.x, crate.pos.y + 0.9, crate.pos.z).project(cam);
+      const behind = _p.z > 1;
+      const x = Math.max(-0.92, Math.min(0.92, behind ? -Math.sign(_p.x || 1) : _p.x)), y = behind ? -0.6 : Math.max(-0.8, Math.min(0.85, _p.y));
+      this.marker.style.transform = `translate(${((x * 0.5 + 0.5) * window.innerWidth).toFixed(0)}px, ${((0.5 - y * 0.5) * window.innerHeight).toFixed(0)}px)`;
+      set('crateD', Math.round(Math.hypot(crate.pos.x - p.pos.x, crate.pos.z - p.pos.z)), (v) => { this.markerText.textContent = `Supplies · ${v} m`; });
+    }
     this.hurtV = Math.max(0, this.hurtV - dt * 0.9);
     const low = p.health < 40 ? (40 - p.health) / 40 * 0.55 : 0;
     this.hurtEl.style.opacity = String(Math.min(1, this.hurtV + low));
@@ -231,9 +263,13 @@ export class UI {
     if (!p.alive) prompt = '';
     else if (!p.script && document.pointerLockElement !== game.engine.canvas) prompt = 'Click to take aim';
     else if (p.boundary > 0.3) prompt = 'Turn back — the valley is sealed beyond this point';
+    else if (game.interact) prompt = `${game.interact.key} · ${game.interact.text}`;
+    else if (p.bandaging > 0) prompt = 'Applying a bandage';
+    else if (p.blocked) prompt = 'No room to stand up here';
     else if (w.reloading) prompt = 'Reloading';
-    else if (w.ammo === 0 && w.reserve === 0) prompt = 'Out of ammunition — hold on until the next wave';
-    else if (w.ammo <= 5) prompt = 'Press R to reload';
+    else if (w.ammo === 0 && w.reserve === 0) prompt = 'Out of ammunition — press Q for another weapon';
+    else if (w.ammo <= Math.max(1, w.magSize / 6) && !w.busy) prompt = 'Press R to reload';
+    else if (p.health <= 50 && p.bandages > 0) prompt = 'Press H to use a bandage';
     set('prompt', prompt, (v) => { this.prompt.textContent = v; this.prompt.classList.toggle('on', !!v); });
     if (this.settings.showFps) { this.fpsEl.textContent = `${Math.round(game.fps || 0)} fps`; this.fpsEl.style.display = 'block'; } else if (L.fpsHidden !== true) { this.fpsEl.style.display = 'none'; L.fpsHidden = true; }
     if (this.settings.showFps) L.fpsHidden = false;
