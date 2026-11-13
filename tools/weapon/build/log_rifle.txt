@@ -1,0 +1,74 @@
+﻿00:03.969  blend            | Read blend: "E:\fable\shootinggame\tools\weapon\build\rifle.blend"
+GRIP fire     R seat 25 wrist (0.022 -0.107 -0.038) depth 3.8 mm reach {'Index': 0.1} | Th[54,44,-121,13,65] In[5,93,46,9] Mi[88,74,45,0] Ri[88,70,42,0] Pi[84,52,51,0]
+GRIP trigger pulled residual 0.2 mm
+GRIP handguard L seat 51 wrist (-0.039 0.223 -0.010) depth 1.1 mm reach {} | Th[48,-1,-98,5,3] In[26,70,40,0] Mi[68,50,28,0] Ri[70,50,32,0] Pi[72,50,56,0]
+GRIP magazine L seat 40 wrist (-0.038 0.095 -0.122) depth 1.3 mm reach {} | Th[56,-51,-100,49,51] In[38,94,52,0] Mi[76,80,46,0] Ri[72,78,47,0] Pi[40,78,47,0]
+GRIP charge   L seat 54 wrist (-0.081 0.176 0.129) depth 1.1 mm reach {} | Th[6,16,-76,35,19] In[17,8,70,0] Mi[39,30,18,0] Ri[34,31,19,0] Pi[27,12,29,0]
+CLIP Idle         4.00s 240 fr | wrist bend R 24 L 16 deg | shoulder slid R 0 L 0 | deepest contact none >4.5mm
+CLIP Fire         0.30s  18 fr | wrist bend R 24 L 17 deg | shoulder slid R 0 L 0 | deepest contact R-body 6mm@0.03s
+CLIP Draw         0.45s  27 fr | wrist bend R 64 L 36 deg | shoulder slid R 0 L 0 | deepest contact none >4.5mm
+CLIP Holster      0.30s  18 fr | wrist bend R 64 L 36 deg | shoulder slid R 0 L 0 | deepest contact none >4.5mm
+CLIP Sprint       0.70s  42 fr | wrist bend R 25 L 56 deg | shoulder slid R 0 L 0 | deepest contact none >4.5mm
+CLIP Reload       2.40s 144 fr | wrist bend R 26 L 107 deg | shoulder slid R 14 L 0 | deepest contact R-body 10mm@0.05s L-body 9mm@0.35s L-Magazine 9mm@1.98s
+CLIP ReloadEmpty  3.00s 180 fr | wrist bend R 39 L 107 deg | shoulder slid R 14 L 0 | deepest contact R-body 10mm@0.05s L-body 12mm@1.92s L-Magazine 9mm@0.32s
+CLIP Draw         differs from Idle pose: start 299.7 mm 103.5 deg, end 0.0 mm 0.0 deg
+CLIP Holster      differs from Idle pose: start 0.0 mm 0.0 deg, end 299.7 mm 103.5 deg
+CLIP Sprint       differs from Idle pose: start 85.6 mm 114.5 deg, end 85.6 mm 114.5 deg
+solved 7 clips 1.4 s
+INFO Draco is available, use library at C:\Program Files\Blender Foundation\Blender 5.2\5.2\scripts\addons_core\io_scene_gltf2\bf_intern_draco_bridge.dll
+INFO MeshOptimizer is available, use library at C:\Program Files\Blender Foundation\Blender 5.2\5.2\scripts\addons_core\io_scene_gltf2\bf_intern_meshopt_bridge.dll
+16:54:53 | INFO: Starting glTF 2.0 export
+16:54:53 | INFO: Extracting primitive: ArmsMesh
+16:54:54 | WARNING: More than one shader node tex image used for a texture. The resulting glTF sampler will behave like the first shader node tex image.
+16:54:54 | INFO: Primitives created: 1
+16:54:54 | INFO: Extracting primitive: Bolt.001
+16:54:55 | WARNING: More than one shader node tex image used for a texture. The resulting glTF sampler will behave like the first shader node tex image.
+16:54:55 | INFO: Primitives created: 1
+16:54:55 | INFO: Extracting primitive: Casing.001
+16:54:55 | INFO: Primitives created: 1
+16:54:55 | INFO: Extracting primitive: Magazine.001
+16:54:55 | INFO: Primitives created: 1
+16:54:55 | INFO: Extracting primitive: MagRounds.001
+16:54:55 | INFO: Primitives created: 1
+16:54:55 | INFO: Extracting primitive: RifleBody.001
+16:54:55 | INFO: Primitives created: 1
+16:54:55 | INFO: Extracting primitive: Selector.001
+16:54:55 | INFO: Primitives created: 1
+16:54:55 | INFO: Extracting primitive: Trigger.001
+16:54:55 | INFO: Primitives created: 1
+16:55:00 | INFO: Finished glTF 2.0 export in 6.395577430725098 s
+
+exported E:\fable\shootinggame\public\assets\models\rifle.glb 5.96 MB
+Info: Saved as "rifle_final.blend"
+VERIFY rifle: 5.96 MB (limit 12), 50 nodes, missing nodes: none
+VERIFY   triangles: weapon 47696 (limit 60000), arms 17320 (limit 20000)
+VERIFY   skin: 36 joints, e.g. ['UpperArm_L', 'Forearm_L', 'Hand_L', 'Index1_L']
+VERIFY   Weapon children: ['Bolt', 'Casing', 'Eject', 'Magazine', 'Muzzle', 'RifleBody', 'Selector', 'SightFront', 'SightRear', 'Trigger']
+VERIFY   Muzzle     t=[0, 0.034, -0.5794]
+VERIFY   SightRear  t=[0, 0.085, -0.1545]
+VERIFY   SightFront t=[0, 0.085, -0.53]
+VERIFY   Eject      t=[0.0175, 0.052, -0.12]
+VERIFY   default pose: Hand_R at [0.022, -0.038, 0.107] Hand_L at [-0.039, -0.01, -0.223] (glTF axes, should sit on the weapon)
+VERIFY   clip Fire         0.300 s (start 0.000)  123 channels, 41 nodes: weapon parts ['Arms', 'Bolt', 'Magazine', 'Trigger', 'Weapon']
+VERIFY   clip Draw         0.450 s (start 0.000)  123 channels, 41 nodes: weapon parts ['Arms', 'Bolt', 'Magazine', 'Trigger', 'Weapon']
+VERIFY   clip Holster      0.300 s (start 0.000)  123 channels, 41 nodes: weapon parts ['Arms', 'Bolt', 'Magazine', 'Trigger', 'Weapon']
+VERIFY   clip Sprint       0.700 s (start 0.000)  123 channels, 41 nodes: weapon parts ['Arms', 'Bolt', 'Magazine', 'Trigger', 'Weapon']
+VERIFY   clip Reload       2.400 s (start 0.000)  123 channels, 41 nodes: weapon parts ['Arms', 'Bolt', 'Magazine', 'Trigger', 'Weapon']
+VERIFY   clip ReloadEmpty  3.000 s (start 0.000)  126 channels, 42 nodes: weapon parts ['Arms', 'Bolt', 'MagRounds', 'Magazine', 'Trigger', 'Weapon']
+VERIFY   clip Idle         4.000 s (start 0.000)  123 channels, 41 nodes: weapon parts ['Arms', 'Bolt', 'Magazine', 'Trigger', 'Weapon']
+VERIFY   missing clips: none
+VERIFY   material Arms base True orm True normal True occlusion True
+VERIFY   material Rifle base True orm True normal True occlusion True
+VERIFY   image 0 arms_nrm     image/jpeg 2048x2048 0.75 MB
+VERIFY   image 1 arms_orm     image/jpeg 2048x2048 0.47 MB
+VERIFY   image 2 arms_base    image/jpeg 2048x2048 0.71 MB
+VERIFY   image 3 rifle_nrm    image/jpeg 2048x2048 0.15 MB
+VERIFY   image 4 rifle_orm    image/jpeg 2048x2048 0.77 MB
+VERIFY   image 5 rifle_base   image/jpeg 2048x2048 0.55 MB
+VERIFY   RESULT OK
+VERIFY Could not find platform independent libraries <prefix>
+STAGE rifle anim ok 9.2 s
+TOTAL 9.2 s
+Blender 5.2.3 LTS (hash e13b728c6880 built 2026-10-22 01:37:16)
+
+Blender quit

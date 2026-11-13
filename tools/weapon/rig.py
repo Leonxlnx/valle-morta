@@ -170,7 +170,11 @@ class Rig:
             c = a[f]; out[3 * i] = Quaternion((0, 0, 1), radians(c[3])) @ qx(-c[0]); out[3 * i + 1] = qx(-c[1]); out[3 * i + 2] = qx(-c[2])
         return out
 
-    def pre(s, a, k=0.5): return ablend(a, A_SPREAD, k)
+    def pre(s, a, k=0.5):
+        """opened version of a grip: same hand shape, fingers and thumb uncurled so the object can enter"""
+        o = {f: [a[f][0] * (1 - 0.35 * k), a[f][1] * (1 - 1.2 * k), a[f][2] * (1 - 1.2 * k), a[f][3]] for f in FN[1:]}
+        th = a['Thumb']; o['Thumb'] = [th[0] - 24 * k, th[1] - 10 * k, th[2], th[3] * (1 - 1.4 * k), th[4] * (1 - 1.4 * k)]
+        return o
 
     def quats(s, side, pose):
         m = 1.0 if side == 'R' else -1.0

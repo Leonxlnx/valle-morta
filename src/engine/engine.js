@@ -9,8 +9,8 @@ import { PostFX } from './post.js';
 export const QUALITY = {
   low:    { scale: 0.6,  msaa: 0, shadow: 1024, shadowRange: 55, pano: [1024, 256], cloudSteps: 36, ao: false, vol: true, volSteps: 14, volScale: 4, texSize: 512,  grass: 0.35, aniso: 2,  far: 0.5 },
   medium: { scale: 0.75, msaa: 0, shadow: 2048, shadowRange: 70, pano: [2048, 512], cloudSteps: 48, ao: true,  vol: true, volSteps: 18, volScale: 3, texSize: 1024, grass: 0.6,  aniso: 4,  far: 1 },
-  high:   { scale: 1.0,  msaa: 2, shadow: 2048, shadowRange: 105, pano: [2048, 512], cloudSteps: 44, ao: true,  vol: true, volSteps: 22, volScale: 3, texSize: 1024, grass: 0.85, aniso: 8,  far: 1 },
-  ultra:  { scale: 1.0,  msaa: 4, shadow: 4096, shadowRange: 95, pano: [4096, 1024], cloudSteps: 72, ao: true, vol: true, volSteps: 30, volScale: 2, texSize: 2048, grass: 1.0,  aniso: 16, far: 1 },
+  high:   { scale: 1.0,  msaa: 2, shadow: 4096, shadowRange: 130, pano: [3072, 768], cloudSteps: 56, ao: true,  vol: true, volSteps: 22, volScale: 3, texSize: 1024, grass: 0.85, aniso: 16,  far: 1 },
+  ultra:  { scale: 1.0,  msaa: 4, shadow: 4096, shadowRange: 130, pano: [4096, 1024], cloudSteps: 72, ao: true, vol: true, volSteps: 30, volScale: 2, texSize: 2048, grass: 1.0,  aniso: 16, far: 1 },
 };
 
 export class Engine {
@@ -46,10 +46,14 @@ export class Engine {
     this.sun.shadow.normalBias = 0.05;
     this.sun.shadow.radius = 1.7;
     this.scene.add(this.sun, this.sun.target);
-    this.sunDir = new THREE.Vector3(-0.70, 0.515, -0.49).normalize();   // west-north-west, 31 deg up: side light, long shadows
-    this.sunIntensity = 7.2;
-    this.sunTint = new THREE.Color(1.0, 0.9, 0.74);
-    this.ambient = 0.7;   // sky irradiance / pi on level ground; the image-based light is normalised to it
+    // due west, 33 deg up: side light with long shadows for the views up the valley, and the
+    // west and south-west faces of the village in full sun
+    this.sunDir = new THREE.Vector3(-0.84, 0.54, 0.04).normalize();
+    this.sunIntensity = 8.5;
+    this.sunTint = new THREE.Color(1.0, 0.89, 0.72);
+    // sky irradiance / pi on level ground; the image-based light is normalised to it.
+    // Sunlit level ground is about 4.5 times as bright as the shade next to it.
+    this.ambient = 0.42;
 
     this.sky = new Sky(renderer, { panoSize: this.q.pano, steps: this.q.cloudSteps });
     this.scene.add(this.sky.dome);
@@ -117,11 +121,10 @@ export class Engine {
     cam.left = -range; cam.right = range; cam.top = range; cam.bottom = -range;
     cam.near = 1; cam.far = 700;
     cam.updateProjectionMatrix();
-    // centre the shadow volume ahead of the viewer and snap it to shadow texels
-    const fwd = this._v.set(0, 0, -1).applyQuaternion(this.camera.quaternion);
-    fwd.y = 0; if (fwd.lengthSq() > 1e-6) fwd.normalize();
-    const cx = this.camera.position.x + fwd.x * range * 0.55;
-    const cz = this.camera.position.z + fwd.z * range * 0.55;
+    // The shadow volume is centred on the viewer and snapped to shadow texels. It must not follow
+    // the view direction: a volume pushed ahead of the camera drops and regains the shadows at its
+    // rim while the player turns.
+    const cx = this.camera.position.x, cz = this.camera.position.z;
     const cy = this.camera.position.y;
     const texel = (2 * range) / this.q.shadow;
     // light basis

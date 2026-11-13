@@ -8,6 +8,30 @@ import { loadImageData, loadMaterialArrays, loadTexture } from '../engine/textur
 
 export const GROUND_LAYERS = ['grass_ground', 'dirt_mud', 'gravel_road', 'forest_floor', 'rock_limestone', 'riverbed_pebbles', 'rubble', 'cobblestone'];
 
+// Large-scale variation of the meadow, shared by the sward (terrain) and the blades standing on it
+// (vegetation): rgb = tint of the base green, a = broken sward (bare soil, stones). The noise
+// lookups run at unrelated scales and angles, so nothing repeats inside the map.
+export const MEADOW_GLSL = /* glsl */`
+#ifndef VM_MEADOW
+#define VM_MEADOW
+vec4 vmMeadowVar(vec2 wxz) {
+  vec2 r = mat2(0.819, -0.574, 0.574, 0.819) * wxz;
+  float macro = texture2D(uNoiseTex, wxz / 230.0).r * 0.62 + texture2D(uNoiseTex, r / 613.0 + 0.27).g * 0.38;
+  float m2 = texture2D(uNoiseTex, wxz / 53.0 + 0.31).g;
+  float m3 = texture2D(uNoiseTex, r / 29.0 + 0.63).r;
+  float m4 = texture2D(uNoiseTex, r / 131.0 + 0.47).a;
+  // lush dark green where it is damp, yellow-green where it is drier
+  vec3 t = mix(vec3(0.70, 0.93, 0.60), vec3(1.18, 1.10, 0.68), smoothstep(0.3, 0.72, macro));
+  // clover and sedge: darker, bluer green
+  t = mix(t, vec3(0.60, 0.90, 0.66), smoothstep(0.56, 0.78, m2 * 0.7 + m4 * 0.3) * 0.75);
+  // straw-coloured tufts of last year's growth
+  t = mix(t, vec3(1.50, 1.26, 0.72), smoothstep(0.60, 0.84, m3 * 0.55 + (1.0 - m4) * 0.45) * 0.5);
+  float bare = smoothstep(0.69, 0.82, texture2D(uNoiseTex, r / 41.0 + 0.11).a * 0.6 + m3 * 0.4) * smoothstep(0.3, 0.6, macro);
+  return vec4(t, bare);
+}
+#endif
+`;
+
 const LAYER_LIB = /* glsl */`
 uniform sampler2DArray uTCol;
 uniform sampler2DArray uTNrm;
@@ -20,6 +44,34 @@ VmLayer vmSample(float idx, vec2 uv, vec2 dx, vec2 dy) {
   L.n.y = -L.n.y; // array layers are stored top row first
   vec3 a = textureGrad(uTArh, vec3(uv, idx), dx, dy).rgb;
   L.ao = a.r; L.rough = a.g; L.h = a.b;
+  return L;
+}
+// Stochastic variant: two copies of the tile at unrelated offsets (st.xy, st.zw), chosen by a
+// low-frequency index field and blended by k, so that no layer shows its 4 m repeat.
+VmLayer vmSampleS(float idx, vec2 uv, vec2 dx, vec2 dy, vec4 st, float k) {
+  VmLayer L;
+  vec2 ua = uv + st.xy, ub = uv + st.zw;
+  vec3 ca = textureGrad(uTCol, vec3(ua, idx), dx, dy).rgb;
+  vec3 cb = textureGrad(uTCol, vec3(ub, idx), dx, dy).rgb;
+  float m = smoothstep(0.2, 0.8, k - 0.35 * ((ca.r + ca.g + ca.b) - (cb.r + cb.g + cb.b)));
+  L.col = mix(ca, cb, m);
+  L.n = mix(textureGrad(uTNrm, vec3(ua, idx), dx, dy).xy, textureGrad(uTNrm, vec3(ub, idx), dx, dy).xy, m) * 2.0 - 1.0;
+  L.n.y = -L.n.y;
+  vec3 a = mix(textureGrad(uTArh, vec3(ua, idx), dx, dy).rgb, textureGrad(uTArh, vec3(ub, idx), dx, dy).rgb, m);
+  L.ao = a.r; L.rough = a.g; L.h = a.b;
+  return L;
+}
+// Cheaper variant for the sward, which covers most of the screen: only the colour is taken from
+// both copies; normal and relief keep the plain tile (their repeat does not read).
+VmLayer vmSampleC(float idx, vec2 uv, vec2 dx, vec2 dy, vec4 st, float k) {
+  VmLayer L;
+  vec3 ca = textureGrad(uTCol, vec3(uv + st.xy, idx), dx, dy).rgb;
+  vec3 cb = textureGrad(uTCol, vec3(uv + st.zw, idx), dx, dy).rgb;
+  L.col = mix(ca, cb, smoothstep(0.2, 0.8, k - 0.35 * ((ca.r + ca.g + ca.b) - (cb.r + cb.g + cb.b))));
+  L.n = textureGrad(uTNrm, vec3(uv, idx), dx, dy).xy * 2.0 - 1.0;
+  L.n.y = -L.n.y;
+  vec3 a = textureGrad(uTArh, vec3(uv, idx), dx, dy).rgb;
+  L.ao = mix(1.0, a.r, 0.5); L.rough = a.g; L.h = a.b;
   return L;
 }
 void vmBlend(inout VmLayer A, VmLayer B, float w, float sharp) {
@@ -62,6 +114,7 @@ uniform vec4 uInner;
 uniform float uWetness;
 uniform vec3 uMeadow;
 uniform float uMeadowAvg;
+${MEADOW_GLSL}
 `;
 
 const LOCAL_SURFACE = /* glsl */`
@@ -78,24 +131,30 @@ const LOCAL_SURFACE = /* glsl */`
   float slope = 1.0 - N0.y;
 
   vec2 uv = wxz / 4.0;
-  vec2 dx = dFdx(uv), dy = dFdy(uv);
-  float macro = texture2D(uNoiseTex, wxz / 230.0).r;
+  // slightly tightened gradients: a crisper ground at grazing angles (anisotropic filtering does the rest)
+  vec2 dx = dFdx(uv) * 0.75, dy = dFdy(uv) * 0.75;
+  vec4 mv = vmMeadowVar(wxz);
   float macro2 = texture2D(uNoiseTex, wxz / 53.0 + 0.31).g;
   float fine = texture2D(uNoiseTex, wxz / 9.0 + 0.7).b;
+  float fine2 = texture2D(uNoiseTex, wxz.yx / 5.3 + 0.21).g;
+  // index field of the stochastic tiling: irregular bands a few metres wide, each with its own
+  // offset into the tile
+  float sk = (texture2D(uNoiseTex, wxz / 61.0 + 0.19).a * 0.65 + texture2D(uNoiseTex, wxz.yx / 23.0 + 0.71).r * 0.35) * 7.0;
+  float si = floor(sk), sf = fract(sk);
+  vec4 sOff = vec4(fract(sin(vec2(3.0, 7.0) * si) * 43.7), fract(sin(vec2(3.0, 7.0) * (si + 1.0)) * 43.7));
 
   // meadow
-  VmLayer L = vmSample(0.0, uv, dx, dy);
-  float farK = smoothstep(22.0, 120.0, dist);
+  VmLayer L = vmSampleC(0.0, uv, dx, dy, sOff, sf);
+  float farK = smoothstep(16.0, 90.0, dist);
   if (farK > 0.01) {
-    // rotated, larger scale copy hides the tiling in the distance
+    // rotated, larger scale copy carries the distance
     vec2 uv2 = mat2(0.819, -0.574, 0.574, 0.819) * uv * 0.23;
-    VmLayer Lf = vmSample(0.0, uv2, dx * 0.23, dy * 0.23);
-    L.col = mix(L.col, Lf.col, farK * 0.75); L.n = mix(L.n, Lf.n, farK * 0.6);
+    VmLayer Lf = vmSampleC(0.0, uv2, dx * 0.23, dy * 0.23, sOff * 1.7 + 0.37, sf);
+    L.col = mix(L.col, Lf.col, farK * 0.8); L.n = mix(L.n, Lf.n, farK * 0.6);
     L.rough = mix(L.rough, Lf.rough, farK * 0.6); L.h = mix(L.h, Lf.h, farK * 0.5);
   }
   // lush / dry / mossy variation across the meadow
-  vec3 tint = mix(vec3(0.86, 0.94, 0.70), vec3(1.18, 1.08, 0.80), smoothstep(0.3, 0.75, macro));
-  tint = mix(tint, vec3(0.92, 0.98, 0.78), smoothstep(0.55, 0.8, macro2) * 0.6);
+  vec3 tint = mv.rgb;
   {
     // the sward takes the exact green of the grass blades standing on it (same uniform,
     // same tint field); the photo texture only contributes its luminance detail
@@ -112,31 +171,42 @@ const LOCAL_SURFACE = /* glsl */`
 
   // forest floor under the conifers
   float wF = mC.r * smoothstep(0.25, 0.6, macro2 * 0.6 + mC.r * 0.7);
-  if (wF > 0.004) vmBlend(L, vmSample(3.0, uv, dx, dy), wF, 0.3);
+  if (wF > 0.004) vmBlend(L, vmSampleS(3.0, uv, dx, dy, sOff, sf), wF, 0.3);
   // bedrock where the ground is steep
   float wR = smoothstep(0.24, 0.42, slope + (macro2 - 0.5) * 0.16 + (fine - 0.5) * 0.08);
-  if (wR > 0.004) { vec2 ru = wxz / 6.0; vmBlend(L, vmSample(4.0, ru, dx * 0.667, dy * 0.667), wR, 0.2); }
+  if (wR > 0.004) {
+    vec2 ru = wxz / 6.0; vmBlend(L, vmSample(4.0, ru, dx * 0.667, dy * 0.667), wR, 0.2);
+    // moss in patches on the damp rock
+    L.col = mix(L.col, uMeadow * vec3(1.15, 1.3, 0.62), wR * smoothstep(0.5, 0.72, macro2 * 0.55 + fine * 0.45) * 0.55);
+  }
   // bare earth, mud
   // churned earth is half regrown: soil only shows where the grass stands thin (same noise as the blades)
   float thin = smoothstep(0.62, 0.3, texture2D(uNoiseTex, wxz / 17.0 + 0.13).b);
   float wM = smoothstep(0.25, 0.8, mA.g * (0.75 + 0.6 * macro2)) * mix(1.0, thin, 0.85);
-  if (wM > 0.004) vmBlend(L, vmSample(1.0, uv, dx, dy), wM, 0.22);
+  // noise-placed breaks in the sward: bare soil, and stones lying in some of them
+  float bare = mv.a * (1.0 - wF) * (1.0 - wR);
+  wM = max(wM, bare * 0.75);
+  if (wM > 0.004) vmBlend(L, vmSampleS(1.0, uv, dx, dy, sOff, sf), wM, 0.22);
+  float wSt = bare * smoothstep(0.5, 0.68, fine2);
+  if (wSt > 0.004) vmBlend(L, vmSampleS(5.0, uv * 1.37, dx * 1.37, dy * 1.37, sOff.yxwz, sf), wSt, 0.3);
   // dirt road
   float wRoad = mA.r;
-  if (wRoad > 0.004) vmBlend(L, vmSample(2.0, uv, dx, dy), wRoad, 0.18);
+  if (wRoad > 0.004) vmBlend(L, vmSampleS(2.0, uv, dx, dy, sOff, sf), wRoad, 0.18);
   // cobbled streets
   float wC = mB.g;
   if (wC > 0.004) vmBlend(L, vmSample(7.0, uv, dx, dy), wC, 0.14);
   // rubble aprons around ruined buildings
   float wRb = mA.b;
-  if (wRb > 0.004) vmBlend(L, vmSample(6.0, uv, dx, dy), wRb, 0.25);
+  if (wRb > 0.004) vmBlend(L, vmSampleS(6.0, uv, dx, dy, sOff, sf), wRb, 0.25);
   // river bed
   float wBed = mB.r;
-  if (wBed > 0.004) vmBlend(L, vmSample(5.0, uv, dx, dy), wBed, 0.2);
+  if (wBed > 0.004) vmBlend(L, vmSampleS(5.0, uv, dx, dy, sOff, sf), wBed, 0.2);
 
   // rain-soaked ground and standing water
   float wet = mB.b;
-  float damp = clamp(uWetness * (0.55 + 0.6 * (1.0 - L.h)) + wet * 0.8 + wBed * 0.8, 0.0, 1.0);
+  // the ground is not evenly wet: damp hollows and drier rises across the valley floor
+  float wetVar = smoothstep(0.3, 0.75, texture2D(uNoiseTex, wxz / 147.0 + 0.83).b);
+  float damp = clamp(uWetness * (0.2 + 1.5 * wetVar) * (0.55 + 0.6 * (1.0 - L.h)) + wet * 0.8 + wBed * 0.8, 0.0, 1.0);
   float puddle = smoothstep(0.42, 0.62, wet * 1.15 - L.h * 0.35);
   L.col *= mix(1.0, 0.52, damp * (1.0 - 0.3 * wC));
   L.rough = mix(L.rough, L.rough * 0.55, damp);
@@ -144,6 +214,12 @@ const LOCAL_SURFACE = /* glsl */`
   L.col = mix(L.col, L.col * 0.55, puddle);
   L.n *= 1.0 - puddle;
 
+  // fine grit close to the eye, where the 4 m tiles run out of texels
+  float nearK = 1.0 - smoothstep(4.0, 14.0, dist);
+  if (nearK > 0.01) {
+    vec2 gn = textureGrad(uTNrm, vec3(uv * 7.3, 2.0), dx * 7.3, dy * 7.3).xy * 2.0 - 1.0;
+    L.n += vec2(gn.x, -gn.y) * 0.5 * nearK * (1.0 - puddle);
+  }
   float nStrength = mix(1.35, 0.55, smoothstep(40.0, 260.0, dist));
   vec3 Nw = normalize(vec3(N0.x - L.n.x * nStrength * N0.y, N0.y, N0.z - L.n.y * nStrength * N0.y));
   normal = normalize((viewMatrix * vec4(Nw, 0.0)).xyz);
@@ -259,6 +335,11 @@ export class Terrain {
     t.maskA = ma.data; t.maskB = mb.data; t.maskC = mc.data; t.maskN = ma.width;
     const aniso = Math.min(engine.q.aniso, engine.maxAniso);
     t.layers = await loadMaterialArrays(GROUND_LAYERS, engine.q.texSize, aniso);
+    // The albedo carries the visible sharpness at grazing angles; normals and relief get by with
+    // less. (Anisotropic probes on these arrays are the largest single cost of the ground.)
+    t.layers.col.anisotropy = Math.min(aniso, 8);
+    t.layers.nrm.anisotropy = Math.min(aniso, 4);
+    t.layers.arh.anisotropy = Math.min(aniso, 2);
     onProgress(0.7);
 
     const heightTex = new THREE.DataTexture(t.local, meta.local.n, meta.local.n, THREE.RedFormat, THREE.FloatType);
@@ -284,7 +365,7 @@ export class Terrain {
       uLocalN: { value: loadTexture(`${base}local_n.png`, { repeat: false, aniso, flipY: false }) },
       uHeightTex: { value: heightTex },
       uWetness: { value: 0.32 },
-      uMeadow: { value: new THREE.Vector3(0.064, 0.084, 0.030) },   // linear albedo shared by the sward and the grass blades
+      uMeadow: { value: new THREE.Vector3(0.052, 0.075, 0.030) },   // linear albedo shared by the sward and the grass blades
       uMeadowAvg: { value: meadowAvg },
     };
     t.uniforms = shared;

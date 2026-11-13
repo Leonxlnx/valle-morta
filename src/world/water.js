@@ -341,7 +341,7 @@ export async function build(ctx) {
     uWaterN: { value: makeWaterNormals(256) },
     uFoamMap: { value: makeFoamMap(ctx, rocks) },
     uPanoA: dome.uPanoA, uPanoB: dome.uPanoB, uBlend: dome.uBlend,
-    uBodyCol: { value: new THREE.Vector3(0.07, 0.21, 0.165) },
+    uBodyCol: { value: new THREE.Vector3(0.055, 0.13, 0.115) },   // clear mountain water: grey-green, not turquoise
   });
   const mat = new THREE.ShaderMaterial({
     vertexShader: WATER_VS, fragmentShader: WATER_FS, uniforms,

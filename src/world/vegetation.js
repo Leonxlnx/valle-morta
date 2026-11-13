@@ -5,6 +5,7 @@
 import * as THREE from 'three';
 import { enhance, makeDepthMaterial } from '../engine/materials.js';
 import { getRiverRocks, riverLocalRange } from './water.js';
+import { MEADOW_GLSL } from './terrain.js';
 
 const TAU = Math.PI * 2;
 const lerp = (a, b, t) => a + (b - a) * t;
@@ -638,6 +639,8 @@ uniform vec4 uVarH;
 uniform vec4 uMisc;
 uniform vec2 uCenter;
 uniform vec3 uCamG;
+uniform vec4 uCull;
+${MEADOW_GLSL}
 varying vec4 vmG;
 varying vec3 vmTint;
 varying vec4 vmFog;
@@ -657,19 +660,26 @@ void vmGrass() {
   vec4 h2 = vmHash(cid * 1.37 + 71.3 + uRing.z);
   vec2 root = wc + (h.xy - 0.5) * uRing.x;
   float th = vmTH(root);
-  float d = distance(vec3(root.x, th, root.y), uCamG);
+  vec3 rel = vec3(root.x, th, root.y) - uCamG;
+  float d = length(rel);
+  // Culling only: tufts beyond the fade distance or outside the view cone (widened by the size of
+  // a tuft) are collapsed before any further work. What grows where depends on world position alone.
+  if (d > uFade.w || (d > 14.0 && dot(rel, uCull.xyz) < d * uCull.w)) {
+    gPos = vec3(root.x, th - 2.0, root.y); gNrm = vec3(0.0, 1.0, 0.0); gUv = vec2(0.0);
+    vmG = vec4(0.0); vmTint = vec3(0.0); vmFog = vec4(0.0, 0.0, 0.0, 1.0); vmCS = 1.0;
+    return;
+  }
   vec4 gm = texture2D(uGrassMap, (root + 512.0) / 1024.0);
   float n1 = texture2D(uNoiseTex, root / 17.0 + 0.13).b;
-  float macro = texture2D(uNoiseTex, root / 230.0).r;
-  float macro2 = texture2D(uNoiseTex, root / 53.0 + 0.31).g;
+  vec4 mv = vmMeadowVar(root);
   float lod = smoothstep(uFade.x, uFade.y, d) * (1.0 - smoothstep(uFade.z, uFade.w, d));
   float kLod = clamp((lod - h.z * 0.7) / 0.3, 0.0, 1.0);
   ${flower ? /* glsl */`
   float drift = smoothstep(0.5, 0.66, texture2D(uNoiseTex, root / 43.0 + 0.57).a * 0.75 + texture2D(uNoiseTex, root / 7.0).g * 0.25);
-  float dens = gm.r * gm.g * (1.0 - gm.b) * mix(uMisc.z, uMisc.w, drift);
+  float dens = gm.r * gm.g * (1.0 - gm.b) * mix(uMisc.z, uMisc.w, drift) * (1.0 - mv.a);
   float kDen = step(h.w, dens);
   ` : /* glsl */`
-  float dens = gm.r * (0.74 + 0.8 * n1);
+  float dens = gm.r * (0.74 + 0.8 * n1) * (1.0 - 0.9 * mv.a);
   float kDen = clamp((dens - h.w * 0.75) / 0.25, 0.0, 1.0);
   `}
   float inside = step(max(abs(root.x), abs(root.y)), 508.0);
@@ -700,8 +710,7 @@ void vmGrass() {
   ${flower ? /* glsl */`
   vmTint = vec3(0.88 + 0.24 * h2.x);
   ` : /* glsl */`
-  vec3 tint = mix(vec3(0.86, 0.94, 0.70), vec3(1.18, 1.08, 0.80), smoothstep(0.3, 0.75, macro));
-  tint = mix(tint, vec3(0.92, 0.98, 0.78), smoothstep(0.55, 0.8, macro2) * 0.6);
+  vec3 tint = mv.rgb;
   vmTint = tint * (0.86 + 0.28 * h2.x) * mix(vec3(1.0), vec3(1.5, 1.2, 0.62), h2.y * h2.y * 0.8);
   vmTint = mix(vmTint, tint * vec3(0.98, 0.84, 0.6) * (0.7 + 0.3 * h2.x), gm.b * 0.85);
   `}
@@ -916,7 +925,7 @@ void vmBillboard() {
 // ------------------------------------------------------------------ build
 export async function build(ctx) {
   const { engine, scene, terrain: T, layout: P, quality } = ctx;
-  const aniso = Math.min(4, engine.maxAniso || 4);
+  const aniso = Math.min(8, engine.maxAniso || 4);
   const U = { uCam: { value: new THREE.Vector3(0, 50, 0) } };
   const handle = { U, rings: [], trees: 0 };
   const perFrame = [];
@@ -950,26 +959,27 @@ export async function build(ctx) {
     const uTexAvg = { value: new THREE.Vector3(atlas.avg[0], atlas.avg[1], atlas.avg[2]) };
     const qg = clamp(quality.grass ?? 0.85, 0.3, 1), sq = Math.sqrt(qg);
     const TW = 1 / 1024;
+    const uCull = { value: new THREE.Vector4(0, 0, -1, -1) };   // xyz view direction, w cosine of the cull cone
     const cfgs = [
       { name: 'feet', R: 5.6, cell: 0.2 / sq, fade: [-1, -0.5, 3.0, 5.6], geo: tuftGeo(3, 2, 0.62, 0.1), shape: [0.44, 0.3, 4, 0.35],
-        tile: [0, 0, 256 * TW, 256 * TW], varT: [0.46, 0.72, 0.95], varH: [1, 1.1, 0.6, 1.4], misc: [1.0, 1.25, 0, 0], root: 0.55, tip: [1.12, 1.2, 0.84], seed: 5, shadows: true },
+        tile: [0, 0, 256 * TW, 256 * TW], varT: [0.46, 0.72, 0.95], varH: [1, 1.1, 0.6, 1.4], misc: [1.0, 1.25, 0, 0], root: 0.45, tip: [1.26, 1.3, 0.82], seed: 5, shadows: true },
       { name: 'near', R: 12, cell: 0.285 / sq, fade: [-1, -0.5, 7, 12], geo: tuftGeo(3, 2, 0.5, 0.1), shape: [0.5, 0.36, 4, 0.3],
-        tile: [0, 0, 256 * TW, 256 * TW], varT: [0.42, 0.68, 0.92], varH: [1, 1.12, 0.55, 1.5], misc: [1.0, 1.5, 0, 0], root: 0.55, tip: [1.12, 1.2, 0.84], seed: 11, shadows: true },
+        tile: [0, 0, 256 * TW, 256 * TW], varT: [0.42, 0.68, 0.92], varH: [1, 1.12, 0.55, 1.5], misc: [1.0, 1.5, 0, 0], root: 0.45, tip: [1.26, 1.3, 0.82], seed: 11, shadows: true },
       { name: 'mid', R: 46, cell: 0.86 / sq, fade: [5.5, 11, 32, 46], geo: tuftGeo(2, 1, 0.26, 0.0, 2, 0.3), shape: [1.3, 0.36, 2, 0.2],
-        tile: [0, 256 * TW, 512 * TW, 256 * TW], varT: [0.72, 2, 2], varH: [1, 1.15, 1, 1], misc: [1.25, 2.3, 0, 0], root: 0.6, tip: [1.1, 1.18, 0.85], seed: 37, shadows: true },
+        tile: [0, 256 * TW, 512 * TW, 256 * TW], varT: [0.72, 2, 2], varH: [1, 1.15, 1, 1], misc: [1.25, 2.3, 0, 0], root: 0.52, tip: [1.2, 1.26, 0.84], seed: 37, shadows: true },
       { name: 'far', R: 150, cell: 2.0 / sq, fade: [30, 45, 100, 150], geo: tuftGeo(1, 1, 0.14, 0.0, 2, 0.32), shape: [3.7, 0.4, 2, 0.1],
         tile: [0, 256 * TW, 512 * TW, 256 * TW], varT: [0.72, 2, 2], varH: [1, 1.1, 1, 1], misc: [2.0, 3.4, 0, 0], root: 0.75, tip: [1.06, 1.12, 0.9], seed: 53, shadows: true },
       { name: 'flowers', flower: true, R: 38, cell: 0.6 / sq, fade: [-1, -0.5, 25, 38], geo: tuftGeo(2, 1, 0.3, 0.0), shape: [0.44, 0.4, 4, 0.35],
         tile: [0, 512 * TW, 256 * TW, 256 * TW], varT: [0.62, 0.78, 0.93], varH: [1, 0.8, 1.6, 0.9], misc: [1.25, 2.6, 0.05, 0.8], root: 1, tip: [1, 1, 1], seed: 91, shadows: false },
     ];
     for (const c of cfgs) {
-      const S = c.R * 1.6, N = Math.round(S / c.cell), cell = S / N;
+      const S = c.R * 2.0, N = Math.round(S / c.cell), cell = S / N;
       const uniforms = {
         uHeightTex: T.uniforms.uHeightTex, uGrassMap: { value: grassMap }, uLocalN: T.uniforms.uLocalN,
         uRing: { value: new THREE.Vector4(cell, S, c.seed, 0) }, uFade: { value: new THREE.Vector4(...c.fade) },
         uShape: { value: new THREE.Vector4(...c.shape) }, uTile: { value: new THREE.Vector4(...c.tile) },
         uVarT: { value: new THREE.Vector3(...c.varT) }, uVarH: { value: new THREE.Vector4(...c.varH) },
-        uMisc: { value: new THREE.Vector4(...c.misc) }, uCenter: { value: new THREE.Vector2() }, uCamG: U.uCam,
+        uMisc: { value: new THREE.Vector4(...c.misc) }, uCenter: { value: new THREE.Vector2() }, uCamG: U.uCam, uCull,
         uGround, uTexAvg, uTip: { value: new THREE.Vector3(...c.tip) }, uRoot: { value: c.root },
       };
       const geo = new THREE.InstancedBufferGeometry();
@@ -990,9 +1000,13 @@ export async function build(ctx) {
     }
     const dir = new THREE.Vector3();
     perFrame.push((camera) => {
+      // The rings are centred on the camera itself, so what grows where never depends on the view
+      // direction. The view cone (plus a margin) only culls tufts that cannot be on screen.
       camera.getWorldDirection(dir);
-      const hl = Math.hypot(dir.x, dir.z) || 1e-5, k = Math.min(1, hl * 1.7) * 0.45;
-      for (const r of handle.rings) r.uniforms.uCenter.value.set(camera.position.x + dir.x / hl * r.R * k, camera.position.z + dir.z / hl * r.R * k);
+      const th = Math.tan(THREE.MathUtils.degToRad(camera.getEffectiveFOV()) / 2);
+      const cone = Math.atan(Math.hypot(th, th * camera.aspect)) + 0.2;
+      uCull.value.set(dir.x, dir.y, dir.z, cone < Math.PI ? Math.cos(cone) : -1);
+      for (const r of handle.rings) r.uniforms.uCenter.value.set(camera.position.x, camera.position.z);
     });
   });
 

@@ -71,7 +71,7 @@ def setup(st):
                 fingers=('Middle', 'Ring', 'Pinky'), thumb=dict(aim=(0.05, 0.58, -0.81)), reach={'Index': (0.002, 0.0145, -0.015)}, back=0.03)
     Hm = g.M; tp = Matrix.Translation((0, 0.013, 0.008)) @ Matrix.Rotation(radians(-12), 4, 'X') @ Matrix.Translation((0, -0.013, -0.008)) @ Vector((0.002, 0.0145, -0.015))
     ap, e = rg.reach('R', Hm, g.a, 'Index', tp); print('GRIP trigger pulled residual %.1f mm' % (e * 1000))
-    A['grip'] = g; A['pull'] = Anchor('Weapon', Hm, rg.pose(ap), g.pose, g.retreat, ap); A['safe'] = g.variant(rg, Index=[10, 8, 5, 0])
+    A['grip'] = g; A['pull'] = Anchor('Weapon', Hm, rg.pose(ap), g.pose, g.retreat, ap); A['safe'] = g.variant(rg, Index=[10, 8, 5, 0]); st.IDX = g.variant(rg, Index=[-12, 55, 28, -4]).pose
     A['hg'] = st.grip('handguard', 'L', 'Weapon', F((0.77, 0.64, 0.10), (0.1, 0, -1)), (0.008, 0.262, -0.004), (0, 62, 0), (0, 0, 1),
                       thumb=dict(aim=(-0.34, 0.59, -0.75)), retreat=(-0.025, -0.01, -0.06))
     A['mag'] = st.grip('magazine', 'L', 'Magazine', F((0.15, 0.80, 0.58), (-1, 0, 0)), (-0.024, 0.167, -0.060), (-8, 96, 1.5), (1, 0, 0),
@@ -108,7 +108,7 @@ def clips(st):
     c.wr.k(0, br).k(0.7, br).add(lambda t: v3(2.2 * sin(2 * w2 * t + 0.7) - 2.2 * sin(0.7), 3.0 * sin(w2 * t), 1.6 * sin(w2 * t + 0.5) - 1.6 * sin(0.5)))
     c.hand['R'].clear().hold(0, 0.7, A['safe'])
     for sd in 'RL': c.sh[sd].add(lambda t: v3(0.0, 0.0, 0.006 * sin(2 * w2 * t)))
-    RR, RP = (28, 30, 15), (-0.06, -0.03, -0.026)                  # reload "workspace": muzzle up-left, magazine well rolled towards the support hand
+    RR, RP = (30, 30, 16), (-0.05, -0.05, 0.05)                  # reload "workspace": muzzle up-left, magazine well rolled towards the support hand
 
     def mag_change(c, k):
         """shared magazine swap, times scaled by k; returns the time the fresh magazine locks"""
@@ -128,9 +128,9 @@ def clips(st):
     c.wr.k(1.92, RR).k(2.24, (-1.5, -2, -0.8), 'c').k(2.4, (0, 0, 0)); c.wp.k(1.92, RP).k(2.24, (0.001, 0.002, -0.004), 'c').k(2.4, (0, 0, 0))
     c.pl['L'].k(2.28, (0, 0, 0))
     c.hand['L'].clear().hold(0, 0.06, A['hg'], open=0.06).hold(0.44, 1.88, A['mag'], close=0.10, open=0.07).hold(2.27, 2.4, A['hg'], close=0.09)
-    c.hand['R'].clear().hold(0, 0.02, A['grip']).hold(0.14, 2.20, A['safe'], mid='direct').hold(2.32, 2.4, A['grip'], mid='direct')
+    c.hand['R'].clear().hold(0, 0.02, A['grip']).hold(0.16, 2.18, A['safe'], mid=st.IDX).hold(2.33, 2.4, A['grip'], mid=st.IDX)
     # ---- ReloadEmpty: magazine swap, then the support hand racks the charging handle over the top
-    c = Clip(st, 'ReloadEmpty', 3.0); T = mag_change(c, 0.93); KP, KR = (-0.03, -0.03, -0.02), (24, -58, 8)
+    c = Clip(st, 'ReloadEmpty', 3.0); T = mag_change(c, 0.93); KP, KR = (-0.03, -0.04, -0.02), (24, -58, 8)
     c.ps['MagRounds'] = Tr(1, [0.001]).k(0.93, [0.001]).k(0.96, [1.0], ease='lin')
     c.wr.k(1.66, RR).k(2.06, KR).k(2.46, (23, -57, 8)).k(2.82, (-1.0, 2.0, -0.4), 'c').k(3.0, (0, 0, 0))
     c.wp.k(1.66, RP).k(2.06, KP).k(2.46, KP).k(2.82, (0.001, 0.002, -0.004), 'c').k(3.0, (0, 0, 0))
@@ -138,6 +138,6 @@ def clips(st):
     c.wp.add(kick(2.21, (0, -0.011, 0), 0.12, 0.05)).add(spring(2.44, (0, 0.004, -0.002), 7, 12)); c.wr.add(spring(2.44, (-1.2, 1.5, 0.4), 7, 12))
     c.pl['L'].k(2.08, (0, 0, 0)); c.pl['R'].k(1.70, (0, 0, 0)).k(2.06, (0.9, 0, 0.5)).k(2.46, (0.9, 0, 0.5)).k(2.85, (0, 0, 0))
     c.hand['L'].clear().hold(0, 0.06, A['hg'], open=0.06).hold(T(0.44), T(1.86), A['mag'], close=0.10, open=0.07).hold(2.10, 2.34, A['hook'], close=0.08, open=0.02)
-    c.hand['L'].hold(2.40, 2.43, A['rel'], mid='direct').hold(2.85, 3.0, A['hg'], close=0.09)
-    c.hand['R'].clear().hold(0, 0.02, A['grip']).hold(0.14, 2.80, A['safe'], mid='direct').hold(2.92, 3.0, A['grip'], mid='direct')
+    c.hand['L'].hold(2.40, 2.43, A['rel'], mid='direct').hold(2.85, 3.0, A['hg'], close=0.09, lift=(-0.09, -0.02, 0.0))
+    c.hand['R'].clear().hold(0, 0.02, A['grip']).hold(0.16, 2.78, A['safe'], mid=st.IDX).hold(2.93, 3.0, A['grip'], mid=st.IDX)
     c.ev(2.34, 'bolt_back').ev(2.44, 'bolt_forward')

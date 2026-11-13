@@ -118,7 +118,7 @@ void main() {
     float sc = dens * dt;
     // the thin upper air carries the shafts in front of the mountain flanks,
     // the air near the ground stays clear
-    float hb = mix(0.6, 9.0, smoothstep(60.0, 520.0, p.y));
+    float hb = mix(0.5, 5.0, smoothstep(60.0, 520.0, p.y));
     L += T * (haze * hb + mist * 0.3 + smoke) * dt * vis;
     // mist banks and smoke also glow in the diffuse light of the sky
     La += T * (max(mist - mistB * 0.8, 0.0) + smoke) * dt;
@@ -126,8 +126,9 @@ void main() {
   }
   float m = dot(rd, uSunDir);
   // a softened forward lobe: looking into the sun must not wash the valley out
-  float phase = 0.3 * hgp(m, 0.6) + 0.38 * hgp(m, 0.18) + 0.25 * hgp(m, -0.25) + 0.04;
-  vec3 col = uSunColor * (L * phase * uStrength);
+  float phase = 0.2 * hgp(m, 0.6) + 0.38 * hgp(m, 0.18) + 0.25 * hgp(m, -0.25) + 0.04;
+  // air scatters the short wavelengths: the lit haze is cooler than the sun itself
+  vec3 col = uSunColor * vec3(0.82, 0.93, 1.1) * (L * phase * uStrength);
   col /= 1.0 + dot(col, vec3(0.3, 0.6, 0.1)) * 1.5;   // soft knee: shafts never burn out
   col += uFogColor * La;
   outColor = vec4(col, -vp.z / 300.0);
@@ -209,6 +210,9 @@ uniform sampler2D tColor;
 uniform sampler2D tBloom;
 uniform float uExposure;
 uniform float uBloom;
+uniform sampler2D tWide;    // wide blur of the scene (a coarse level of the bloom pyramid)
+uniform float uClarity;
+uniform float uVibrance;
 uniform float uPeak;        // display peak relative to diffuse white (1 = SDR)
 uniform float uContrast;
 uniform float uSaturation;
@@ -252,6 +256,12 @@ void main() {
   vec3 hdr = texture(tColor, vUv).rgb;
   vec3 bloom = texture(tBloom, vUv).rgb;
   vec3 col = mix(hdr, bloom, uBloom) * uExposure;
+  // local contrast: each pixel is pushed away from the brightness of its wider surroundings
+  if (uClarity > 0.0) {
+    float lw = dot(texture(tWide, vUv).rgb, vec3(0.2126, 0.7152, 0.0722)) * uExposure;
+    float lc = dot(col, vec3(0.2126, 0.7152, 0.0722));
+    col *= pow(clamp((lc + 0.03) / (lw + 0.03), 0.5, 2.0), uClarity);
+  }
   // vignette in scene-referred space
   vec2 q = vUv - 0.5;
   float vig = 1.0 - uVignette * smoothstep(0.25, 0.95, dot(q, q) * 2.2);
@@ -269,8 +279,13 @@ void main() {
   col = max(col, 0.0);
   // grade (display-linear)
   float luma = dot(col, vec3(0.2126, 0.7152, 0.0722));
-  col = mix(vec3(luma), col, uSaturation);
-  col = pow(col, vec3(uContrast)) * pow(0.18, 1.0 - uContrast);
+  // vibrance: muted colours gain more than the ones that are already saturated
+  float cmx = max(col.r, max(col.g, col.b)), cmn = min(col.r, min(col.g, col.b));
+  col = mix(vec3(luma), col, uSaturation + uVibrance * (1.0 - (cmx - cmn) / max(cmx, 1e-3)));
+  // contrast around mid grey; the gain is taken back out of the highlights so that plaster, snow
+  // and clouds keep their detail instead of clipping
+  vec3 cc = pow(col, vec3(uContrast)) * pow(0.18, 1.0 - uContrast);
+  col = mix(cc, col, uContrast > 1.0 ? smoothstep(0.5, 1.0, luma) : 0.0);
   float sh = 1.0 - smoothstep(0.0, 0.35, luma);
   float hi = smoothstep(0.35, 1.0, luma);
   col *= mix(vec3(1.0), uShadowTint, sh) * mix(vec3(1.0), uHighlightTint, hi);
@@ -314,7 +329,8 @@ vec3 fxaa(vec2 uv) {
   float lMin = min(lM, min(min(lN, lS), min(lW, lE)));
   float lMax = max(lM, max(max(lN, lS), max(lW, lE)));
   float range = lMax - lMin;
-  if (range < max(0.0312, lMax * 0.125)) return M4.rgb;
+  // only real edges are filtered: texture detail and grass keep their sharpness (MSAA covers geometry)
+  if (range < max(0.05, lMax * 0.2)) return M4.rgb;
   float lNW = texture(tLDR, uv + vec2(-1.0, -1.0) * uTexel).a;
   float lNE = texture(tLDR, uv + vec2(1.0, -1.0) * uTexel).a;
   float lSW = texture(tLDR, uv + vec2(-1.0, 1.0) * uTexel).a;
@@ -324,7 +340,7 @@ vec3 fxaa(vec2 uv) {
   dir.y = ((lNW + lSW) - (lNE + lSE));
   float dirReduce = max((lNW + lNE + lSW + lSE) * 0.03125, 1.0 / 128.0);
   float rcp = 1.0 / (min(abs(dir.x), abs(dir.y)) + dirReduce);
-  dir = clamp(dir * rcp, vec2(-8.0), vec2(8.0)) * uTexel;
+  dir = clamp(dir * rcp, vec2(-6.0), vec2(6.0)) * uTexel;
   vec3 A = 0.5 * (texture(tLDR, uv + dir * (1.0 / 3.0 - 0.5)).rgb + texture(tLDR, uv + dir * (2.0 / 3.0 - 0.5)).rgb);
   vec3 B = A * 0.5 + 0.25 * (texture(tLDR, uv + dir * -0.5).rgb + texture(tLDR, uv + dir * 0.5).rgb);
   float lB = dot(B, vec3(0.299, 0.587, 0.114));
@@ -352,9 +368,9 @@ export class PostFX {
     this.renderer = renderer;
     this.settings = {
       ao: true, aoRadius: 1.0, aoIntensity: 1.4, aoAmount: 0.92,
-      volumetric: true, volSteps: 22, volStrength: 1.3, volScale: 3,
-      bloom: 0.045, exposure: 1.0, contrast: 1.08, saturation: 0.95,
-      vignette: 0.32, grain: 0.012, sharpen: 0.45, fxaa: true, fade: 1,
+      volumetric: true, volSteps: 22, volStrength: 0.7, volScale: 3,
+      bloom: 0.045, exposure: 1.0, contrast: 1.14, saturation: 1.04, vibrance: 0.25, clarity: 0.22,
+      vignette: 0.22, grain: 0.012, sharpen: 0.8, fxaa: true, fade: 1,
       peak: 1.0, paperWhite: 203, mode: 0,
     };
     this.frame = 0;
@@ -362,12 +378,13 @@ export class PostFX {
     this.depthU = depthU;
     this.ao = new Pass(AO_FS, { ...depthU, uRes: { value: new THREE.Vector2() }, uRadius: { value: 0.7 }, uIntensity: { value: 1 }, uProjScale: { value: 500 } });
     this.aoBlur = new Pass(AO_BLUR_FS, { tAO: { value: null }, uTexel: { value: new THREE.Vector2() }, uDir: { value: new THREE.Vector2() } });
-    this.vol = new Pass(VOL_FS, { ...G, ...depthU, uCamPos: { value: new THREE.Vector3() }, uFrame: { value: 0 }, uStrength: { value: 1 }, uSteps: { value: 22 }, uSmoke: { value: new THREE.Vector4(35, 12, -80, 0.0008) } });
+    this.vol = new Pass(VOL_FS, { ...G, ...depthU, uCamPos: { value: new THREE.Vector3() }, uFrame: { value: 0 }, uStrength: { value: 1 }, uSteps: { value: 22 }, uSmoke: { value: new THREE.Vector4(35, 12, -80, 0.0003) } });
     this.composite = new Pass(COMPOSITE_FS, { ...depthU, tColor: { value: null }, tAO: { value: null }, tVol: { value: null }, uVolTexel: { value: new THREE.Vector2() }, uAOAmount: { value: 1 } });
     this.down = new Pass(DOWN_FS, { tSrc: { value: null }, uTexel: { value: new THREE.Vector2() }, uFirst: { value: 0 } });
     this.up = new Pass(UP_FS, { tSrc: { value: null }, tBase: { value: null }, uTexel: { value: new THREE.Vector2() }, uSpread: { value: 0.6 } });
     this.tone = new Pass(TONE_FS, {
       tColor: { value: null }, tBloom: { value: null }, uExposure: { value: 1 }, uBloom: { value: 0.04 }, uPeak: { value: 1 },
+      tWide: { value: null }, uClarity: { value: 0 }, uVibrance: { value: 0 },
       uContrast: { value: 1 }, uSaturation: { value: 1 }, uLift: { value: new THREE.Vector3(0, 0, 0) }, uGain: { value: new THREE.Vector3(1, 1, 1) },
       uShadowTint: { value: new THREE.Vector3(0.93, 0.99, 1.08) }, uHighlightTint: { value: new THREE.Vector3(1.05, 1.0, 0.93) },
       uVignette: { value: 0.3 }, uGrain: { value: 0.01 }, uTime: { value: 0 }, uFade: { value: 1 }, uMode: { value: 0 }, uPaperWhite: { value: 203 }, uRes: { value: new THREE.Vector2() },
@@ -463,6 +480,8 @@ export class PostFX {
       u.tColor.value = t.comp.texture; u.tBloom.value = this._bloomResult.texture;
       u.uExposure.value = s.exposure; u.uBloom.value = s.bloom; u.uPeak.value = s.peak;
       u.uContrast.value = s.contrast; u.uSaturation.value = s.saturation;
+      u.uVibrance.value = s.vibrance ?? 0; u.uClarity.value = s.clarity ?? 0;
+      u.tWide.value = t.mips[Math.min(3, t.mips.length - 1)].texture;
       u.uVignette.value = s.vignette; u.uGrain.value = s.grain; u.uTime.value = time; u.uFade.value = s.fade;
       u.uMode.value = s.mode; u.uPaperWhite.value = s.paperWhite; u.uRes.value.set(this.w, this.h);
     }

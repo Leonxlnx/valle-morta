@@ -35,7 +35,7 @@
    "loop": false,
    "events": [
     {
-     "t": 0.58,
+     "t": 0.62,
      "name": "mag_out"
     },
     {
@@ -53,7 +53,7 @@
    "loop": false,
    "events": [
     {
-     "t": 0.539,
+     "t": 0.577,
      "name": "mag_out"
     },
     {
@@ -77,9 +77,9 @@
  },
  "meta": {
   "eye": [
-   -0.08,
-   -0.3,
-   0.135
+   -0.085,
+   -0.24,
+   0.115
   ],
   "fov": 52,
   "note": "preview camera of the contact sheets: eye position relative to the model origin (Blender axes x right, y forward, z up); Sprint is a seamless loop in the sprint carry pose (cross-fade into it); MagRounds (child of Magazine) is scaled away for the empty magazine in ReloadEmpty"

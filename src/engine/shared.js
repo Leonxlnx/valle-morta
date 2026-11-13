@@ -8,11 +8,12 @@ export const G = {
   uSunDir: { value: new THREE.Vector3(0.4, 0.6, 0.3).normalize() },
   uSunColor: { value: new THREE.Color(1, 0.93, 0.82) },
   // xyz = ambient in-scatter colour, sun-ward in-scatter colour
-  uFogColor: { value: new THREE.Color(0.37, 0.42, 0.49) },
-  uFogSunColor: { value: new THREE.Color(0.95, 0.86, 0.72) },
+  uFogColor: { value: new THREE.Color(0.33, 0.46, 0.70) },
+  uFogSunColor: { value: new THREE.Color(1.0, 0.9, 0.74) },
   // haze: x = density at y0, y = 1/scaleHeight, z = y0 ; mist: same
-  uHaze: { value: new THREE.Vector3(0.000085, 1 / 1100, 0) },
-  uMist: { value: new THREE.Vector3(0.00028, 1 / 34, -2) },
+  // the haze is the blue distance on the mountains; the mist is thin and hugs the river hollow
+  uHaze: { value: new THREE.Vector3(0.0001, 1 / 1200, 0) },
+  uMist: { value: new THREE.Vector3(0.0012, 1 / 5, -2) },
   // cloud gobo: xy = centre (world xz), z = world size, w = cloud base height
   uCloudMap: { value: null },
   uCloudRect: { value: new THREE.Vector4(0, 0, 24000, 3300) },
@@ -49,10 +50,12 @@ uniform vec3 uAmbGround;
 vec3 vmAmbient(vec3 n) { return mix(uAmbGround, uAmbSky, n.y * 0.5 + 0.5); }
 
 float vmFogIntegral(vec3 layer, float camY, float dy, float dist) {
+  // (exp(-h0) - exp(-h1)) / (h1 - h0): stays finite for a shallow layer seen from high above
   float b = layer.y;
-  float t = b * dy;
-  float f = abs(t) > 1e-3 ? (1.0 - exp(-t)) / t : 1.0 - 0.5 * t;
-  return layer.x * exp(-b * (camY - layer.z)) * dist * f;
+  float h0 = b * (camY - layer.z), t = b * dy;
+  float e0 = exp(-max(h0, -8.0));
+  float f = abs(t) > 1e-3 ? (e0 - exp(-max(h0 + t, -8.0))) / t : e0 * (1.0 - 0.5 * t);
+  return layer.x * dist * f;
 }
 // transmittance of the atmosphere between the camera and a world position
 float vmFogTransmittance(vec3 camPos, vec3 worldPos) {
@@ -66,7 +69,7 @@ vec3 vmFogColor(vec3 viewDir) {
   float fwd = 0.55 * pow(s, 6.0) + 0.45 * pow(s, 48.0);
   // slightly darker / bluer towards the ground, brighter towards the zenith
   float up = clamp(viewDir.y * 2.0 + 0.5, 0.0, 1.0);
-  return mix(uFogColor * (0.82 + 0.18 * up), uFogSunColor, fwd * 0.35);
+  return mix(uFogColor * (0.82 + 0.18 * up), uFogSunColor, fwd * 0.25);
 }
 vec3 vmApplyFog(vec3 color, vec3 camPos, vec3 worldPos) {
   float T = vmFogTransmittance(camPos, worldPos);

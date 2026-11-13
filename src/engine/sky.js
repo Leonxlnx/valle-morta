@@ -89,20 +89,46 @@ float weatherAt(vec2 xz) {
   float b = texture(uNoiseA, vec3(xz / 26000.0 + 0.37, 0.61)).g;
   return a * 0.6 + b * 0.4;
 }
-float cloudDensity(vec3 p, float h, float detail) {
-  vec3 q = p; q.xz += uCloudOff.xy;
+uniform float uCloudEdge;
+// x = cover of the layer above a point (weather field minus the openings), y = weather.
+// Both hardly change along a sun ray, so the light march reuses them.
+vec2 cloudCover(vec3 q, float py) {
   float wth = weatherAt(q.xz);
-  // an opening in the deck that drifts with the field: where the sun breaks through at the start
+  // Openings where the sun breaks through. Each one follows the sun rays up through the layer
+  // (gq = where the ray through this point meets the ground), so a thick layer still leaves a
+  // clean patch of sunlight on the ground it is aimed at. The rim is lobed, not a circle.
+  vec2 gq = q.xz - uSunDirC.xz / max(uSunDirC.y, 0.08) * py;
   float gap = 0.0;
-  for (int i = 0; i < 3; i++) gap = max(gap, uCloudGap[i].w * (1.0 - smoothstep(uCloudGap[i].z * 0.4, uCloudGap[i].z, length(q.xz - uCloudGap[i].xy))));
-  float cov = clamp(uCloud.z + (wth - 0.58) * uCloudShape.w + uCloudOff.w - gap, 0.02, 1.0);
+  for (int i = 0; i < 3; i++) {
+    vec2 gd = gq - uCloudGap[i].xy;
+    float gl = length(gd);
+    vec2 gn = gd / max(gl, 1.0);
+    float lobe = 1.0 + 0.2 * gn.x * (gn.x * gn.x - 3.0 * gn.y * gn.y) + 0.26 * gn.x * gn.y;
+    gap = max(gap, uCloudGap[i].w * (1.0 - smoothstep(uCloudGap[i].z * 0.45, uCloudGap[i].z, gl / lobe)));
+  }
+  // 0.75 is the mean of the weather field: the coverage parameter is the cover of an average patch of sky
+  return vec2(clamp(uCloud.z + (wth - 0.75) * uCloudShape.w + uCloudOff.w - gap, 0.0, 1.0), wth);
+}
+// density of the cloud body without the fine erosion: 0 outside, towards 1 in the core
+float cloudShape(vec3 q, float h, vec2 cw) {
   vec4 n = texture(uNoiseA, vec3(q.x, q.y + uCloudOff.z, q.z) / uCloudShape.x);
   float fbm = n.g * 0.625 + n.b * 0.25 + n.a * 0.125;
   float base = remap(n.r, fbm - 1.0, 1.0, 0.0, 1.0);
-  float prof = smoothstep(0.0, 0.2, h) * smoothstep(1.0, 0.42 + 0.45 * wth, h);
-  base *= prof;
-  // normalised: 0 at the rim of a cell, 1 in its core, whatever the coverage
-  float d = clamp(remap(base, 1.0 - cov, 1.0, 0.0, 1.0), 0.0, 1.0);
+  // cumulus: a flat base, a rounded top whose height follows the weather, and less cover with
+  // height so that the cells narrow into domes
+  float topH = 0.45 + 0.55 * smoothstep(0.38, 0.72, cw.y);
+  float hc = clamp(h, 0.0, 1.0);
+  base *= smoothstep(0.0, 0.07, hc) * (1.0 - smoothstep(topH * 0.5, topH, hc));
+  float cov = cw.x * (1.0 - 0.45 * hc);
+  // 0 at the rim of a cell whatever the coverage, then quickly up to full density: defined edges
+  float d = clamp((base - (1.0 - cov)) / max(cov, 1e-3), 0.0, 1.0);
+  return 1.0 - exp(-uCloudEdge * d);
+}
+float cloudDensity(vec3 p, float h, float detail) {
+  vec3 q = p; q.xz += uCloudOff.xy;
+  vec2 cw = cloudCover(q, p.y);
+  if (cw.x < 0.015) return 0.0;
+  float d = cloudShape(q, h, cw);
   if (d <= 0.0) return 0.0;
   if (detail > 0.5) {
     vec4 dn = texture(uNoiseB, vec3(q.x, q.y + uCloudOff.z * 0.4, q.z) / uCloudShape.y);
@@ -124,19 +150,22 @@ float altitudeAt(float y0, vec3 rd, float t) {
 }
 vec3 skyBackground(vec3 rd) {
   float e = clamp(rd.y, 0.0, 1.0);
-  return mix(uSkyHorizon, uSkyZenith, pow(e, 0.45));
+  vec3 c = mix(uSkyHorizon, uSkyZenith, pow(e, 0.42));
+  // brighter, paler air around the sun
+  float ms = max(dot(rd, uSunDirC), 0.0);
+  return c + uSkyHorizon * (0.3 * pow(ms, 8.0) + 0.5 * pow(ms, 64.0));
 }
-float sunOpticalDepth(vec3 p, float alt) {
+// q is in the cloud frame (wind offset applied); cw = cloudCover at the start of the ray
+float sunOpticalDepth(vec3 q, float alt, vec2 cw) {
   float od = 0.0;
   float t = 0.0;
   float step = 55.0;
   for (int i = 0; i < 6; i++) {
     t += step;
-    vec3 q = p + uSunDirC * t;
     float a = alt + uSunDirC.y * t;
     float h = (a - uCloud.x) / (uCloud.y - uCloud.x);
     if (h > 1.0) break;
-    od += cloudDensity(q, h, 0.0) * step;
+    od += cloudShape(q + uSunDirC * t, h, cw) * step;
     step *= 1.75;
   }
   return od * uCloud.w;
@@ -157,9 +186,16 @@ vec4 marchClouds(float y0, vec3 rd, float jitter, int steps) {
     float alt = altitudeAt(y0, rd, t);
     p.y = alt;
     float h = (alt - uCloud.x) / (uCloud.y - uCloud.x);
-    float d = cloudDensity(p, h, 1.0);
+    vec3 q = p; q.xz += uCloudOff.xy;
+    vec2 cw = cloudCover(q, alt);
+    float d = cw.x < 0.015 ? 0.0 : cloudShape(q, h, cw);
+    if (d > 0.0) {
+      vec4 dn = texture(uNoiseB, vec3(q.x, q.y + uCloudOff.z * 0.4, q.z) / uCloudShape.y);
+      float hf = dn.r * 0.625 + dn.g * 0.25 + dn.b * 0.125;
+      d = max(remap(d, mix(hf, 1.0 - hf, clamp(h * 5.0, 0.0, 1.0)) * uCloudShape.z, 1.0, 0.0, 1.0), 0.0);
+    }
     if (d > 0.0005) {
-      float od = sunOpticalDepth(p, alt);
+      float od = sunOpticalDepth(q, alt, cw);
       // multiple-scattering octaves
       vec3 E = vec3(0.0);
       float a = 1.0, b = 1.0, c = 1.0;
@@ -169,7 +205,7 @@ vec4 marchClouds(float y0, vec3 rd, float jitter, int steps) {
         a *= 0.56; b *= 0.42; c *= 0.55;
       }
       // skylight entering from above, attenuated by the cloud between here and the top
-      vec3 amb = uAmbBot + uAmbTop * (0.3 * exp(-od * 0.07) + 0.7 * exp(-od * 0.42));
+      vec3 amb = uAmbBot + uAmbTop * (0.3 * exp(-od * 0.07) + 0.7 * exp(-od * 0.42)) * mix(0.4, 1.0, clamp(h, 0.0, 1.0));
       vec3 S = uSunE * E + amb;
       float sigma = d * uCloud.w;
       float Ti = exp(-sigma * dt);
@@ -291,30 +327,34 @@ void main() {
 export class Sky {
   constructor(renderer, opts = {}) {
     this.renderer = renderer;
-    this.period = opts.period ?? 14;          // seconds between baked cloud states
+    this.period = opts.period ?? 16;          // seconds between baked cloud states
     this.panoSize = opts.panoSize ?? [2048, 512];
     this.steps = opts.steps ?? 56;
     this.goboSize = opts.goboSize ?? 768;
-    this.wind = new THREE.Vector2(4.2, 2.3);  // m/s drift of the cloud field
-    this.evolve = 1.6;                        // vertical scroll (m/s) = shape evolution
+    this.wind = new THREE.Vector2(2.2, 1.2);  // m/s drift of the cloud field
+    this.evolve = 0.9;                        // vertical scroll (m/s) = shape evolution
     this.camAlt = 1.7;
 
     this.params = {
-      base: 3000, top: 3500, coverage: 0.2, extinction: 0.028, weatherBias: 0.0,
+      base: 2900, top: 3900, coverage: 0.19, extinction: 0.036, weatherBias: 0.0,
       // cell size of the cloud field, detail erosion, contrast of the large weather systems
-      scale: 5000, detailScale: 1700, erosion: 0.4, weather: 0.7,
+      scale: 4000, detailScale: 700, erosion: 0.62, weather: 1.0, edge: 2.5,
       offset: new THREE.Vector2(0, 0),      // shifts the whole field (m): places the gaps / sun patches
       display: 1.0,                         // display-only brightness of the sky dome
       // openings in the deck at t = 0: world xz of the point where the sun ray to the lit
       // ground crosses the middle of the deck, radius, coverage drop. The first puts the
       // village and the meadow in sun, the others send shafts down in front of the peaks.
-      gaps: [new THREE.Vector4(-4377, -3154, 640, 0.45), new THREE.Vector4(-4040, -4772, 520, 0.3), new THREE.Vector4(-3090, -5372, 460, 0.3)],
-      sunE: new THREE.Vector3(5.6, 5.1, 4.4),
-      ambTop: new THREE.Vector3(0.36, 0.39, 0.44),
-      ambBot: new THREE.Vector3(0.055, 0.06, 0.07),
+      // (gaps: xy = world xz of the patch of GROUND the sun reaches through the opening, whatever the
+      // sun direction; z = radius, w = coverage drop. An anchored opening stays over its patch
+      // while the field drifts through it, the others drift with the clouds.)
+      gaps: [new THREE.Vector4(10, 20, 720, 0.6), new THREE.Vector4(377, -1680, 520, 0.35), new THREE.Vector4(1327, -2280, 460, 0.35)],
+      gapAnchor: [1, 0, 0],
+      sunE: new THREE.Vector3(13, 11.8, 10.3),
+      ambTop: new THREE.Vector3(0.30, 0.38, 0.52),
+      ambBot: new THREE.Vector3(0.12, 0.14, 0.18),
       // what shows through the gaps: a bright veil of high cloud rather than deep blue
-      skyZenith: new THREE.Vector3(0.6, 0.68, 0.84),
-      skyHorizon: new THREE.Vector3(0.84, 0.87, 0.9),
+      skyZenith: new THREE.Vector3(0.07, 0.20, 0.62),
+      skyHorizon: new THREE.Vector3(0.42, 0.58, 0.86),
     };
 
     this._makeNoise();
@@ -325,6 +365,7 @@ export class Sky {
       uCloud: { value: new THREE.Vector4() },
       uCloudOff: { value: new THREE.Vector4() },
       uCloudShape: { value: new THREE.Vector4() },
+      uCloudEdge: { value: 2.5 },
       uCloudGap: { value: [new THREE.Vector4(), new THREE.Vector4(), new THREE.Vector4()] },
       uSunDirC: G.uSunDir,
       uSunE: { value: this.params.sunE },
@@ -380,7 +421,9 @@ export class Sky {
     this.envPass = new Pass(ENV_FS, { ...G, uPanoA: { value: null }, uGround: { value: new THREE.Vector3(0.05, 0.06, 0.045) } });
     this.pmrem = new THREE.PMREMGenerator(renderer);
     this.envMap = null;
-    this.tilesX = 16;
+    // the panorama is refreshed a few pixel columns per frame and the cloud shadow map one band per
+    // frame: an even load instead of a spike every few frames
+    this.goboBands = 6;
     this.time = 0;
   }
 
@@ -413,11 +456,16 @@ export class Sky {
     u.uCloud.value.set(p.base, p.top, p.coverage, p.extinction);
     u.uCloudOff.value.set(this.wind.x * t + p.offset.x, this.wind.y * t + p.offset.y, this.evolve * t, p.weatherBias);
     u.uCloudShape.value.set(p.scale, p.detailScale, p.erosion, p.weather);
-    p.gaps.forEach((g, i) => u.uCloudGap.value[i].set(g.x + p.offset.x, g.y + p.offset.y, g.z, g.w));
+    u.uCloudEdge.value = p.edge ?? 2.5;
+    p.gaps.forEach((g, i) => {
+      const a = p.gapAnchor && p.gapAnchor[i] ? t : 0;
+      u.uCloudGap.value[i].set(g.x + p.offset.x + this.wind.x * a, g.y + p.offset.y + this.wind.y * a, g.z, g.w);
+    });
   }
 
-  // Render (part of) the panorama for state k. Returns true once complete.
-  _renderSlot(k, maxTiles) {
+  // Render (part of) the panorama for state k: up to maxCols pixel columns, in strips of at most
+  // 1/16 of the width (one GPU job each). Returns true once complete.
+  _renderSlot(k, maxCols) {
     let s = this.slots.get(k);
     if (!s) {
       // recycle a target that is no longer needed
@@ -432,25 +480,35 @@ export class Sky {
     u.uCamAlt.value = this.camAlt;
     u.uSteps.value = this.steps;
     const [W, H] = this.panoSize;
-    const tw = Math.ceil(W / this.tilesX);
+    const strip = Math.ceil(W / 16);
     const gl = this.renderer.getContext();
+    let left = Math.min(Math.ceil(maxCols), W - s.next);
     s.rt.scissorTest = true;
-    for (let i = 0; i < maxTiles && s.next < this.tilesX; i++) {
-      s.rt.scissor.set(s.next * tw, 0, tw, H);
+    while (left > 0) {
+      const n = Math.min(left, strip);
+      s.rt.scissor.set(s.next, 0, n, H);
       this.panoPass.render(this.renderer, s.rt);
       gl.flush();
-      s.next++;
+      s.next += n; left -= n;
     }
     s.rt.scissorTest = false;
     this.renderer.setRenderTarget(null);
-    if (s.next >= this.tilesX) s.done = true;
+    if (s.next >= W) s.done = true;
     return s.done;
   }
 
-  renderGobo(t) {
+  // band >= 0 refreshes one horizontal slice only
+  renderGobo(t, band = -1) {
     this._setCloudUniforms(this.goboPass.uniforms, t);
     G.uCloudRect.value.w = this.params.base;
-    this.goboPass.render(this.renderer, this.gobo);
+    const rt = this.gobo;
+    if (band >= 0) {
+      const bh = Math.ceil(rt.height / this.goboBands);
+      rt.scissorTest = true;
+      rt.scissor.set(0, band * bh, rt.width, bh);
+    }
+    this.goboPass.render(this.renderer, rt);
+    rt.scissorTest = false;
     this.renderer.setRenderTarget(null);
   }
 
@@ -504,7 +562,7 @@ export class Sky {
     this.time = time;
     const k = Math.floor(time / this.period);
     for (const kk of [k, k + 1]) {
-      while (!this._renderSlot(kk, 2)) await tick();
+      while (!this._renderSlot(kk, this.panoSize[0] / 8)) await tick();
     }
     this.renderGobo(time);
     this._bind(k, time);
@@ -523,20 +581,23 @@ export class Sky {
     this.time = time;
     const k = Math.floor(time / this.period);
     for (const key of [...this.slots.keys()]) if (key < k || key > k + 2) this.slots.delete(key);
+    const W = this.panoSize[0];
     if (sync) {
-      this._renderSlot(k, 999); this._renderSlot(k + 1, 999);
+      this._renderSlot(k, W); this._renderSlot(k + 1, W);
     } else {
-      if (!this._renderSlot(k, 4)) { /* catching up */ } else if (!this._renderSlot(k + 1, 2)) { /* catching up */ } else {
-        // spread the next state over the current period
+      if (!this._renderSlot(k, W / 16)) { /* catching up */ } else if (!this._renderSlot(k + 1, W / 32)) { /* catching up */ } else {
+        // spread the next state evenly over the current period: a few pixel columns every frame
         const s = this.slots.get(k + 2);
         const phase = time / this.period - k;
-        const want = Math.min(this.tilesX, Math.floor(phase * 1.25 * this.tilesX) + 1);
-        if (!s || s.next < want) this._renderSlot(k + 2, 1);
+        const want = Math.min(W, Math.ceil(phase * 1.25 * W));
+        const have = s ? s.next : 0;
+        if (have < want) this._renderSlot(k + 2, Math.min(want - have, W / 96));
       }
     }
-    // the cloud field drifts a few centimetres per frame: refresh its shadow map every 6th frame
+    // the cloud field drifts a few centimetres per frame: its shadow map is refreshed one band every
+    // other frame, a small even load instead of one larger job every few frames
     this._goboTick = (this._goboTick || 0) + 1;
-    if (sync || this._goboTick % 6 === 1) this.renderGobo(time);
+    if (sync) this.renderGobo(time); else if (this._goboTick % 2 === 0) this.renderGobo(time, (this._goboTick >> 1) % this.goboBands);
     this._bind(k, time);
   }
 }
