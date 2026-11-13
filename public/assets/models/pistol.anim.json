@@ -1,0 +1,86 @@
+{
+ "clips": {
+  "Idle": {
+   "duration": 4.0,
+   "loop": true,
+   "events": []
+  },
+  "Fire": {
+   "duration": 0.3,
+   "loop": false,
+   "events": [
+    {
+     "t": 0.017,
+     "name": "shell"
+    }
+   ]
+  },
+  "Draw": {
+   "duration": 0.3,
+   "loop": false,
+   "events": []
+  },
+  "Holster": {
+   "duration": 0.3,
+   "loop": false,
+   "events": []
+  },
+  "Sprint": {
+   "duration": 0.7,
+   "loop": true,
+   "events": []
+  },
+  "Reload": {
+   "duration": 1.7,
+   "loop": false,
+   "events": [
+    {
+     "t": 0.3,
+     "name": "mag_out"
+    },
+    {
+     "t": 1.34,
+     "name": "mag_in"
+    },
+    {
+     "t": 1.34,
+     "name": "ammo"
+    }
+   ]
+  },
+  "ReloadEmpty": {
+   "duration": 2.1,
+   "loop": false,
+   "events": [
+    {
+     "t": 0.33,
+     "name": "mag_out"
+    },
+    {
+     "t": 1.474,
+     "name": "mag_in"
+    },
+    {
+     "t": 1.474,
+     "name": "ammo"
+    },
+    {
+     "t": 1.86,
+     "name": "slide_release"
+    }
+   ]
+  }
+ },
+ "meta": {
+  "eye": [
+   -0.05,
+   -0.28,
+   0.08
+  ],
+  "fov": 52,
+  "slide_lock_m": 0.045,
+  "hammer_over_deg": 12.0,
+  "barrel_tilt_deg": 2.0,
+  "note": "preview camera of the contact sheets: eye position relative to the model origin (Blender axes x right, y forward, z up). Rest pose = hammer cocked, finger on the trigger. Slide locked back = node Slide moved slide_lock_m towards the shooter (glTF +Z), Hammer rotated hammer_over_deg further back, Barrel tilted barrel_tilt_deg and 3 mm back, SlideStop raised 3 deg; ReloadEmpty goes there within its first 2 frames. MagRounds (child of Magazine) is scaled away for the empty magazine in ReloadEmpty. Sprint is a seamless loop in a compressed high-ready pose (muzzle up, close to the chest) (cross-fade into it)."
+ }
+}

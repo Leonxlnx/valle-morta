@@ -277,11 +277,12 @@ def run(mod, opts):
             W.sheet(os.path.join(W.PREV, 'final_%s_model.png' % wid), 2, 450, files)
         elif o.startswith('sheets='):
             for item in o[7:].split(','):
+                fpv = '@fp' in item or 'fpcam' in opts; item = item.replace('@fp', '')
                 lst = mod.MISC if item == 'misc' else [(item.split(':')[0], item.split(':')[1] if ':' in item else 12)]
                 fl = lambda c, k: [int(x) for x in k.split('-')] if isinstance(k, str) and '-' in k else sorted(set(int(round(x)) for x in np.linspace(0, c.N, int(k))))
                 cols = 5 if item == 'misc' else (4 if len(fl(st.clips[lst[0][0]], lst[0][1])) <= 8 else 3); tw = 900 // cols; files = []
                 for cn, k in lst:
-                    c = st.clips[cn]; loc, look, fov = (fp if 'fpcam' in opts else getattr(mod, 'CAMS', {}).get(cn, fp))
+                    c = st.clips[cn]; loc, look, fov = (fp if fpv else getattr(mod, 'CAMS', {}).get(cn, fp))
                     for i in fl(c, k):
                         st.apply(c, i); bpy.context.view_layer.update()
                         files.append([view('%s_%s_%03d' % (wid, cn, i), loc, look, fov, (tw, int(tw * 9 / 16))), '%s %.2fs' % (cn, i / FPS)])

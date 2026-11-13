@@ -1,0 +1,135 @@
+boolean True 15 41
+boolean True 226 252
+boolean True 50 55
+boolean True 55 66
+boolean True 66 93
+boolean True 93 107
+boolean True 107 111
+boolean True 111 115
+  node PistolBody tris 8176
+  node Slide      tris 3148
+  node Barrel     tris 832
+  node Magazine   tris 1192
+  node MagRounds  tris 380
+  node Trigger    tris 540
+  node Hammer     tris 444
+  node SlideStop  tris 596
+  node Casing     tris 284
+ATLAS ATLAS_pistol tris 15592
+Info: Saved as "pistol.blend"
+STAGE pistol geo ok 1.0 s
+00:05.641  blend            | Read blend: "E:\fable\shootinggame\tools\weapon\build\pistol.blend"
+Info: Baking map saved to internal image, save it externally or pack it
+baked pistol pid 1.0 s cover 0.736
+Info: Baking map saved to internal image, save it externally or pack it
+baked pistol pos 2.7 s cover 0.736
+Info: Baking map saved to internal image, save it externally or pack it
+baked pistol nrm 3.9 s cover 0.736
+Info: Baking map saved to internal image, save it externally or pack it
+baked pistol bev 33.4 s cover 0.736
+Info: Baking map saved to internal image, save it externally or pack it
+baked pistol ao 112.0 s cover 0.343
+STAGE pistol bake ok 112.2 s
+Could not find platform independent libraries <prefix>
+pistol texels 3085251 cover 0.74 edge pct [0.005 0.287 0.801 1.415] ao pct [0.   0.01 1.  ]
+pistol done, mm/texel 0.187 mean col [0.216 0.215 0.213] 128.7 s
+textures rc 0
+STAGE pistol tex ok 130.8 s
+04:08.609  blend            | Read blend: "E:\fable\shootinggame\tools\weapon\build\pistol.blend"
+GRIP fire     R seat 23 wrist (0.027 -0.081 -0.023) depth 4.1 mm reach {'Index': 1.5} | Th[75,-8,-115,59,3] In[18,100,50,16] Mi[88,66,46,0] Ri[88,54,62,0] Pi[74,50,34,0]
+GRIP trigger pulled residual 2.7 mm
+GRIP support  L seat 40 wrist (-0.059 -0.052 -0.016) depth 9.6 mm reach {} | Th[4,10,17,3,25] In[54,52,29,0] Mi[56,52,31,0] Ri[48,52,31,0] Pi[48,56,33,0]
+GRIP mag      L seat 41 wrist (-0.024 -0.089 -0.030) depth 1.2 mm reach {} | Th[56,-51,-100,63,43] In[84,80,48,0] Mi[88,82,47,0] Ri[86,82,45,0] Pi[38,86,47,0]
+GRIP palm     L seat 0 wrist (-0.024 -0.064 -0.087) depth -8.2 mm reach {} | Th[32,-14,-20,8,8] In[8,16,9,4] Mi[9,17,9,0] Ri[10,18,10,-3] Pi[12,20,10,-7]
+CLIP Idle         4.00s 240 fr | wrist bend R 33 L 44 deg | shoulder slid R 0 L 0 | deepest contact none >4.5mm
+CLIP Fire         0.30s  18 fr | wrist bend R 33 L 45 deg | shoulder slid R 0 L 0 | deepest contact R-body 5mm@0.12s
+CLIP Draw         0.30s  18 fr | wrist bend R 61 L 50 deg | shoulder slid R 0 L 0 | deepest contact R-body 6mm@0.25s
+CLIP Holster      0.30s  18 fr | wrist bend R 61 L 49 deg | shoulder slid R 0 L 0 | deepest contact R-body 7mm@0.05s
+CLIP Sprint       0.70s  42 fr | wrist bend R 29 L 52 deg | shoulder slid R 0 L 0 | deepest contact none >4.5mm
+CLIP Reload       1.70s 102 fr | wrist bend R 33 L 53 deg | shoulder slid R 0 L 0 | deepest contact R-body 6mm@0.28s L-body 9mm@1.17s L-Magazine 5mm@1.18s
+CLIP ReloadEmpty  2.10s 126 fr | wrist bend R 32 L 53 deg | shoulder slid R 0 L 0 | deepest contact R-body 7mm@0.07s L-Magazine 10mm@0.70s L-body 9mm@1.28s
+CLIP Draw         differs from Idle pose: start 306.8 mm 93.5 deg, end 0.0 mm 0.0 deg
+CLIP Holster      differs from Idle pose: start 0.0 mm 0.0 deg, end 306.8 mm 93.5 deg
+CLIP Sprint       differs from Idle pose: start 141.0 mm 93.5 deg, end 141.0 mm 93.5 deg
+solved 7 clips 2.1 s
+04:14.234  render           | Saved: 'E:\fable\shootinggame\tools\weapon\build\tiles\pistol_look_first person.png'
+04:19.500  render           | Saved: 'E:\fable\shootinggame\tools\weapon\build\tiles\pistol_look_right.png'
+04:24.312  render           | Saved: 'E:\fable\shootinggame\tools\weapon\build\tiles\pistol_look_left.png'
+04:28.578  render           | Saved: 'E:\fable\shootinggame\tools\weapon\build\tiles\pistol_look_behind.png'
+04:34.609  render           | Saved: 'E:\fable\shootinggame\tools\weapon\build\tiles\pistol_look_below front.png'
+04:37.625  render           | Saved: 'E:\fable\shootinggame\tools\weapon\build\tiles\pistol_look_top.png'
+Could not find platform independent libraries <prefix>
+sheet E:\fable\shootinggame\tools\_preview\weapon\final_pistol_model.png (900, 759)
+04:40.437  render           | Saved: 'E:\fable\shootinggame\tools\weapon\build\tiles\pistol_ReloadEmpty_000.png'
+04:43.000  render           | Saved: 'E:\fable\shootinggame\tools\weapon\build\tiles\pistol_ReloadEmpty_014.png'
+04:46.641  render           | Saved: 'E:\fable\shootinggame\tools\weapon\build\tiles\pistol_ReloadEmpty_028.png'
+04:49.109  render           | Saved: 'E:\fable\shootinggame\tools\weapon\build\tiles\pistol_ReloadEmpty_042.png'
+04:51.266  render           | Saved: 'E:\fable\shootinggame\tools\weapon\build\tiles\pistol_ReloadEmpty_056.png'
+04:53.500  render           | Saved: 'E:\fable\shootinggame\tools\weapon\build\tiles\pistol_ReloadEmpty_070.png'
+04:55.625  render           | Saved: 'E:\fable\shootinggame\tools\weapon\build\tiles\pistol_ReloadEmpty_084.png'
+04:57.437  render           | Saved: 'E:\fable\shootinggame\tools\weapon\build\tiles\pistol_ReloadEmpty_098.png'
+04:59.078  render           | Saved: 'E:\fable\shootinggame\tools\weapon\build\tiles\pistol_ReloadEmpty_112.png'
+05:00.484  render           | Saved: 'E:\fable\shootinggame\tools\weapon\build\tiles\pistol_ReloadEmpty_126.png'
+Could not find platform independent libraries <prefix>
+sheet E:\fable\shootinggame\tools\_preview\weapon\final_pistol_ReloadEmpty.png (900, 672)
+INFO Draco is available, use library at C:\Program Files\Blender Foundation\Blender 5.2\5.2\scripts\addons_core\io_scene_gltf2\bf_intern_draco_bridge.dll
+INFO MeshOptimizer is available, use library at C:\Program Files\Blender Foundation\Blender 5.2\5.2\scripts\addons_core\io_scene_gltf2\bf_intern_meshopt_bridge.dll
+21:52:00 | INFO: Starting glTF 2.0 export
+21:52:00 | INFO: Extracting primitive: ArmsMesh
+21:52:01 | WARNING: More than one shader node tex image used for a texture. The resulting glTF sampler will behave like the first shader node tex image.
+21:52:01 | INFO: Primitives created: 1
+21:52:01 | INFO: Extracting primitive: Barrel.001
+21:52:02 | WARNING: More than one shader node tex image used for a texture. The resulting glTF sampler will behave like the first shader node tex image.
+21:52:02 | INFO: Primitives created: 1
+21:52:02 | INFO: Extracting primitive: Casing.001
+21:52:02 | INFO: Primitives created: 1
+21:52:02 | INFO: Extracting primitive: Hammer.001
+21:52:02 | INFO: Primitives created: 1
+21:52:02 | INFO: Extracting primitive: Magazine.001
+21:52:02 | INFO: Primitives created: 1
+21:52:02 | INFO: Extracting primitive: MagRounds.001
+21:52:02 | INFO: Primitives created: 1
+21:52:02 | INFO: Extracting primitive: PistolBody.001
+21:52:02 | INFO: Primitives created: 1
+21:52:02 | INFO: Extracting primitive: Slide.001
+21:52:02 | INFO: Primitives created: 1
+21:52:02 | INFO: Extracting primitive: SlideStop.001
+21:52:02 | INFO: Primitives created: 1
+21:52:02 | INFO: Extracting primitive: Trigger.001
+21:52:02 | INFO: Primitives created: 1
+21:52:09 | INFO: Finished glTF 2.0 export in 8.420061111450195 s
+
+exported E:\fable\shootinggame\public\assets\models\pistol.glb 4.91 MB
+Info: Saved as "pistol_final.blend"
+VERIFY pistol: 4.91 MB (limit 12), 52 nodes, missing nodes: none
+VERIFY   triangles: weapon 15592 (limit 60000), arms 17320 (limit 20000)
+VERIFY   skin: 36 joints, e.g. ['UpperArm_L', 'Forearm_L', 'Hand_L', 'Index1_L']
+VERIFY   Weapon children: ['Barrel', 'Casing', 'Eject', 'Hammer', 'Magazine', 'Muzzle', 'PistolBody', 'SightFront', 'SightRear', 'Slide', 'SlideStop', 'Trigger']
+VERIFY   Muzzle     t=[0, 0.0455, -0.1255]
+VERIFY   SightRear  t=[0, 0.0612, 0.052]
+VERIFY   SightFront t=[0, 0.0612, -0.11]
+VERIFY   Eject      t=[0.015, 0.049, -0.024]
+VERIFY   default pose: Hand_R at [0.027, -0.023, 0.081] Hand_L at [-0.059, -0.016, 0.052] (glTF axes, should sit on the weapon)
+VERIFY   clip Fire         0.300 s (start 0.000)  132 channels, 44 nodes: weapon parts ['Arms', 'Barrel', 'Hammer', 'Magazine', 'Slide', 'SlideStop', 'Trigger', 'Weapon']
+VERIFY   clip Draw         0.300 s (start 0.000)  132 channels, 44 nodes: weapon parts ['Arms', 'Barrel', 'Hammer', 'Magazine', 'Slide', 'SlideStop', 'Trigger', 'Weapon']
+VERIFY   clip Holster      0.300 s (start 0.000)  132 channels, 44 nodes: weapon parts ['Arms', 'Barrel', 'Hammer', 'Magazine', 'Slide', 'SlideStop', 'Trigger', 'Weapon']
+VERIFY   clip Sprint       0.700 s (start 0.000)  132 channels, 44 nodes: weapon parts ['Arms', 'Barrel', 'Hammer', 'Magazine', 'Slide', 'SlideStop', 'Trigger', 'Weapon']
+VERIFY   clip Reload       1.700 s (start 0.000)  132 channels, 44 nodes: weapon parts ['Arms', 'Barrel', 'Hammer', 'Magazine', 'Slide', 'SlideStop', 'Trigger', 'Weapon']
+VERIFY   clip ReloadEmpty  2.100 s (start 0.000)  135 channels, 45 nodes: weapon parts ['Arms', 'Barrel', 'Hammer', 'MagRounds', 'Magazine', 'Slide', 'SlideStop', 'Trigger', 'Weapon']
+VERIFY   clip Idle         4.000 s (start 0.000)  132 channels, 44 nodes: weapon parts ['Arms', 'Barrel', 'Hammer', 'Magazine', 'Slide', 'SlideStop', 'Trigger', 'Weapon']
+VERIFY   missing clips: none
+VERIFY   material Arms base True orm True normal True occlusion True
+VERIFY   material Pistol base True orm True normal True occlusion True
+VERIFY   image 0 arms_nrm     image/jpeg 2048x2048 0.75 MB
+VERIFY   image 1 arms_orm     image/jpeg 2048x2048 0.47 MB
+VERIFY   image 2 arms_base    image/jpeg 2048x2048 0.71 MB
+VERIFY   image 3 pistol_nrm   image/jpeg 2048x2048 0.48 MB
+VERIFY   image 4 pistol_orm   image/jpeg 2048x2048 0.49 MB
+VERIFY   image 5 pistol_base  image/jpeg 2048x2048 0.46 MB
+VERIFY   RESULT OK
+VERIFY Could not find platform independent libraries <prefix>
+STAGE pistol anim ok 62.0 s
+TOTAL 306.0 s
+Blender 5.2.3 LTS (hash e13b728c6880 built 2026-10-22 01:37:16)
+
+Blender quit

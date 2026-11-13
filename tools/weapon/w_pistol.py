@@ -35,17 +35,22 @@ def setup(st):
     ap, e = rg.reach('R', Hm, g.a, 'Index', tp); print('GRIP trigger pulled residual %.1f mm' % (e * 1000))
     A['grip'] = g; A['pull'] = Anchor('Weapon', Hm, rg.pose(ap), g.pose, g.retreat, ap)
     A['safe'] = g.variant(rg, Index=[4, 6, 4, 10]); st.IDX = g.variant(rg, Index=[2, 46, 24, 9]).pose          # straight along the frame / in-between pose
-    th = g.a['Thumb']; A['rel'] = A['safe'].variant(rg, Thumb=[th[0], th[1], th[2], th[3] + 3, th[4] + 5])   # thumb presses the magazine release
+    th = g.a['Thumb']; A['rel'] = A['safe'].variant(rg, Thumb=[th[0], th[1], th[2], th[3] + 1.5, th[4] + 2.5])   # thumb presses the magazine release
     bv = RG.bvh_of(st.meshes, extra=rg.proxy('R', Hm, g.pose))                                                 # support hand wraps the firing hand
     s = st.grip('support', 'L', 'Weapon', F((0.2, 0.90, -0.40), (-1, 0.1, 0)), (-0.030, 0.037, -0.047), (-8, 96, 1.5), (1, 0, 0), bvh=bv,
                 thumb=dict(aim=(-0.63, 0.77, -0.25), flex=(0, 0.3, -1)), back=0.05, retreat=(-0.05, -0.01, -0.03))
     A['sup'] = s; th = s.a['Thumb']; A['sup0'] = Anchor('Weapon', s.M, s.pose, s.pre, (0, 0, 0), s.a); A['supth'] = A['sup0'].variant(rg, Thumb=[th[0], th[1], th[2], max(th[3] - 16, 0), max(th[4] - 16, 0)])
     mb = RG.bvh_of([bpy.data.objects['Magazine'], bpy.data.objects['MagRounds']])
-    A['magh'] = st.grip('mag', 'L', 'Magazine', F(tuple(PG.FD), (-1, 0, 0)), tuple(PG.mq(69, 26.5, -25) * mm), (-8, 96, 1.5), (1, 0, 0), bvh=mb,
+    A['magh'] = st.grip('mag', 'L', 'Magazine', F(tuple(PG.FD), (-1, 0, 0)), tuple(PG.mq(90, 26.5, -25) * mm), (-8, 96, 1.5), (1, 0, 0), bvh=mb,
                         thumb=dict(aim=(-0.55, 0.0, -0.83), flex=(0, 1, 0)), back=0.04, retreat=(-0.05, 0.0, -0.02))
+    pa = rg.pre(A['magh'].a); pa['Thumb'][0] = A['magh'].a['Thumb'][0] + 6; pa['Thumb'][1] = A['magh'].a['Thumb'][1]
+    pa.update({f: [A['magh'].a[f][0] - 38, A['magh'].a[f][1] * 0.8, A['magh'].a[f][2] * 0.8, A['magh'].a[f][3]] for f in ('Index', 'Middle', 'Ring', 'Pinky')})   # fingers open at the knuckle, hooks stay
+    A['magh'].pre = rg.pose(pa)   # open without dropping the thumb into the magazine
     yh = Vector((0.6, 0, 0)) + PG.FD * 0.8                                                                     # palm under the base plate, pushing up the well axis
     A['palm'] = st.grip('palm', 'L', 'Magazine', F(tuple(yh), tuple(PG.AD)), tuple(PG.mq(PG.ML + 6.2, 1.2, 0) * mm), (0, 40, -13.5), None, a0=RG.A_SPREAD,
                         fingers=(), thumb=False, retreat=tuple(PG.AD * 0.04))
+    # open hand slid off the lower end of the magazine (the grip encircles it, so it cannot leave sideways): the change from the magazine grip to the palm turns the hand by about 100 deg, which must happen clear of magazine and frame
+    A['magoff'] = Anchor('Magazine', Matrix.Translation(PG.AD * 0.06 + Vector((-0.012, 0, 0))) @ A['magh'].M, rg.OPEN, rg.OPEN, (0, 0, 0))
     st.base = {'R': A['grip'], 'L': A['sup']}
 
 
@@ -83,23 +88,23 @@ def clips(st):
     c.wr.k(0, br).k(0.7, br).add(lambda t: v3(2.5 * sin(2 * w2 * t + 0.7) - 2.5 * sin(0.7), 2.5 * sin(w2 * t), 1.5 * sin(w2 * t + 0.5) - 1.5 * sin(0.5)))
     c.hand['R'].clear().hold(0, 0.7, A['safe'])
     for sd in 'RL': c.sh[sd].add(lambda t: v3(0.0, 0.0, 0.006 * sin(2 * w2 * t)))
-    RR, RP = (30, 35, 4), (-0.04, -0.03, 0.075)                    # reload workspace: muzzle up, magazine well rolled towards the support hand, pistol pulled in
+    RR, RP = (30, 35, 4), (-0.04, -0.03, 0.062)                    # reload workspace: muzzle up, magazine well rolled towards the support hand, pistol pulled in
 
     def swap(c, k, rend):
         """shared magazine change, times scaled by k: release with the firing thumb, the magazine drops free, a fresh one comes up from the belt, is guided
         into the well and seated with the palm; rend = time the trigger finger starts back to the trigger"""
         T = lambda x: x * k; mr, mq = c.pr['Magazine'], c.pp['Magazine']
         c.wr.k(T(0.04), (0.5, 0.5, 0), 'c').k(T(0.30), RR).k(T(1.02), (31, 36, 4.5), 'c').k(T(1.24), (29.5, 34.5, 4)).k(T(1.42), RR)
-        c.wp.k(T(0.04), (0, -0.001, 0), 'c').k(T(0.30), RP).k(T(1.02), (-0.041, -0.03, 0.073), 'c').k(T(1.24), (-0.04, -0.03, 0.077)).k(T(1.42), RP)
+        c.wp.k(T(0.04), (0, -0.001, 0), 'c').k(T(0.30), RP).k(T(1.02), (-0.041, -0.03, 0.060), 'c').k(T(1.24), (-0.04, -0.03, 0.064)).k(T(1.42), RP)
         Wm = c.env(T(0.66))[0]['Weapon']; BELT = tuple(Wm.inverted() @ Vector((-0.17, -0.27, -0.36)) - st.org['Magazine']); BR = (25, 10, -35)
-        mq.k(T(0.30), Z).k(T(0.62), ax(0.52), ease='in').k(T(0.64), BELT, ease='lin').k(T(0.72), BELT).k(T(0.97), tuple(AD * 0.118 + v3(-0.012, 0.004, 0)), 'c')
-        mq.k(T(1.06), ax(0.100)).k(T(1.14), ax(0.079), ease='out').k(T(1.25), ax(0.079)).k(T(1.34), Z, ease='in')
+        mq.k(T(0.30), Z).k(T(0.62), ax(0.52), ease='in').k(T(0.64), BELT, ease='lin').k(T(0.72), BELT).k(T(0.97), tuple(AD * 0.130 + v3(-0.012, 0.004, 0)), 'c')
+        mq.k(T(1.06), ax(0.112)).k(T(1.10), ax(0.086), ease='out').k(T(1.25), ax(0.086)).k(T(1.34), Z, ease='in')
         mr.k(T(0.30), Z).k(T(0.45), Z).k(T(0.62), (14, 0, 5), ease='in').k(T(0.64), BR, ease='lin').k(T(0.72), BR).k(T(0.97), (7, -5, -12), 'c').k(T(1.06), Z).k(T(1.34), Z)
         c.wr.add(spring(T(0.30), (-0.8, 0.5, 0.2), 6, 11)).add(spring(T(1.14), (0.5, -0.3, 0), 7, 13)).add(spring(T(1.34), (1.9, -0.9, 0.3), 6, 11))
         c.wp.add(spring(T(0.30), (0, 0.001, 0.002), 6, 11)).add(spring(T(1.34), (0, 0.002, 0.006), 6, 11))
         belt = Anchor('World', A['magh'].world(c.env(T(0.66))[0]), A['magh'].pre, A['magh'].pre, (0, 0, 0))
-        c.hand['L'].clear().hold(0, T(0.05), A['sup'], open=0.05).hold(T(0.50), T(0.64), belt, lift=(-0.07, -0.03, 0.0)).hold(T(0.68), T(1.14), A['magh'], close=0.04, open=0.05, mid='direct')
-        c.hand['L'].hold(T(1.25), T(1.37), A['palm'], lift=(-0.02, -0.01, -0.045))
+        c.hand['L'].clear().hold(0, T(0.05), A['sup'], open=0.05).hold(T(0.50), T(0.64), belt, lift=(-0.07, -0.03, 0.0)).hold(T(0.68), T(1.10), A['magh'], close=0.04, open=0.04, mid='direct').hold(T(1.16), T(1.17), A['magoff'], mid='direct')
+        c.hand['L'].hold(T(1.25), T(1.37), A['palm'], mid='direct', lift=(-0.02, -0.01, -0.03))
         c.hand['R'].clear().hold(0, 0.02, A['grip']).hold(T(0.14), T(0.20), A['safe'], mid=st.IDX).hold(T(0.26), T(0.35), A['rel'], mid='direct')
         c.hand['R'].hold(T(0.46), rend, A['safe'], mid='direct')
         c.ev(T(0.30), 'mag_out').ev(T(1.34), 'mag_in').ev(T(1.34), 'ammo')
