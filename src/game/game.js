@@ -168,8 +168,11 @@ export class Game {
       this.audio.play(s, { volume: stance === 'prone' ? 0.2 : stance === 'crouch' ? 0.24 : sprint ? 0.55 : 0.38, pitchVar: 0.08, rate: stance === 'prone' ? 0.8 : 1 });
       if (surface === 'gravel' || surface === 'dirt') this.fx.footDust(this.player.pos.x, this.player.pos.y, this.player.pos.z);
     };
-    this.player.onLand = (v) => this.audio.play('step_grass', { volume: Math.min(1, v / 8), rate: 0.8 });
-    this.player.onRoll = () => { this.audio.play('step_grass', { volume: 0.6, rate: 0.7 }); this.fx.footDust(this.player.pos.x, this.player.pos.y, this.player.pos.z); };
+    this.player.onLand = (v, drop) => {
+      if (this.player.fallDamage?.(drop) > 0) this.audio.playFirst('land_hard', 'step_grass', { volume: Math.min(1, 0.55 + v / 25), pitchVar: 0.06 }, { rate: 0.8 });
+      else this.audio.play('step_grass', { volume: Math.min(1, v / 8), rate: 0.8 });
+    };
+    this.player.onRoll = () => { this.audio.playFirst('roll', 'step_grass', { volume: 0.7, pitchVar: 0.06 }, { volume: 0.6, rate: 0.7 }); this.fx.footDust(this.player.pos.x, this.player.pos.y, this.player.pos.z); };
     this.player.onBandage = (phase) => { if (phase === 'start') this.audio.playFirst('bandage', null, { volume: 0.7 }); };
     this.player.onHurt = (amount, dir, kind) => { this.audio.play('player_hurt', { volume: kind === 'fall' ? 0.7 : 0.9 }); this.ui?.hurt(amount, dir); this.emit('hurt', amount, kind); };
     this.player.onDeath = () => { this.audio.play('player_death', { volume: 1 }); this.overT = 0; this.emit('death'); };
@@ -238,10 +241,10 @@ export class Game {
     const sk = Math.sqrt(k), col = this.collision;
     _v.copy(point).addScaledVector(dir, 0.2);
     const h = col.raycast(_v, dir, 4.5 * sk, this._bh || (this._bh = {}));
-    if (h && h.surface !== 'water') this.fx.bloodSplat(h.point, h.normal, (0.45 + Math.random() * 0.35) * sk * (1 - 0.1 * h.distance));
+    if (h && h.surface !== 'water') { this.fx.bloodSplat(h.point, h.normal, (0.45 + Math.random() * 0.35) * sk * (1 - 0.1 * h.distance)); this.audio.playAt('blood_splat', h.point, { volume: 0.22, pitchVar: 0.12, ref: 3, height: 0 }); }
     if (!h || Math.random() < 0.5) {
       const g = col.raycast(point, DOWN, 3, this._bh);
-      if (g && g.surface !== 'water') this.fx.bloodSplat(g.point, g.normal, (0.22 + Math.random() * 0.22) * sk);
+      if (g && g.surface !== 'water') { this.fx.bloodSplat(g.point, g.normal, (0.22 + Math.random() * 0.22) * sk); this.audio.playAt('blood_splat', g.point, { volume: 0.14, pitchVar: 0.12, ref: 3, height: 0 }); }
     }
   }
 
@@ -261,7 +264,7 @@ export class Game {
     const p = this.player;
     this.audio.resume();
     this.audio.setMuffle(0);
-    this.audio.preload(['rifle_shot', 'dry_fire', 'mag_out', 'mag_in', 'bolt_rack', 'impact_flesh', 'impact_dirt', 'impact_stone', 'step_grass', 'step_gravel', 'zombie_idle', 'zombie_alert', 'zombie_attack', 'zombie_death', 'zombie_hurt', 'bell_toll', 'shell_drop', 'player_hurt']);
+    this.audio.preload(['rifle_shot', 'dry_fire', 'mag_out', 'mag_in', 'bolt_rack', 'impact_flesh', 'impact_dirt', 'impact_stone', 'step_grass', 'step_gravel', 'zombie_idle', 'zombie_alert', 'zombie_attack', 'zombie_death', 'zombie_hurt', 'bell_toll', 'shell_drop', 'player_hurt', 'roll', 'land_hard', 'step_wood', 'step_stone', 'step_water', 'weapon_switch', 'pistol_mag_out', 'pistol_mag_in', 'bolt_back', 'bolt_forward', 'zombie_run', 'brute_growl', 'blood_splat', 'pickup', 'pistol_shot', 'sniper_shot']);
     this.zombies.clear();
     this.zombies.passive = false;
     this.supply.clear();
@@ -290,7 +293,7 @@ export class Game {
     this.player.enabled = false; this.weapon.visible = false;
     this.zombies.clear();
     this.supply.clear();
-    this.audio.setMuffle(0);
+    this.audio.setMuffle(0); this._stopVitals();
     // a handful of infected drift across the meadow behind the menu
     this.zombies.passive = true;
     for (let i = 0; i < 4; i++) {
@@ -302,7 +305,19 @@ export class Game {
     this.ui?.setState('menu');
   }
 
-  pause() { if (this.state === 'playing') { this.state = 'paused'; this.ui?.setState('paused'); } }
+  // heartbeat and laboured breathing swell as health drops under ~40
+  _vitals(k) {
+    const a = this.audio;
+    for (const [n, gain] of [['heartbeat', 0.9], ['breath_heavy', 0.7]]) {
+      if (k <= 0.001 && !a.want.has(n)) continue;
+      if (k <= 0.001) { a.stopLoop(n, 1.5); continue; }
+      if (!a.want.has(n)) a.loop(n, 0.0001, 1);
+      a.setLoopVolume(n, k * gain, 0.5);
+    }
+  }
+  _stopVitals() { this.audio.stopLoop('heartbeat', 0.6); this.audio.stopLoop('breath_heavy', 0.6); }
+
+  pause() { if (this.state === 'playing') { this._stopVitals(); this.state = 'paused'; this.ui?.setState('paused'); } }
   resume() { if (this.state === 'paused') { this.state = 'playing'; this.ui?.setState('playing'); } }
 
   // Who comes in wave n, in spawn order. Every fifth wave brings the boss; in between
@@ -340,7 +355,7 @@ export class Game {
     this.spawnT = 1.5;
     this.cleared = false; this.packN = 0; this.lastSpawn = null;
     for (const z of this.zombies.list) if (z.alive) z.aware = true;
-    this.audio.play('bell_toll', { volume: 0.9 });
+    this.audio.play('bell_toll', { volume: 0.4 });
     this.ui?.toast(`Wave ${this.wave}`, c.text);
     this.emit('wave', this.wave, c.kind, this.queue);
   }
@@ -500,6 +515,7 @@ export class Game {
         for (const z of zombies.list) if (z.alive && z.aware) threat += (z.pos.distanceToSquared(p.pos) < 45 * 45 ? 1 : 0.3) * (z.def.boss ? 4 : 1);
         this.audio.setLoopVolume('music_combat', THREE.MathUtils.clamp(threat / 5, 0, 1) * 0.8, 1.5);
         this.audio.setMuffle(p.alive ? clamp((35 - p.health) / 35, 0, 1) * 0.8 : 1);
+        this._vitals(p.alive ? clamp((40 - p.health) / 40, 0, 1) : 0);
         if (!p.alive) {
           this.overT += dt;
           if (this.overT > 2.6) {
@@ -516,7 +532,7 @@ export class Game {
       weapon.update(dt);
       zombies.update(dt);
       this.fx.update(dt);
-      this.supply.update(dt, p, (pk) => { p.bandages++; this.ui?.toast('Bandage', `${p.bandages} of ${p.bandageMax} carried`); this.emit('pickup', pk); });
+      this.supply.update(dt, p, (pk) => { p.bandages++; this.ui?.toast('Bandage', `${p.bandages} of ${p.bandageMax} carried`); this.audio.play('pickup', { volume: 0.6, pitchVar: 0.05 }); this.emit('pickup', pk); });
       // what F would do: the nearest unopened crate in reach and roughly ahead
       this.interact = null;
       if (this.state === 'playing' && p.alive) {

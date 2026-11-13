@@ -1,5 +1,12 @@
 {
   "sounds": {
+    "ability_ready": {
+      "files": [
+        "ability_ready.mp3"
+      ],
+      "volume": 0.4,
+      "category": "sfx"
+    },
     "amb_crows": {
       "files": [
         "amb_crows.mp3"
@@ -23,11 +30,88 @@
       "category": "ambient",
       "loop": true
     },
+    "bandage": {
+      "files": [
+        "bandage.mp3"
+      ],
+      "volume": 0.6,
+      "category": "sfx"
+    },
+    "bell_toll": {
+      "files": [
+        "bell_toll.mp3"
+      ],
+      "volume": 0.8,
+      "category": "sfx"
+    },
+    "blood_splat": {
+      "files": [
+        "blood_splat_1.mp3",
+        "blood_splat_2.mp3",
+        "blood_splat_3.mp3"
+      ],
+      "volume": 0.6,
+      "category": "sfx"
+    },
+    "bolt_back": {
+      "files": [
+        "bolt_back.mp3"
+      ],
+      "volume": 0.6,
+      "category": "sfx"
+    },
+    "bolt_forward": {
+      "files": [
+        "bolt_forward.mp3"
+      ],
+      "volume": 0.6,
+      "category": "sfx"
+    },
     "bolt_rack": {
       "files": [
         "bolt_rack.mp3"
       ],
       "volume": 0.7,
+      "category": "sfx"
+    },
+    "boss_roar": {
+      "files": [
+        "boss_roar_1.mp3",
+        "boss_roar_2.mp3"
+      ],
+      "volume": 1,
+      "category": "sfx"
+    },
+    "boss_slam": {
+      "files": [
+        "boss_slam_1.mp3",
+        "boss_slam_2.mp3"
+      ],
+      "volume": 1,
+      "category": "sfx"
+    },
+    "breath_heavy": {
+      "files": [
+        "breath_heavy.mp3"
+      ],
+      "volume": 0.5,
+      "category": "sfx",
+      "loop": true
+    },
+    "brute_growl": {
+      "files": [
+        "brute_growl_1.mp3",
+        "brute_growl_2.mp3",
+        "brute_growl_3.mp3"
+      ],
+      "volume": 0.9,
+      "category": "sfx"
+    },
+    "crate_open": {
+      "files": [
+        "crate_open.mp3"
+      ],
+      "volume": 0.6,
       "category": "sfx"
     },
     "dry_fire": {
@@ -36,6 +120,39 @@
       ],
       "volume": 0.6,
       "category": "sfx"
+    },
+    "explosion": {
+      "files": [
+        "explosion_1.mp3",
+        "explosion_2.mp3",
+        "explosion_3.mp3"
+      ],
+      "volume": 1,
+      "category": "sfx"
+    },
+    "heartbeat": {
+      "files": [
+        "heartbeat.mp3"
+      ],
+      "volume": 0.6,
+      "category": "sfx",
+      "loop": true
+    },
+    "heli_distant": {
+      "files": [
+        "heli_distant.mp3"
+      ],
+      "volume": 0.35,
+      "category": "ambient",
+      "loop": true
+    },
+    "heli_loop": {
+      "files": [
+        "heli_loop.mp3"
+      ],
+      "volume": 0.6,
+      "category": "ambient",
+      "loop": true
     },
     "impact_dirt": {
       "files": [
@@ -90,6 +207,15 @@
       "volume": 0.7,
       "category": "sfx"
     },
+    "land_hard": {
+      "files": [
+        "land_hard_1.mp3",
+        "land_hard_2.mp3",
+        "land_hard_3.mp3"
+      ],
+      "volume": 0.7,
+      "category": "sfx"
+    },
     "mag_in": {
       "files": [
         "mag_in.mp3"
@@ -103,6 +229,22 @@
       ],
       "volume": 0.6,
       "category": "sfx"
+    },
+    "mortar_whistle": {
+      "files": [
+        "mortar_whistle_1.mp3",
+        "mortar_whistle_2.mp3"
+      ],
+      "volume": 0.8,
+      "category": "sfx"
+    },
+    "music_base": {
+      "files": [
+        "music_base.mp3"
+      ],
+      "volume": 0.5,
+      "category": "music",
+      "loop": true
     },
     "music_combat": {
       "files": [
@@ -126,6 +268,36 @@
       ],
       "volume": 0.6,
       "category": "music"
+    },
+    "pickup": {
+      "files": [
+        "pickup.mp3"
+      ],
+      "volume": 0.5,
+      "category": "sfx"
+    },
+    "pistol_mag_in": {
+      "files": [
+        "pistol_mag_in.mp3"
+      ],
+      "volume": 0.55,
+      "category": "sfx"
+    },
+    "pistol_mag_out": {
+      "files": [
+        "pistol_mag_out.mp3"
+      ],
+      "volume": 0.55,
+      "category": "sfx"
+    },
+    "pistol_shot": {
+      "files": [
+        "pistol_shot_1.mp3",
+        "pistol_shot_2.mp3",
+        "pistol_shot_3.mp3"
+      ],
+      "volume": 0.9,
+      "category": "sfx"
     },
     "player_death": {
       "files": [
@@ -153,13 +325,48 @@
       "volume": 1,
       "category": "sfx"
     },
+    "roll": {
+      "files": [
+        "roll_1.mp3",
+        "roll_2.mp3",
+        "roll_3.mp3"
+      ],
+      "volume": 0.6,
+      "category": "sfx"
+    },
+    "sentry_fire": {
+      "files": [
+        "sentry_fire_1.mp3",
+        "sentry_fire_2.mp3"
+      ],
+      "volume": 0.9,
+      "category": "sfx"
+    },
     "shell_drop": {
       "files": [
         "shell_drop_1.mp3",
         "shell_drop_2.mp3",
-        "shell_drop_3.mp3"
+        "shell_drop_3.mp3",
+        "shell_drop_4.mp3",
+        "shell_drop_5.mp3"
       ],
       "volume": 0.35,
+      "category": "sfx"
+    },
+    "slide_release": {
+      "files": [
+        "slide_release.mp3"
+      ],
+      "volume": 0.6,
+      "category": "sfx"
+    },
+    "sniper_shot": {
+      "files": [
+        "sniper_shot_1.mp3",
+        "sniper_shot_2.mp3",
+        "sniper_shot_3.mp3"
+      ],
+      "volume": 1,
       "category": "sfx"
     },
     "step_grass": {
@@ -200,11 +407,74 @@
       "volume": 0.5,
       "category": "sfx"
     },
+    "step_wood": {
+      "files": [
+        "step_wood_1.mp3",
+        "step_wood_2.mp3",
+        "step_wood_3.mp3",
+        "step_wood_4.mp3"
+      ],
+      "volume": 0.45,
+      "category": "sfx"
+    },
+    "tank_engine": {
+      "files": [
+        "tank_engine.mp3"
+      ],
+      "volume": 0.6,
+      "category": "ambient",
+      "loop": true
+    },
+    "tank_tracks": {
+      "files": [
+        "tank_tracks.mp3"
+      ],
+      "volume": 0.5,
+      "category": "ambient",
+      "loop": true
+    },
+    "ui_buy": {
+      "files": [
+        "ui_buy.mp3"
+      ],
+      "volume": 0.4,
+      "category": "sfx"
+    },
     "ui_click": {
       "files": [
         "ui_click.mp3"
       ],
       "volume": 0.4,
+      "category": "sfx"
+    },
+    "ui_error": {
+      "files": [
+        "ui_error.mp3"
+      ],
+      "volume": 0.4,
+      "category": "sfx"
+    },
+    "ui_hover": {
+      "files": [
+        "ui_hover.mp3"
+      ],
+      "volume": 0.3,
+      "category": "sfx"
+    },
+    "ui_upgrade": {
+      "files": [
+        "ui_upgrade.mp3"
+      ],
+      "volume": 0.45,
+      "category": "sfx"
+    },
+    "weapon_switch": {
+      "files": [
+        "weapon_switch_1.mp3",
+        "weapon_switch_2.mp3",
+        "weapon_switch_3.mp3"
+      ],
+      "volume": 0.5,
       "category": "sfx"
     },
     "zombie_alert": {
@@ -251,6 +521,15 @@
         "zombie_idle_4.mp3"
       ],
       "volume": 0.6,
+      "category": "sfx"
+    },
+    "zombie_run": {
+      "files": [
+        "zombie_run_1.mp3",
+        "zombie_run_2.mp3",
+        "zombie_run_3.mp3"
+      ],
+      "volume": 0.85,
       "category": "sfx"
     }
   }

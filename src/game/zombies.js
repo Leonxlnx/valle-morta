@@ -667,9 +667,14 @@ export class Zombies {
         continue;
       }
       // awareness: sight / hearing radius
-      if (!z.aware && hunting && (dist < 30 || (dist < 90 && p.input.fire && p.enabled))) { z.aware = true; if (dist < 60) this.audio?.playAt('zombie_alert', z.pos, { volume: 0.8, pitchVar: 0.12, rate: def.voice }); }
+      if (!z.aware && hunting && (dist < 30 || (dist < 90 && p.input.fire && p.enabled))) { z.aware = true; if (dist < 60) { if (z.type === 'brute' && this.audio?.exact('brute_growl')) this.audio.playAt('brute_growl', z.pos, { volume: 1, pitchVar: 0.08, ref: 8 }); else this.audio?.playAt('zombie_alert', z.pos, { volume: 0.8, pitchVar: 0.12, rate: def.voice }); } }
       z.groan -= dt;
-      if (z.groan <= 0) { z.groan = 4 + Math.random() * 9; if (dist < 70 && !this.passive) this.audio?.playAt('zombie_idle', z.pos, { volume: 0.55, pitchVar: 0.15, rate: def.voice }); }
+      if (z.groan <= 0) { z.groan = 4 + Math.random() * 9; if (dist < 70 && !this.passive) {
+        const a = this.audio;
+        if (z.type === 'runner' && a?.exact('zombie_run')) a.playAt('zombie_run', z.pos, { volume: 0.65, pitchVar: 0.1 });
+        else if (z.type === 'brute' && a?.exact('brute_growl')) a.playAt('brute_growl', z.pos, { volume: 0.8, pitchVar: 0.1, ref: 7 });
+        else a?.playAt('zombie_idle', z.pos, { volume: 0.55, pitchVar: 0.15, rate: def.voice });
+      } }
       z.slow = Math.max(0, z.slow - dt);
       z.avoidT -= dt; z.attackCd -= dt; z.chargeCd -= dt; z.slamCd -= dt;
 

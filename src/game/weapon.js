@@ -469,10 +469,11 @@ export class Weapon {
     const au = this.audio;
     this.eventLog.push(`${a ? a.name : 'Fire'}:${name}`);
     if (this.eventLog.length > 24) this.eventLog.shift();
-    if (name === 'mag_out') au?.play('mag_out', { volume: 0.8 });
-    else if (name === 'mag_in') au?.play('mag_in', { volume: 0.8 });
-    else if (name === 'bolt_back') au?.play('bolt_rack', { volume: 0.8 });
-    else if (name === 'bolt_forward') { if (au?.exact('bolt_forward')) au.play('bolt_forward', { volume: 0.8 }); }
+    const pistol = this.id === 'pistol', sniper = this.id === 'sniper';
+    if (name === 'mag_out') (pistol ? au?.playFirst('pistol_mag_out', 'mag_out', { volume: 0.8, pitchVar: 0.03 }, { rate: 1.15 }) : au?.play('mag_out', { volume: 0.8 }));
+    else if (name === 'mag_in') (pistol ? au?.playFirst('pistol_mag_in', 'mag_in', { volume: 0.8, pitchVar: 0.03 }, { rate: 1.15 }) : au?.play('mag_in', { volume: 0.8 }));
+    else if (name === 'bolt_back') (sniper ? au?.playFirst('bolt_back', 'bolt_rack', { volume: 0.8, pitchVar: 0.03 }) : au?.play('bolt_rack', { volume: 0.8 }));
+    else if (name === 'bolt_forward') { if (au?.exact('bolt_forward')) au.play('bolt_forward', { volume: 0.8, pitchVar: sniper ? 0.03 : 0 }); }
     else if (name === 'slide_release') au?.playFirst('slide_release', 'bolt_rack', { volume: 0.7 }, { rate: 1.35 });
     else if (name === 'ammo') this._fill(a);
     else if (name === 'shell') this._eject();
@@ -518,6 +519,7 @@ export class Weapon {
     if (id === this.id) return false;
     if (this.act && this.act.name === 'BoltCycle') this.st.needBolt = true;     // the next round still has to be chambered
     this.pending = id;
+    this.audio?.play('weapon_switch', { volume: 0.6, pitchVar: 0.05 });
     this._start('Holster', () => this._swap());
     return true;
   }
