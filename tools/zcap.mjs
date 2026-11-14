@@ -62,7 +62,51 @@ try {
   };
   const GAIT = { walker: [1.0, 3.0, 4.2], runner: [1.5, 3.4, 5.2], brute: [1.6, 3.2, 4.4], boss: [2.2, 6.6, 7.6] };
   const report = {};
-  for (let ti = 0, tries = 0; ti < types.length; ti++) {
+  // --oneshots: every one-shot clip on every type started from a walk, the lowest total
+  // animation weight any animated bone gets during it (below 1 the bind pose shows through),
+  // and the proof frames (boss mid-roar, boss slam impact, walker mid-attack, brute falling)
+  if (process.argv.includes('--oneshots')) {
+    const res = await page.evaluate((types) => {
+      const vm = __vm, Z = vm.game.zombies, out = {};
+      for (const type of types) for (const clip of ['Attack', 'HitBody', 'HitHead', 'DeathBack', 'DeathFront', 'Roar', 'Slam']) {
+        const [z] = zc.trio(type, { aware: true });
+        for (const o of Z.list.slice(1)) Z._release(o); Z.list.length = 1;
+        if (!z.actions[clip]) continue;
+        z.chargeCd = z.slamCd = 1e9; z.attackCd = 1e9; Z.passive = true; z.wanderGo = true; z.wanderT = 1e9; z.wander.copy(zc.d);
+        zc.sim(1.2);
+        const PM = Object.getPrototypeOf(z.mixer._bindings[0]);
+        if (!PM.__probe) { const ap = PM.apply; PM.apply = function (i) { const r = window.__wprobe; if (r && this.useCount > 0) { r.n++; if (this.cumulativeWeight < r.w) { r.w = this.cumulativeWeight; r.path = this.binding.path; } if (this.cumulativeWeight < 0.99) r.low++; } return ap.call(this, i); }; PM.__probe = true; }
+        window.__wprobe = { w: 9, path: '', low: 0, n: 0 };
+        if (clip.startsWith('Death')) Z.damage(z, 1e6, 'torso', zc.d.clone().multiplyScalar(clip === 'DeathBack' ? -1 : 1));
+        else if (clip.startsWith('Hit')) Z._flinch(z, 0, 1, clip === 'HitHead' ? 0.9 : 0.4, clip === 'HitHead');
+        else { z.state = clip === 'Attack' ? 'attack' : clip.toLowerCase(); z.stateT = 0; z.attackHit = clip !== 'Slam'; Z._play(z, clip, clip === 'Roar' ? 0.2 : clip === 'Slam' ? 0.15 : 0.12, clip === 'Attack' ? z.def.attackRate : 1, true); }
+        zc.sim(z.actions[clip].getClip().duration + 0.8);
+        const r = window.__wprobe; window.__wprobe = null;
+        out[`${type}.${clip}`] = `min weight ${r.w.toFixed(3)} (${r.path}), ${r.low} of ${r.n} bone updates below 0.99`;
+      }
+      return out;
+    }, types);
+    for (const k in res) console.log(k.padEnd(18), res[k]);
+    const shots = [];
+    const F = (nm) => path.join(out, `oneshot_${nm}_${tag}.jpg`);
+    const solo = (type, at) => `(() => { const Z = __vm.game.zombies; const [z] = zc.trio('${type}'); for (const o of Z.list.slice(1)) Z._release(o); Z.list.length = 1; z.pos.addScaledVector(zc.d, ${at}); z.root.position.copy(z.pos); zc.sim(0.4); window.__z = z; })()`;
+    await page.evaluate(solo('boss', 6));
+    await page.evaluate(() => { const Z = __vm.game.zombies, z = __z; z.state = 'roar'; z.stateT = 0; z.chargeCd = z.slamCd = 99; Z._play(z, 'Roar', 0.2, 1, true); zc.sim(0.45); __vm.cam(z.pos.x - zc.d.x * 5.5, z.pos.y + 1.7, z.pos.z - zc.d.z * 5.5, z.pos.x, z.pos.y + 1.1, z.pos.z); });
+    shots.push(await snap(F('boss_roar')));
+    await page.evaluate(solo('boss', 1.5));
+    await page.evaluate(() => { const Z = __vm.game.zombies, z = __z, n = Z.slams; z.aware = true; z.alertT = -1; z.chargeCd = 99; z.slamCd = 0; Z.passive = false; zc.sim(3, () => Z.slams === n); zc.camSide(z.pos, 7); });
+    shots.push(await snap(F('boss_slam')));
+    await page.evaluate(solo('walker', 0));
+    await page.evaluate(() => { const Z = __vm.game.zombies, z = __z; z.state = 'attack'; z.stateT = 0; z.attackHit = true; Z._play(z, 'Attack', 0.12, z.def.attackRate, true); zc.sim(0.35); __vm.cam(z.pos.x - zc.d.x * 5.5, z.pos.y + 1.7, z.pos.z - zc.d.z * 5.5, z.pos.x, z.pos.y + 1.1, z.pos.z); });
+    shots.push(await snap(F('walker_attack')));
+    await page.evaluate(solo('brute', 1));
+    await page.evaluate(() => { const Z = __vm.game.zombies, z = __z; Z.damage(z, 1e6, 'torso', zc.d.clone().negate()); zc.sim(0.45); __vm.cam(z.pos.x - zc.d.x * 5.5, z.pos.y + 1.7, z.pos.z - zc.d.z * 5.5, z.pos.x, z.pos.y + 1.1, z.pos.z); });
+    shots.push(await snap(F('brute_death')));
+    const sheet = path.join(out, `oneshots_${tag}.jpg`);
+    execFileSync('node', ['tools/sheet.mjs', sheet, '640', '3', ...shots]);
+    console.log('sheet', sheet);
+  }
+  for (let ti = 0, tries = 0; ti < (process.argv.includes('--oneshots') ? 0 : types.length); ti++) {
     const type = types[ti];
     try {
     const tiles = [], strip = [];

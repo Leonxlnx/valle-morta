@@ -304,7 +304,7 @@ def hook_rifle2(c):
     fl = rc & (np.abs(n[:, 0]) > 0.8) & (z > 6) & (z < 42); c.xw[fl] += 0.25 * ss(0.4, 0.75, fbm(p[fl], (1 / 60., 1 / 12., 1 / 12.), 3, 81))
     rib = np.zeros(M, bool)
     for y0 in (-48, -20, 8, 64, 100): rib |= cv & (np.abs(y - y0 - 2.25) < 2.7) & (n[:, 2] > 0.25)
-    c.xw[rib] += 0.25; c.xw[cv & ~rib] += 0.15 * ss(0.5, 0.8, fbm(p[cv & ~rib], 1 / 25., 3, 82))
+    c.xw[rib] += 0.12; c.xw[cv & ~rib] += 0.15 * ss(0.5, 0.8, fbm(p[cv & ~rib], 1 / 25., 3, 82))
     sel = (tag == 1) & (x > 17) & (y > 50) & (y < 76) & (z < 20); c.xw[sel] += 0.4
     mg = tag == 4; c.xw[mg] += 0.3 * ss(-90, -5, z[mg]) * ss(0.4, 0.7, fbm(p[mg], (1 / 1.2, 1 / 30., 1 / 30.), 3, 78))
     common(c, look=2)
@@ -312,7 +312,7 @@ def hook_rifle2(c):
     if st.any(): c.put(st, m_metal2(c, st, (0.20, 0.205, 0.22), rough=0.46, wear=1.35, rust=0.25, oil=1.3, scratch=0.7, dirt=0.75, coat=0.55))
     stm = st | (pid == MAGS); cav = np.clip(1 - c.a, 0, 1)
     pits = ss(0.74, 0.84, fbm(p, 1 / 0.45, 2, 83)) * ss(0.25, 0.55, fbm(p, 1 / 14., 2, 84)) * (0.4 + cav)
-    oil = ss(0.12, 0.5, cav) * ss(0.35, 0.65, fbm(p, 1 / 6., 3, 85))
+    oil = ss(0.3, 0.6, cav) * ss(0.35, 0.65, fbm(p, 1 / 6., 3, 85))
     c.hadd[stm] -= 0.10 * pits[stm]; c.col[stm] *= (1 - 0.3 * pits[stm] - 0.3 * oil[stm])[:, None]; c.col[stm] += np.array([0.02, 0.012, 0.0], f4) * oil[stm][:, None]
     c.rough[stm] = mix(c.rough[stm], 0.24, 0.6 * oil[stm])
     c.col[(tag == 12) & st] *= 0.6

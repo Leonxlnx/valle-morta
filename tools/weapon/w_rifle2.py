@@ -8,7 +8,7 @@ ID = 'rifle2'; OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'b
 PIVOT = (0, 0, 0); EYE = (-0.085, -0.24, 0.115)
 GROUPS = ['RifleBody', 'Bolt', 'Magazine', 'MagRounds', 'Trigger', 'Selector', 'Casing']
 PARTS = ['Bolt', 'Magazine', 'Trigger']
-SHOULDER = {'R': (0.137, -0.617, 0.039), 'L': (-0.20, -0.20, -0.14)}; POLE = {'R': (-0.25, 0, -1), 'L': (-1.0, 0, -0.3)}
+SHOULDER = {'R': (0.134, -0.585, 0.036), 'L': (-0.20, -0.20, -0.14)}; POLE = {'R': (-0.25, 0, -1), 'L': (-1.0, 0, -0.3)}
 VIEWS = [('first person', EYE, (EYE[0], 1.0, EYE[2]), 52), ('right', (0.55, 0.12, 0.10), (0.0, 0.14, 0.0), 30), ('left close', (-0.36, 0.0, 0.14), (0.0, 0.14, 0.02), 32),
          ('firing grip', (0.30, -0.16, 0.02), (0.0, 0.0, -0.03), 30), ('grip from behind', (-0.16, -0.30, 0.10), (0.0, -0.02, -0.02), 30), ('support hand', (-0.22, 0.34, -0.24), (0, 0.22, 0.0), 34)]
 MISC = [('Idle', 1), ('Fire', 6), ('Draw', 5), ('Holster', 4), ('Sprint', 4)]
@@ -33,7 +33,7 @@ def setup(st):
     A['hg'] = st.grip('handguard', 'L', 'Weapon', F((0.77, 0.64, 0.10), (0.1, 0, -1)), (0.008, 0.262, -0.004), (0, 62, 0), (0, 0, 1),
                       thumb=dict(aim=(-0.34, 0.59, -0.75)), retreat=(-0.025, -0.01, -0.06))
     A['mag'] = st.grip('magazine', 'L', 'Magazine', F((0.15, 0.80, 0.58), (-1, 0, 0)), (-0.024, 0.167, -0.060), (-8, 96, 1.5), (1, 0, 0),
-                       thumb=dict(aim=(-0.55, 0.0, -0.83), flex=(0, 1, 0)), back=0.04, retreat=(-0.06, -0.03, -0.03))
+                       thumb=dict(aim=(-0.55, 0.0, -0.83), flex=(0, 1, 0)), back=0.04, retreat=(-0.08, -0.02, -0.06))
     h = st.grip('charge', 'L', 'Bolt', F((0.92, 0, -0.38), (0.38, 0, 0.92)), (0.004, 0.147, 0.098), (-29, 92, 1), (0, 0, -1), a0=RG.A_OPEN,
                 thumb=dict(aim=(-0.35, 0.82, -0.43), flex=(0, 1, 0)), retreat=(-0.03, 0.0, 0.06))
     A['hook'] = h
@@ -85,7 +85,7 @@ def clips(st):
     c = Clip(st, 'Reload', 2.4); T = mag_change(c, 1.0)
     c.wr.k(1.92, RR).k(2.24, (-1.5, -2, -0.8), 'c').k(2.4, (0, 0, 0)); c.wp.k(1.92, RP).k(2.24, (0.001, 0.002, -0.004), 'c').k(2.4, (0, 0, 0))
     c.pl['L'].k(2.28, (0, 0, 0))
-    c.hand['L'].clear().hold(0, 0.06, A['hg'], open=0.06).hold(0.44, 1.88, A['mag'], close=0.10, open=0.07, lift=(-0.03, 0.0, -0.025)).hold(2.27, 2.4, A['hg'], close=0.09)
+    c.hand['L'].clear().hold(0, 0.06, A['hg'], open=0.06).hold(0.44, 1.88, A['mag'], close=0.10, open=0.07, lift=(-0.03, 0.0, -0.025)).hold(2.27, 2.4, A['hg'], close=0.09, lift=(-0.04, 0.0, -0.03))
     c.hand['R'].clear().hold(0, 0.02, A['grip']).hold(0.16, 2.18, A['safe'], mid=st.IDX).hold(2.33, 2.4, A['grip'], mid=st.IDX)
     # ---- ReloadEmpty: magazine swap, then the support hand racks the charging handle over the top
     c = Clip(st, 'ReloadEmpty', 3.0); T = mag_change(c, 0.93); KP, KR = (-0.03, -0.04, -0.02), (24, -58, 8)

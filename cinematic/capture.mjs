@@ -3,6 +3,7 @@
 //   node cinematic/capture.mjs --stills            quick SDR stills of every shot (framing check)
 //   node cinematic/capture.mjs --bench             time one 4K sub-frame under a few quality settings
 //   node cinematic/capture.mjs                     full render: 3840x2160, 24 fps, HDR10 (PQ / BT.2020), HEVC 10 bit
+//   node cinematic/capture.mjs --stills --frames 4 --shots 3,5   more stills per shot, only some shots
 //   options: --w 3840 --h 2160 --sub 3 --crf 17 --shots 1,2,5 --q ultra --set msaa=0,volScale=3,shadow=2048
 //
 // The film is rendered shot by shot into cinematic/out/seg_XX.mkv. Finished
@@ -29,6 +30,9 @@ const W = Number(arg('w', STILLS ? 1280 : 3840)), H = Number(arg('h', STILLS ? 7
 const SUB = Number(arg('sub', 3)), CRF = String(arg('crf', 17)), FPS = 24;
 const Q = arg('q', STILLS ? 'high' : 'ultra');
 const OVER = Object.fromEntries(String(arg('set', '')).split(',').filter(Boolean).map((kv) => { const [k, v] = kv.split('='); return [k, Number(v)]; }));
+// --frames n: n stills per shot, evenly spread over its duration (default two, at 30 % and 85 %)
+const NFR = Number(arg('frames', 2));
+const FRACS = NFR === 2 ? [0.3, 0.85] : Array.from({ length: NFR }, (_, k) => +((k + 0.5) / NFR).toFixed(3));
 const only = arg('shots', '') ? String(arg('shots', '')).split(',').map((s) => Number(s) - 1) : null;
 const FRAME_TIMEOUT = Number(arg('timeout', 45)) * 60000;   // per output frame; generous because the job yields to other work
 const OUT = 'cinematic/out';
@@ -119,15 +123,19 @@ try {
     const files = [];
     for (let i = 0; i < info.shots.length; i++) {
       if (only && !only.includes(i)) continue;
-      for (const frac of [0.3, 0.85]) {
-        const st = await page.evaluate((i, f) => window.__vm.film.still(i, f), i, frac);
+      for (const frac of FRACS) {
+        // the dev server reloads the page when someone saves a file: reopen and try again
+        let st = null;
+        for (let a = 0; a < 4 && !st; a++) {
+          try { if (!page) await open(); st = await page.evaluate((i, f) => window.__vm.film.still(i, f), i, frac); } catch (e) { log(`still retry: ${String(e && e.message).slice(0, 80)}`); await close(); await sleep(5000); }
+        }
         const file = `${OUT}/still_${String(i + 1).padStart(2, '0')}_${Math.round(frac * 100)}.jpg`;
         await page.screenshot({ path: file, type: 'jpeg', quality: 88 });
         files.push(file);
         log(`still ${JSON.stringify(st)}`);
       }
     }
-    execFileSync('node', ['tools/sheet.mjs', `${OUT}/stills.jpg`, '480', '4', ...files], { stdio: 'inherit' });
+    execFileSync('node', ['tools/sheet.mjs', `${OUT}/stills.jpg`, '480', String(NFR <= 2 ? 4 : NFR), ...files], { stdio: 'inherit' });
   } else if (BENCH) {
     await page.evaluate(() => window.__vm.film.begin(0));
     for (const over of [{}, { msaa: 0 }, { msaa: 0, volScale: 3, volSteps: 20 }, { msaa: 0, volScale: 3, volSteps: 20, shadow: 2048, ao: 0 }]) {

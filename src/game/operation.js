@@ -114,7 +114,7 @@ function discTexture() {
   return t;
 }
 
-class Helicopter {
+export class Helicopter {
   constructor(game) {
     this.game = game;
     this.state = 'gone';        // gone | in | ground | out
