@@ -193,6 +193,7 @@ kbd { display: inline-grid; place-items: center; min-width: 22px; height: 22px; 
 /* announcements */
 .toast { position: absolute; left: 50%; top: 13vh; transform: translate(-50%, 6px); text-align: center; opacity: 0; transition: opacity var(--slow) var(--ease), transform var(--slow) var(--ease); display: grid; gap: var(--s1); white-space: nowrap; }
 .toast.on { opacity: 1; transform: translate(-50%, 0); }
+.toast::before { content: ""; position: absolute; inset: -28px -72px; z-index: -1; background: radial-gradient(closest-side, rgba(0, 0, 0, 0.3), rgba(0, 0, 0, 0)); }
 .toast strong { font-size: var(--t-xl); font-weight: var(--w-bold); letter-spacing: var(--track-tight); }
 .toast span { font-size: var(--t-m); color: var(--ink-2); }
 .toast span:empty { display: none; }
@@ -272,6 +273,9 @@ kbd { display: inline-grid; place-items: center; min-width: 22px; height: 22px; 
 /* while the helicopter has the camera only the announcements stay */
 .hud.cine > :not(.toast) { opacity: 0 !important; }
 
+@media (min-height: 900px) {
+  .menu-col, .foot, .sheet { zoom: 1.2; }
+}
 @media (max-width: 760px) {
   .modes, .keys { grid-template-columns: 1fr; }
   .foot, .keyhint { display: none; }

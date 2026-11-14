@@ -292,10 +292,10 @@ def run(mod, opts):
     for n in ('sun', 'cam'):
         if n in bpy.data.objects: bpy.data.objects.remove(bpy.data.objects[n])
     st.apply(idle, 0); order = [n for n in st.clips if n != 'Idle'] + ['Idle']; st.actions(order)
-    bpy.context.view_layer.update(); out = os.path.join(W.MODELS, wid + '.glb')
+    bpy.context.view_layer.update(); out = getattr(mod, 'OUT', None) or os.path.join(W.MODELS, wid + '.glb')
     exp = [o for o in bpy.data.objects if o.type in ('MESH', 'EMPTY', 'ARMATURE')]
     W.export_glb(out, exp)
-    json.dump(side, open(os.path.join(W.MODELS, wid + '.anim.json'), 'w'), indent=1)
+    json.dump(side, open(os.path.splitext(out)[0] + '.anim.json', 'w'), indent=1)
     bpy.ops.wm.save_as_mainfile(filepath=os.path.join(W.BUILD, wid + '_final.blend'), check_existing=False)
     r = subprocess.run([W.VENV, os.path.join(W.HERE, 'verify_glb.py'), out], capture_output=True, text=True)
     print('\n'.join('VERIFY ' + l for l in (r.stdout + r.stderr).splitlines()), flush=True)

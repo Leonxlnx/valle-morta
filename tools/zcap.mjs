@@ -40,7 +40,7 @@ try {
       d, n, C,
       hold() { g.interT = 1e9; g.queue = 0; g.queueList = []; g.cleared = true; },
       sim(sec, each) { const k = Math.round(sec * 60); for (let i = 0; i < k; i++) { vm.step(1 / 60); p.health = p.maxHealth; if (g.state !== 'playing') g.state = 'playing'; if (each && each(1 / 60) === false) return; } },
-      reset() { if (g.state !== 'playing') g.start(); Z.clear(); S.hold(); Z.passive = true; Z.noCull = true; p.spawn(C.x - d.x * 3, C.z - d.z * 3, Math.atan2(-d.x, -d.z) + Math.PI); p.enabled = true; p.script = () => {}; try { g.weapon.root.visible = false; } catch (e) { /**/ } S.sim(0.1); },
+      reset() { if (g.state !== 'playing') g.start(); Z.clear(); S.hold(); Z.passive = true; Z.noCull = true; p.spawn(C.x - d.x * 3, C.z - d.z * 3, Math.atan2(-d.x, -d.z) + Math.PI); p.enabled = true; p.script = () => {}; vm.engine.weaponCamera.layers.set(31); S.sim(0.1); },
       // three of a type at 4, 10, 25 m down the street, facing the camera
       trio(type, opt = {}) {
         S.reset();
@@ -56,8 +56,8 @@ try {
   };
   await boot();
   const snap = async (file, clip) => {
-    await page.evaluate(async () => { const vm = window.__vm; vm.game.state = 'paused'; vm.start(); for (let i = 0; i < 5; i++) await new Promise((r) => requestAnimationFrame(r)); vm.stop(); vm.game.state = 'playing'; });
-    await page.screenshot({ path: file, type: 'jpeg', quality: 88, ...(clip ? { clip } : {}) });
+    await page.evaluate(async () => { const vm = window.__vm; vm.game.state = 'paused'; vm.start(); for (let i = 0; i < 8; i++) await new Promise((r) => requestAnimationFrame(r)); vm.stop(); vm.game.state = 'playing'; });
+    await page.screenshot({ path: file, type: 'jpeg', quality: 88, clip: clip || { x: 320, y: 150, width: 640, height: 360 } });
     return file;
   };
   const GAIT = { walker: [1.0, 3.0, 4.2], runner: [1.5, 3.4, 5.2], brute: [1.6, 3.2, 4.4], boss: [2.2, 6.6, 7.6] };
@@ -70,6 +70,7 @@ try {
     // ---- idle
     let info = await page.evaluate((type) => { const zs = zc.trio(type); zc.sim(1.5); zc.camMain(); const z = zs[0], hy = z.bones.Head ? z.bones.Head.getWorldPosition(new __vm.THREE.Vector3()).y - z.pos.y + 0.2 * z.scale : 0; return { height: +hy.toFixed(2), scale: +z.scale.toFixed(2), bulk: z.bulk, mat: z.mesh.material.userData.variant, set: z.set.name, borrowed: z.borrowed, rough: z.mesh.material.roughness, color: z.mesh.material.color.getHexString() }; }, type);
     tiles.push(await snap(T('a_idle')));
+    console.log('debug', JSON.stringify(await page.evaluate(() => { const c = __vm.engine.camera.position; return { cam: [c.x, c.y, c.z].map((v) => +v.toFixed(1)), zs: __vm.game.zombies.list.map((z) => [z.pos.x, z.pos.y, z.pos.z, z.root.visible ? 1 : 0].map((v) => +v.toFixed(1))) }; })));
     // ---- alert: the player is noticed
     await page.evaluate(() => { const Z = __vm.game.zombies; Z.passive = false; zc.sim(0.45); zc.camMain(); });
     tiles.push(await snap(T('b_alert')));
@@ -114,12 +115,13 @@ try {
         let ymin = 1e9, prev = null, slip = 0, st = 0, gs = 0, gn = 0;
         const meas = () => {
           z.root.updateWorldMatrix(true, true); fl.getWorldPosition(a); fr.getWorldPosition(b);
-          const ha = a.y - H(a.x, a.z), hb = b.y - H(b.x, b.z); ymin = Math.min(ymin, ha, hb);
-          const f = ha < hb ? 0 : 1, P = f ? b : a, down = Math.min(ha, hb) < ymin + 0.03 * z.scale;
+          const ha = z.root.worldToLocal(a.clone()).y, hb = z.root.worldToLocal(b.clone()).y; ymin = Math.min(ymin, ha, hb);
+          const f = ha < hb ? 0 : 1, P = f ? b : a, down = Math.min(ha, hb) < ymin + 0.02 * z.scale;
           if (prev && prev.f === f && down && prev.down) { slip += Math.hypot(P.x - prev.x, P.z - prev.z); st += 1 / 60; }
           prev = { f, x: P.x, z: P.z, down }; gs += z.gs; gn++;
         };
-        zc.sim(warm * 0.5); ymin = 1e9; zc.sim(warm * 0.5, meas);
+        zc.sim(warm * 0.5); ymin = 1e9;
+        for (let k = 0; k < Math.round(warm * 30); k++) { zc.camSide(z.pos, 3.4); vm.game.update(1 / 60); p.health = p.maxHealth; meas(); }
         const cyc = z.current ? z.current.getClip().duration / Math.max(0.05, Math.abs(z.current.timeScale)) : 1;
         return { cyc, clip: z.currentName, rate: +(z.current ? z.current.timeScale : 0).toFixed(2), gs: +(gs / gn).toFixed(2), slip: slip / Math.max(st, 1e-3), st, mx: m.x, mz: m.z };
       }, type, sp);
@@ -133,7 +135,7 @@ try {
           return { x, y, name: z.currentName };
         }, r.cyc, k);
         const s = 640;
-        frames.push(await snap(T(`s${ci}_${k}`), { x: Math.max(0, Math.min(W - s, crop.x - s / 2)), y: 40, width: s, height: s }));
+        frames.push(await snap(T(`s${ci}_${k}`), { x: 460, y: 190, width: 360, height: 360 }));
       }
       strip.push(...frames);
       report[type].gait[sp] = { clip: r.clip, rate: r.rate, groundSpeed: r.gs, slipMps: +r.slip.toFixed(3), slipPct: +((100 * r.slip) / Math.max(0.1, r.gs)).toFixed(1), plantedS: +r.st.toFixed(1) };

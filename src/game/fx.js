@@ -231,6 +231,12 @@ export class FX {
     this.spawn({ x: pos.x, y: pos.y, z: pos.z, vx: (r() - 0.5) * 0.12, vy: 0.32 + r() * 0.2, vz: (r() - 0.5) * 0.12, size: 0.018 + r() * 0.012, grow: 0.09, life: 0.9 + r() * 0.7, drag: 0.8, grav: -0.12, r: 0.7, g: 0.7, b: 0.7, a: 0.14, fadeIn: 0.12, spin: 2 });
   }
 
+  drip(p, groundY) {
+    const r = this.rnd;
+    this.spawn({ x: p.x + (r() - 0.5) * 0.12, y: p.y - 0.05, z: p.z + (r() - 0.5) * 0.12, vx: 0, vy: -0.4, vz: 0, size: 0.012 + r() * 0.01, life: 0.6, grav: 9.8, drag: 0.1, r: 0.09, g: 0.006, b: 0.005, a: 1, fadeIn: 0.001, ground: true });
+    if (r() < 0.35 && p.y - groundY < 2.5) this.bloodSplat(this._pp2.set(p.x, groundY + 0.004, p.z), this._up, 0.1 + r() * 0.12);
+  }
+
   footDust(x, y, z) {
     const r = this.rnd;
     this.spawn({ x, y: y + 0.05, z, vx: (r() - 0.5) * 0.4, vy: 0.25, vz: (r() - 0.5) * 0.4, size: 0.18, grow: 0.5, life: 0.8, drag: 2, r: 0.45, g: 0.4, b: 0.33, a: 0.1 });
@@ -239,6 +245,10 @@ export class FX {
   // ground slam: a ring of dust racing outwards and clods thrown up
   slam(pos, radius) {
     const r = this.rnd, y = pos.y + 0.15;
+    for (let i = 0; i < 40; i++) {
+      const a = (i / 40) * 6.283, c = Math.cos(a), s = Math.sin(a), v = radius * 2.2;
+      this.spawn({ x: pos.x + c * 0.5, y: pos.y + 0.08, z: pos.z + s * 0.5, vx: c * v, vy: 0.15, vz: s * v, size: 0.3, grow: 0.9, life: 0.55, drag: 2.2, grav: 0, r: 0.5, g: 0.46, b: 0.4, a: 0.32 });
+    }
     for (let i = 0; i < 26; i++) {
       const a = (i / 26) * 6.283 + r() * 0.2, c = Math.cos(a), s = Math.sin(a), v = radius * (1.1 + r() * 0.5);
       this.spawn({ x: pos.x + c * 0.8, y, z: pos.z + s * 0.8, vx: c * v, vy: 0.5 + r() * 0.9, vz: s * v, size: 0.4 + r() * 0.3, grow: 1.4, life: 1.1 + r() * 0.7, drag: 2.4, grav: -0.1, r: 0.42, g: 0.38, b: 0.32, a: 0.28 });
@@ -289,6 +299,7 @@ export class FX {
 
   // ------------------------------------------------------------ blood on surfaces
   _initBlood() {
+    this._pp2 = new THREE.Vector3(); this._up = new THREE.Vector3(0, 1, 0);
     let s = 4711;
     const rnd = () => { s = (s * 1664525 + 1013904223) >>> 0; return s / 4294967296; };
     const canvas = (draw) => { const c = document.createElement('canvas'); c.width = c.height = 256; const g = c.getContext('2d'); draw(g); const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t; };
@@ -307,7 +318,7 @@ export class FX {
     // pool: one smooth-edged lobed shape
     const pool = canvas((g) => {
       g.filter = 'blur(3px)';
-      g.fillStyle = 'rgba(98,6,5,0.97)';
+      g.fillStyle = 'rgba(62,5,3,0.96)';
       g.beginPath();
       for (let i = 0; i <= 48; i++) { const a = (i / 48) * 6.283, rr = 92 + Math.sin(a * 3 + 1.3) * 12 + Math.sin(a * 5 + 0.4) * 7 + Math.sin(a * 2 + 2.2) * 9; const x = 128 + Math.cos(a) * rr, y = 128 + Math.sin(a) * rr; if (i) g.lineTo(x, y); else g.moveTo(x, y); }
       g.closePath(); g.fill();
@@ -320,7 +331,13 @@ export class FX {
       return mesh;
     };
     this.splatMax = 96; this.splatI = 0; this.splats = mk(splat, 0.42, 'blood-splat', this.splatMax);
-    this.poolMax = 20; this.poolI = 0; this.poolMesh = mk(pool, 0.16, 'blood-pool', this.poolMax);
+    this.poolMax = 20; this.poolI = 0; this.poolMesh = mk(pool, 0.34, 'blood-pool', this.poolMax);
+    const wet = canvas((g) => {
+      const grd = g.createRadialGradient(128, 128, 10, 128, 128, 126);
+      grd.addColorStop(0, 'rgba(24,6,4,0.78)'); grd.addColorStop(0.55, 'rgba(22,8,6,0.5)'); grd.addColorStop(1, 'rgba(20,10,8,0)');
+      g.fillStyle = grd; g.fillRect(0, 0, 256, 256);
+    });
+    this.wetMesh = mk(wet, 0.22, 'blood-wet', this.poolMax); this.wetMesh.renderOrder = 10;
     this.pools = [];
   }
 
@@ -344,6 +361,7 @@ export class FX {
     p.q.setFromUnitVectors(this._z, normal).multiply(this._q2.setFromAxisAngle(this._z, this.rnd() * 6.283));
     p.r = 0.08; p.max = radius; p.done = false; p.i = i;
     this.poolMesh.count = Math.min(this.poolI, this.poolMax);
+    if (this.wetMesh) this.wetMesh.count = this.poolMesh.count;
     return p;
   }
 
@@ -355,9 +373,10 @@ export class FX {
       if (p.r > p.max * 0.97) p.done = true;
       this._m.compose(p.p, p.q, this._s.set(p.r * 2, p.r * 2, 1));
       this.poolMesh.setMatrixAt(p.i, this._m);
+      if (this.wetMesh) { this._m.compose(p.p, p.q, this._s.set(p.r * 3.1, p.r * 3.1, 1)); this.wetMesh.setMatrixAt(p.i, this._m); }
       dirty = true;
     }
-    if (dirty) this.poolMesh.instanceMatrix.needsUpdate = true;
+    if (dirty) { this.poolMesh.instanceMatrix.needsUpdate = true; if (this.wetMesh) this.wetMesh.instanceMatrix.needsUpdate = true; }
   }
 
   // ------------------------------------------------------------ casings

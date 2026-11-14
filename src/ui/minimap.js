@@ -90,7 +90,7 @@ export class Minimap {
     if (px > 0 && px !== this.size) {
       this.cv.width = this.cv.height = this.size = px;
       // the rim shading is the same every frame
-      const g = this.ctx.createRadialGradient(px / 2, px / 2, px * 0.3, px / 2, px / 2, px / 2);
+      const g = this.ctx.createRadialGradient(0, 0, px * 0.3, 0, 0, px / 2);   // used with the origin at the centre
       g.addColorStop(0, 'rgba(10,11,11,0)'); g.addColorStop(0.82, 'rgba(10,11,11,0.18)'); g.addColorStop(1, 'rgba(10,11,11,0.62)');
       this.rim = g;
     }

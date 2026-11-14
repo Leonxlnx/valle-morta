@@ -54,7 +54,7 @@ export const WEAPONS = {
       Reload: [[0.35, 'mag_out'], [1.1, 'mag_in'], [1.1, 'ammo']],
       ReloadEmpty: [[0.35, 'mag_out'], [1.1, 'mag_in'], [1.1, 'ammo'], [1.7, 'slide_release']],
     },
-    pose: { rot: [0.06, 0.12, 0.04], fov: 52, adsFov: 46, eye: 0.3, sprint: [-0.02, 0.0, 0.0] },
+    pose: { rot: [0.06, 0.12, 0.04], fov: 52, adsFov: 46, eye: 0.3, sprint: [0.04, 0.0, 0.08] },
     hip: [0.062, -0.122, -0.27], zoom: 1.2, scopeFov: 0, adsRate: 15, sway: 0.0018,
     spread: { hip: 0.009, ads: 0.0022, bloom: 0.0042, bloomMax: 0.016, recover: 7, move: 0.008, air: 0.03 },
     recoil: { v0: 0.016, v1: 0.02, tau: 3, h0: 0.001, h: 0, hStart: 0, hPeriod: 8, jit: 0.12, hJit: 0.003, ads: 0.75, hold: 0.2, recover: 9, max: 0.2 },
@@ -71,7 +71,7 @@ export const WEAPONS = {
       Reload: [[0.3, 'bolt_back'], [0.9, 'mag_out'], [2.0, 'mag_in'], [2.0, 'ammo'], [2.75, 'bolt_forward']],
       BoltCycle: [[0.28, 'bolt_back'], [0.36, 'shell'], [0.72, 'bolt_forward']],
     },
-    pose: { rot: [0.03, 0.06, 0.05], fov: 54, adsFov: 50, eye: 0.085, sprint: [-0.03, 0.02, -0.08] },
+    pose: { rot: [0.03, 0.06, 0.05], fov: 54, adsFov: 50, eye: 0.085, sprint: [0.075, -0.02, 0.2], sprintClip: false },
     hip: [0.122, -0.168, -0.2], zoom: 1.15, scopeFov: 10, adsRate: 7.5, sway: 0.0078, bipod: true,
     spread: { hip: 0.04, ads: 0.00012, bloom: 0, bloomMax: 0, recover: 6, move: 0.03, air: 0.06 },
     recoil: { v0: 0.06, v1: 0.06, tau: 1, h0: 0, h: 0, hStart: 0, hPeriod: 8, jit: 0.08, hJit: 0.012, ads: 0.8, hold: 0.12, recover: 3.2, max: 0.2 },
@@ -727,12 +727,12 @@ export class Weapon {
       view.overW = over ? Math.min(1, view.overW + dt / 0.07) : 0;
       const w = view.overW;
       if (over) { A[over].time = Math.min(overT, view.clips[over].duration - 1e-4); A[over].setEffectiveWeight(Math.max(w, 1e-3)); }
-      const spW = A.Sprint ? this.sprintT : 0;
+      const spW = A.Sprint && def.pose.sprintClip !== false ? this.sprintT : 0;
       if (A.Idle) A.Idle.setEffectiveWeight(Math.max(1e-4, (1 - w) * (1 - spW)));
       if (A.Sprint) A.Sprint.setEffectiveWeight((1 - w) * spW);
       view.mixer.update(dt);
     }
-    const procSwap = !(act && act.clip), procSprint = !A.Sprint;
+    const procSwap = !(act && act.clip), procSprint = !A.Sprint || def.pose.sprintClip === false;
 
     // lowered out of the way: holstering, drawing, bandaging, rolling
     let lowT = 0;
@@ -756,12 +756,7 @@ export class Weapon {
     const sp = procSprint ? this.sprintT : 0;
     pos.x -= 0.035 * sp; pos.y -= 0.045 * sp; pos.z += 0.04 * sp;
     rot.x -= 0.34 * sp; rot.y += 0.62 * sp; rot.z += 0.22 * sp;
-    // working the bolt from the hip: the rifle rolls onto its left side and comes up so the hand on the bolt is seen
-    if (act && act.name === 'BoltCycle' && act.clip) {
-      const u = act.t / act.dur, b = ss(0, 0.16, u) * (1 - ss(0.78, 1, u)) * hipK;
-      pos.x -= 0.025 * b; pos.y += 0.04 * b; pos.z += 0.01 * b; rot.z += 0.32 * b; rot.x += 0.06 * b; rot.y -= 0.05 * b;
-    }
-    if (!procSprint) { pos.y += P.sprint[0] * this.sprintT; pos.z += P.sprint[1] * this.sprintT; rot.x += P.sprint[2] * this.sprintT; }
+    pos.y += P.sprint[0] * this.sprintT; pos.z += P.sprint[1] * this.sprintT; rot.x += P.sprint[2] * this.sprintT;
     // weapon-camera field of view: each weapon framed on its own, a touch tighter when aimed
     const wc = this.engine.weaponCamera, fov = lerp(P.fov, P.adsFov, ads);
     if (Math.abs(wc.fov - fov) > 1e-3) { wc.fov = fov; wc.updateProjectionMatrix(); }

@@ -199,38 +199,44 @@ export class FlowField {
 // ---------------------------------------------------------------- infected types
 // Everything that tells one kind from another lives here. `model` names the glTF
 // (public/assets/models/<model>.glb); until that file exists the villager stands in,
-// scaled to `tall` metres, widened by `bulk` and tinted. Extra clips are optional:
-// `clips.run` falls back to Run, `clips.roar` and `clips.slam` to Attack.
-// Convention for the boss clips: Roar lasts the charge wind-up (0.9 s), the fists of
-// Slam strike the ground 0.8 s into the clip.
+// scaled to `tall` metres, widened by `bulk` and tinted. Those three apply to the
+// stand-in only: a delivered model is used exactly as authored.
+// `gaits`: ground speed (m/s) at which each locomotion clip keeps the stance foot planted
+// (playback is scaled from these). `albedo`: extra colour maps <model>_col_<x>.jpg.
+// Boss clips: Roar lasts the charge wind-up (0.9 s), the fists of Slam strike the ground 0.8 s in.
 export const INFECTED = {
   walker: {
-    name: 'Walker', model: 'zombie', tall: 0, bulk: 1, size: [0.95, 1.05], tint: null, gait: 'walk', voice: 1,
+    name: 'Walker', model: 'zombie', tall: 0, bulk: 1, size: [0.95, 1.05], tint: null, voice: 1, albedo: ['b', 'c'],
+    gaits: { Walk: 1.0, Run: 3.0, Sprint: 4.2 }, lunge: 2.6,
     speed: [0.9, 1.3], accel: 3, brake: 7, turn: 3.4, health: 100, bodyMult: 1, mass: 1, radius: 0.3,
     reach: 1.55, damage: [11, 17], knock: 0, attackRate: 1, flinch: 'any', slowOnHit: true,
-    clips: { run: 'Run' }, corpse: 22, pool: 0.5, drop: 0.04,
+    clips: {}, corpse: 22, pool: 0.5, drop: 0.04,
   },
   runner: {
-    name: 'Runner', model: 'runner', tall: 0, bulk: 0.9, size: [0.93, 1.0], tint: [1.0, 0.84, 0.78], gait: 'auto', voice: 1.15,
-    speed: [4.5, 5.5], accel: 9, brake: 12, turn: 6, health: 60, bodyMult: 1, mass: 0.8, radius: 0.28,
+    name: 'Runner', model: 'runner', tall: 0, bulk: 0.9, size: [0.95, 1.03], tint: [1.0, 0.84, 0.78], voice: 1.15, albedo: ['b'],
+    gaits: { Walk: 1.5, Run: 3.4, Sprint: 5.2 },
+    speed: [4.5, 5.5], accel: 7, brake: 10, turn: 5, health: 60, bodyMult: 1, mass: 0.8, radius: 0.28,
     reach: 1.5, damage: [8, 12], knock: 0, attackRate: 1.25, flinch: 'any', slowOnHit: true, flank: true,
-    clips: { run: 'Sprint' }, corpse: 18, pool: 0.42, drop: 0.04,
+    clips: {}, corpse: 18, pool: 0.42, drop: 0.04,
   },
   brute: {
-    name: 'Brute', model: 'brute', tall: 2.1, bulk: 1.28, size: [0.98, 1.02], tint: [0.6, 0.58, 0.56], gait: 'auto', voice: 0.75,
-    speed: [1.6, 1.6], accel: 2.2, brake: 5, turn: 2.3, health: 450, bodyMult: 0.5, mass: 4, radius: 0.46,
+    name: 'Brute', model: 'brute', tall: 2.1, bulk: 1.28, size: [0.98, 1.02], tint: [0.6, 0.58, 0.56], voice: 0.75, albedo: ['b'],
+    gaits: { Walk: 1.6, Run: 3.2, Sprint: 4.4 }, shove: true,
+    speed: [1.5, 1.7], accel: 2.2, brake: 5, turn: 2.3, health: 450, bodyMult: 0.5, mass: 4, radius: 0.46,
     reach: 2.0, damage: [26, 32], knock: 7.5, attackRate: 0.8, flinch: 'head', slowOnHit: false,
-    clips: { run: 'Run' }, corpse: 26, pool: 0.75, drop: 0.3,
+    clips: {}, corpse: 26, pool: 0.75, drop: 0.3,
   },
   boss: {
-    name: 'Abomination', model: 'boss', tall: 2.5, bulk: 1.3, size: [1, 1], tint: [0.5, 0.36, 0.34], gait: 'auto', voice: 0.55, boss: true,
-    speed: [2.5, 2.5], accel: 4, brake: 6, turn: 2.6, health: 2600, bodyMult: 1, mass: 12, radius: 0.6,
+    name: 'Abomination', model: 'boss', tall: 2.5, bulk: 1.3, size: [1, 1], tint: [0.5, 0.36, 0.34], voice: 0.55, boss: true, albedo: ['b'],
+    gaits: { Walk: 2.2, Run: 6.6, Sprint: 7.6 },
+    speed: [2.4, 2.6], accel: 4, brake: 6, turn: 2.6, health: 2600, bodyMult: 1, mass: 12, radius: 0.6,
     reach: 2.6, damage: [30, 36], knock: 8, attackRate: 0.8, flinch: 'none', slowOnHit: false,
-    charge: { min: 9, max: 34, windup: 0.9, speed: 7, accel: 12, turn: 0.9, time: 3.2, damage: 38, knock: 10, cooldown: 8, recover: 1.1 },
-    slam: { range: 4.6, radius: 6.5, windup: 0.8, damage: 34, knock: 7, cooldown: 6.5, recover: 0.9 },
-    clips: { run: 'Run', roar: 'Roar', slam: 'Slam' }, corpse: 40, pool: 1.1, drop: 1,
+    charge: { min: 9, max: 34, windup: 0.9, speed: 7, accel: 9, turn: 0.9, time: 3.2, damage: 38, knock: 10, cooldown: 8, recover: 1.3 },
+    slam: { range: 4.6, radius: 6.5, windup: 0.8, damage: 34, knock: 7, cooldown: 6.5, recover: 1.0 },
+    clips: { roar: 'Roar', slam: 'Slam' }, corpse: 40, pool: 1.1, drop: 1,
   },
 };
+const LOCO = ['Walk', 'Run', 'Sprint'], LOCO_ALL = ['Idle', 'Walk', 'Run', 'Sprint'];
 const POOL_SIZE = { zombie: 26, runner: 12, brute: 5, boss: 2 };
 const CLIP_LIMITS = { Walk: [0.2, 2.4], Run: [1.5, 7], Sprint: [2.5, 9] };
 
@@ -251,7 +257,7 @@ export class Zombies {
     this.engine = engine; this.col = collision; this.layout = layout; this.fx = fx; this.audio = audio; this.player = player;
     this.list = [];
     this.sets = {};            // model name -> { template, clips, materials, tints, lods, clipSpeed, clipInfo, pool, height }
-    this._none = { name: '', template: null, clips: {}, materials: [], tints: {}, lods: null, clipSpeed: { Walk: 0.45, Run: 3.4 }, clipInfo: {}, pool: [], height: 1.8 };
+    this._none = { name: '', template: null, clips: {}, materials: [], tints: {}, lods: null, clipSpeed: { ...INFECTED.walker.gaits }, gaits: INFECTED.walker.gaits, phase0: {}, clipInfo: {}, pool: [], height: 1.8 };
     this.flow = null; this.flowT = 0;
     this.kills = 0; this.slams = 0;
     this.boss = null;          // the boss in play (alive or just fallen), for the HUD
@@ -289,15 +295,16 @@ export class Zombies {
   }
 
   _makeSet(name, gltf) {
-    const set = { name, template: gltf.scene, clips: {}, materials: [], tints: {}, lods: null, clipSpeed: { Walk: 0.45, Run: 3.4 }, clipInfo: {}, pool: [], height: 1.8 };
+    const own = Object.values(INFECTED).find((d) => d.model === name) || INFECTED.walker;
+    const set = { name, template: gltf.scene, clips: {}, materials: [], tints: {}, lods: null, clipSpeed: { ...own.gaits }, gaits: own.gaits, phase0: {}, clipInfo: {}, pool: [], height: 1.8 };
     for (const c of gltf.animations) set.clips[c.name] = c;
     let base = null, mesh = null, head = null;
     gltf.scene.traverse((o) => { if (o.isSkinnedMesh && !base) { base = o.material; mesh = o; } if (o.isBone && key(o.name) === 'Head') head = o; });
     if (base) {
       const variants = [base];
-      if (name === 'zombie') {
-        const loader = new THREE.TextureLoader();
-        for (const f of ['zombie_col_b.jpg', 'zombie_col_c.jpg']) {
+      const loader = new THREE.TextureLoader();
+      for (const f of (own.albedo || []).map((x) => `${name}_col_${x}.jpg`)) {
+        {
           const m = base.clone();
           const t = loader.load(`./assets/models/${f}`, undefined, undefined, () => {});
           t.flipY = false; t.colorSpace = THREE.SRGBColorSpace;
@@ -305,6 +312,8 @@ export class Zombies {
           m.map = t;
           variants.push(m);
         }
+      }
+      if (name === 'zombie') {
         // tinted copies for the kinds that borrow this body (made before anything is compiled)
         for (const type in INFECTED) {
           const d = INFECTED[type];
@@ -314,7 +323,8 @@ export class Zombies {
       const prep = (m, i) => {
         // skin and cloth are dielectric and matte: no metal, no mirror-like sheen
         m.metalness = 0; m.metalnessMap = null;
-        m.roughness = 1; m.envMapIntensity = 0.85;
+        m.roughness = 1; m.envMapIntensity = 1.15;
+        m.color.multiplyScalar(1.25);   // the delivered albedos are dark; lift them to sit in the scene's light
         if (m.map) m.map.anisotropy = 4;
         enhance(m, { key: 'zombie' }); m.userData.variant = i;
       };
@@ -346,10 +356,12 @@ export class Zombies {
       a.play();
       const N = 120, T = clip.duration, dtS = T / N;
       const ys = [[], []], zs = [[], []];
+      let lead = -1e9;
       for (let i = 0; i <= N; i++) {
         mixer.setTime(Math.min(T * 0.9999, i * dtS));
         scene.updateMatrixWorld(true);
         for (let f = 0; f < 2; f++) { feet[f].getWorldPosition(_a); ys[f].push(_a.y); zs[f].push(_a.z); }
+        if (i < N && zs[0][i] - zs[1][i] > lead) { lead = zs[0][i] - zs[1][i]; set.phase0[name] = i / N; }
       }
       a.stop();
       // backward speed of whichever foot is lower (the supporting one), per sample; the median minimises slip
@@ -370,8 +382,7 @@ export class Zombies {
       set.clipInfo[name] = { duration: T, median, stride: range / 2, stance, strideSpeed: stance > 0.05 ? range / 2 / (stance * T) : 0 };
       // a walk always has a foot down, so the median is right; a run has flight phases, so only planted samples count
       const speed = stance >= 0.4 || planted <= 0 ? median : back / planted;
-      set.clipInfo[name].speed = speed;
-      if (speed >= CLIP_LIMITS[name][0] && speed <= CLIP_LIMITS[name][1]) set.clipSpeed[name] = speed;
+      set.clipInfo[name].speed = speed;      // measured; playback uses the authored set.gaits
     }
     mixer.stopAllAction();
     mixer.uncacheRoot(scene);
@@ -384,7 +395,8 @@ export class Zombies {
   }
 
   _create(set) {
-    const z = { root: new THREE.Group(), bones: {}, actions: {}, mixer: null, pos: new THREE.Vector3(), vel: new THREE.Vector3(), wander: new THREE.Vector3(1, 0, 0), tilt: new THREE.Quaternion(), lod: 0, set };
+    const z = { root: new THREE.Group(), bones: {}, actions: {}, mixer: null, pos: new THREE.Vector3(), vel: new THREE.Vector3(), wander: new THREE.Vector3(1, 0, 0), tilt: new THREE.Quaternion(), lod: 0, set, lw: { Idle: 1, Walk: 0, Run: 0, Sprint: 0 } };
+    z.root.rotation.order = 'YXZ';    // yaw, then pitch and lean about the body's own axes
     if (set.template) {
       const model = SkeletonUtils.clone(set.template);
       model.traverse((o) => {
@@ -453,28 +465,129 @@ export class Zombies {
     zb.root.visible = true;
     zb.wander.set(Math.random() - 0.5, 0, Math.random() - 0.5).normalize();
     zb.wanderT = 0; zb.wanderGo = false; zb.seed = Math.random() * 100;
+    zb.gaits = own ? def.gaits : set.gaits;
+    zb.alertT = def.boss ? 0.35 : -1; zb.entry = false; zb.hitDur = 0.4; zb.third = 3; zb.shoveT = 0; zb.dripT = 1; zb.lungeT = 0; zb.lungeCd = 2 + Math.random() * 3;
+    zb.kickX = 0; zb.kickZ = 0; zb.twist = 0; zb.recoil = 0; zb.lean = 0; zb.pitch = 0; zb.gsPrev = 0; zb.look = 0; zb.lookW = 0; zb.animAcc = 0; zb.deathYaw = 0;
+    zb.loco = 'Idle'; zb.gait = ''; zb.lastGait = 'Walk'; zb.rate = 0; zb.phase = Math.random();
     if (zb.mesh && zb.mesh.isSkinnedMesh && set.materials.length) {
       const pick = (zb.borrowed && set.tints[type]) || set.materials;
       zb.mesh.material = pick[(opts.variant ?? Math.floor(Math.random() * pick.length)) % pick.length];
     }
-    if (zb.mixer) { zb.mixer.stopAllAction(); zb.current = null; zb.currentName = ''; this._play(zb, 'Idle', 0); zb.mixer.update(Math.random() * 2); }
+    if (zb.mixer) {
+      zb.mixer.stopAllAction(); zb.over = null; zb.overOld = null; zb.overW = 0; zb.overOldW = 0; zb.overOn = false;
+      for (const n of LOCO_ALL) zb.lw[n] = n === 'Idle' ? 1 : 0;
+      const idle = zb.actions.Idle;
+      if (idle) { idle.reset(); idle.setEffectiveWeight(1); idle.play(); idle.time = Math.random() * idle.getClip().duration; }
+      zb.current = idle || null; zb.currentName = 'Idle';
+      zb.mixer.update(0);
+    }
     zb.root.rotation.set(0, zb.yaw, 0);
     if (def.boss) this.boss = zb;
     this.list.push(zb);
     return zb;
   }
 
-  _play(z, name, fade = 0.22, timeScale = 1, restart = false) {
+  // A one-shot clip (attack, hit, death, roar, slam) laid over the locomotion at `weight`;
+  // it fades in over `fade`, plays, and (unless it is a death) fades back out at its end.
+  _play(z, name, fade = 0.15, timeScale = 1, restart = true, weight = 1) {
     const a = z.actions[name];
-    if (!a) return;
-    if (z.current === a) {
-      a.timeScale = timeScale;
-      if (restart) { a.reset(); a.timeScale = timeScale; a.play(); }
+    if (!a || !z.mixer) return;
+    if (z.over === a && !restart) { a.timeScale = timeScale; return; }
+    if (z.over && z.over !== a) {
+      if (z.overOld && z.overOld !== a) z.overOld.stop();
+      z.overOld = z.over; z.overOldW = z.overW; z.overW = 0;
+    }
+    if (z.overOld === a) { z.overOld = null; z.overOldW = 0; }
+    if (z.over !== a) z.overW = 0;
+    a.reset(); a.timeScale = timeScale; a.setEffectiveWeight(z.overW); a.play();
+    z.over = a; z.overName = name; z.overMax = weight; z.overIn = Math.max(0.03, fade); z.overOn = true; z.overHold = name.startsWith('Death');
+    if (weight >= 0.5) { z.current = a; z.currentName = name; }
+  }
+
+  // Locomotion: Walk / Run / Sprint chosen by ground speed with hysteresis, all three on
+  // one shared phase (aligned at the left foot's forward contact) so a blend never scissors
+  // the legs, played at the rate that keeps the stance foot planted.
+  _gait(z, v, dt) {
+    const g = z.gaits, s = z.scale, A = z.actions;
+    let w = z.loco;
+    if (w === 'Idle') { if (v > 0.25 * g.Walk * s) w = z.lastGait === 'Walk' || v < g.Walk * s ? 'Walk' : z.lastGait; } else if (v < 0.1 * g.Walk * s) w = 'Idle';
+    if (w !== 'Idle') {
+      const wr = Math.sqrt(g.Walk * g.Run) * s, rs = Math.sqrt(g.Run * g.Sprint) * s;
+      if (w === 'Walk' && A.Run && v > wr * 1.08) w = 'Run';
+      if (w === 'Run' && A.Sprint && v > rs * 1.08) w = 'Sprint';
+      if (w === 'Sprint' && v < rs * 0.92) w = 'Run';
+      if (w === 'Run' && v < wr * 0.92) w = 'Walk';
+      if (!A[w]) w = 'Walk';
+      z.lastGait = w;
+    }
+    z.loco = w; z.gait = w === 'Idle' ? '' : w;
+    const D = z.lastGait, a = A[D];
+    z.rate = clamp(v / (g[D] * s), 0, 1.8);
+    if (a) z.phase = (z.phase + (dt * z.rate) / a.getClip().duration) % 1;
+  }
+
+  // weights for this step (dt may cover several frames for far bodies), then the mixer
+  _animate(z, dt, near) {
+    const A = z.actions, o = z.over;
+    if (o) {
+      const dur = o.getClip().duration;
+      if (z.overOn && !z.overHold && o.time >= dur - 0.2 * Math.abs(o.timeScale)) z.overOn = false;
+      if (z.overOn) z.overW = Math.min(z.overMax, z.overW + (dt / z.overIn) * z.overMax);
+      else { z.overW -= dt / 0.22; if (z.overW <= 0) { o.stop(); z.over = null; z.overW = 0; } }
+    }
+    if (z.overOld) { z.overOldW -= dt / 0.15; if (z.overOldW <= 0) { z.overOld.stop(); z.overOld = null; z.overOldW = 0; } }
+    const k = dt / 0.25;
+    let sum = 0;
+    for (const n of LOCO_ALL) { const w = z.lw[n], t = n === z.loco ? 1 : 0; z.lw[n] = w < t ? Math.min(t, w + k) : Math.max(t, w - k); if (A[n]) sum += z.lw[n]; }
+    let ov = (z.over ? z.overW : 0) + (z.overOld ? z.overOldW : 0);
+    const norm = ov > 1 ? 1 / ov : 1;
+    const base = Math.max(0, 1 - ov * norm);
+    const D = A[z.lastGait], rn = D ? z.rate / D.getClip().duration : 0;
+    for (const n of LOCO_ALL) {
+      const a = A[n];
+      if (!a) continue;
+      const w = sum > 0 ? (z.lw[n] / sum) * base : 0;
+      if (w > 1e-3) {
+        if (!a.isScheduled()) { a.reset(); a.play(); if (n === 'Idle') a.time = Math.random() * a.getClip().duration; }
+        a.setEffectiveWeight(w);
+        if (n !== 'Idle') { const du = a.getClip().duration; a.timeScale = rn * du; a.time = ((((z.phase + (z.set.phase0[n] || 0) - rn * dt) % 1) + 1) % 1) * du; }
+      } else if (a.isScheduled()) a.stop();
+    }
+    if (z.over) z.over.setEffectiveWeight(z.overW * norm);
+    if (z.overOld) z.overOld.setEffectiveWeight(z.overOldW * norm);
+    z.mixer.update(dt);
+    if (z.over && z.overW >= 0.5) { z.current = z.over; z.currentName = z.overName; } else if (A[z.loco]) { z.current = A[z.loco]; z.currentName = z.loco; }
+    if (!near || !z.alive) return;
+    // small procedural layers on top: torso twist from a hit, the head looking about
+    const ch = z.bones.Chest || z.bones.Spine;
+    if (ch && Math.abs(z.twist) > 0.01) ch.rotateY(z.twist);
+    if (z.bones.Neck && z.lookW > 0.01) z.bones.Neck.rotateY(z.look * z.lookW);
+  }
+
+  // a hit reaction scaled by strength `s` (0..1) and turned by the side the shot came from
+  _flinch(z, dx, dz, s, head) {
+    const hx = Math.sin(z.yaw), hz = Math.cos(z.yaw);
+    z.twist = clamp(z.twist + (dz * hx - dx * hz) * s * 0.7, -0.6, 0.6);
+    z.recoil = clamp(z.recoil + (dx * hx + dz * hz) * s, -1, 1);
+    const kick = (1.6 * s) / Math.sqrt(z.def.mass);
+    z.kickX += dx * kick; z.kickZ += dz * kick;
+    const name = head && z.actions.HitHead ? 'HitHead' : 'HitBody';
+    if (s > 0.5) { z.state = 'hit'; z.stateT = 0; z.hitDur = 0.28 + 0.4 * s; this._play(z, name, 0.06, 1.2 - 0.35 * s, true, 1); }
+    else this._play(z, name, 0.08, 1.25, true, 0.3 + s * 0.6);
+  }
+
+  // noticed the player: a start and a turn (the boss roars)
+  _startle(z) {
+    z.alertT = -1; z.stateT = 0;
+    if (z.def.boss) {
+      const c = z.actions.Roar ? 'Roar' : 'Attack';
+      z.state = 'roar'; z.entry = true; this._play(z, c, 0.2, 1, true);
+      const nm = this.audio?.exact('boss_roar') ? 'boss_roar' : 'zombie_alert';
+      this.audio?.playAt(nm, z.pos, { volume: 1.2, rate: nm === 'boss_roar' ? 1 : 0.5, ref: 14 });
       return;
     }
-    a.reset(); a.timeScale = timeScale; a.setEffectiveWeight(1); a.play();
-    if (z.current && fade > 0) z.current.crossFadeTo(a, fade, false); else if (z.current) z.current.stop();
-    z.current = a; z.currentName = name;
+    z.state = 'startle'; z.hitDur = z.type === 'runner' ? 0.4 : 0.6 + Math.random() * 0.3;
+    this._play(z, 'HitHead', 0.1, 0.8, true, 0.45);
   }
 
   clear() {
@@ -550,30 +663,56 @@ export class Zombies {
     if (!z.alive) return 0;
     const def = z.def;
     if (part !== 'head') amount *= def.bodyMult;
+    if (part === 'head' && def.health <= 100) amount = Math.max(amount, z.health);   // a head shot drops the light ones outright
     z.health -= amount;
-    z.aware = true;
+    z.aware = true; z.alertT = -1;
     if (z.health <= 0) { this._kill(z, dir, part); return amount; }
     if (def.slowOnHit) z.slow = 0.5;
-    const flinch = def.flinch === 'any' || (def.flinch === 'head' && part === 'head');
-    if (flinch && (z.state !== 'attack' || part === 'head')) {
-      z.state = 'hit'; z.stateT = 0;
-      this._play(z, part === 'head' ? 'HitHead' : 'HitBody', 0.08, 1, true);
+    const dx = dir ? dir.x : 0, dz = dir ? dir.z : 0, l = Math.hypot(dx, dz) || 1;
+    const s = clamp(amount / (z.maxHealth * 0.35), 0.15, 1);
+    const busy = z.state === 'roar' || z.state === 'slam' || z.state === 'charge';
+    if (def.boss) {
+      // staggers each time its health drops through a third
+      const third = Math.ceil((z.health / z.maxHealth) * 3 - 1e-6);
+      if (third < z.third) {
+        z.third = third; z.state = 'stagger'; z.stateT = 0; z.hitDur = 1.6; z.chargeCd = Math.max(z.chargeCd, 2.5);
+        this._play(z, 'HitBody', 0.12, 0.55, true, 1);
+        this.audio?.playAt(this.audio?.exact('boss_roar') ? 'boss_roar' : 'zombie_hurt', z.pos, { volume: 1, rate: 0.8, ref: 12 });
+      } else z.twist = clamp(z.twist + (dz * Math.sin(z.yaw) - dx * Math.cos(z.yaw)) / l * 0.12, -0.3, 0.3);
+    } else {
+      const flinch = def.flinch === 'any' || (def.flinch === 'head' && part === 'head');
+      if (flinch && !busy && (z.state !== 'attack' || part === 'head')) this._flinch(z, dx / l, dz / l, s, part === 'head');
+      else { z.twist = clamp(z.twist + (dz * Math.sin(z.yaw) - dx * Math.cos(z.yaw)) / l * s * 0.4, -0.4, 0.4); z.recoil += ((dx * Math.sin(z.yaw) + dz * Math.cos(z.yaw)) / l) * s * 0.4; }
     }
     this.audio?.playAt('zombie_hurt', z.pos, { volume: 0.7, pitchVar: 0.1, rate: def.voice });
     return amount;
   }
 
   _kill(z, dir, part) {
+    const hx = Math.sin(z.yaw), hz = Math.cos(z.yaw);
+    let dx = dir ? dir.x : -hx, dz = dir ? dir.z : -hz;
+    const l = Math.hypot(dx, dz) || 1; dx /= l; dz /= l;
+    const fromFront = dx * hx + dz * hz < 0;
+    // a body running flat out folds forwards whatever hit it; otherwise it goes down along the shot
+    const pitching = z.spd > 0.55 * z.gaits.Run * z.scale && fromFront;
+    const back = fromFront && !pitching;
+    z.deathYaw = pitching ? 0 : clamp(wrapPi((back ? Math.atan2(-dx, -dz) : Math.atan2(dx, dz)) - z.yaw), -0.75, 0.75);
+    const push = (part === 'head' ? 0.7 : 1.2) / Math.sqrt(z.def.mass);
+    z.kickX = z.vel.x * 0.55 + dx * push; z.kickZ = z.vel.z * 0.55 + dz * push;
     z.alive = false; z.state = 'dead'; z.stateT = 0; z.fade = 0;
-    z.vel.set(0, 0, 0); z.spd = 0;
-    // fall away from the shot
-    const fx = Math.sin(z.yaw), fz = Math.cos(z.yaw);
-    const fromFront = dir ? dir.x * fx + dir.z * fz < 0 : true;
-    this._play(z, fromFront ? 'DeathBack' : 'DeathFront', 0.1, (1 + Math.random() * 0.2) / Math.max(1, z.scale), true);
-    // the body settles onto the slope it dies on
+    z.vel.set(0, 0, 0); z.spd = 0; z.twist = 0; z.lookW = 0; z.loco = 'Idle';
+    this._play(z, back ? 'DeathBack' : 'DeathFront', 0.1, ((part === 'head' ? 1.15 : 1) * (0.95 + Math.random() * 0.15)) / Math.max(1, z.scale), true);
+    // the body settles onto the slope under where it will lie (a plane through four samples)
     const T = this.col.terrain, gy = T.heightAt(z.pos.x, z.pos.z);
     z.hasTilt = z.pos.y - gy < 0.2;
-    if (z.hasTilt) z.tilt.setFromUnitVectors(UP, T.normalAt(z.pos.x, z.pos.z, _a));
+    if (z.hasTilt) {
+      const yw = z.yaw + z.deathYaw, fx = Math.sin(yw) * (back ? -1 : 1), fz = Math.cos(yw) * (back ? -1 : 1);
+      const cx = z.pos.x + fx * 0.8 * z.scale + z.kickX * 0.25, cz = z.pos.z + fz * 0.8 * z.scale + z.kickZ * 0.25, L = 0.8 * z.scale, W = 0.35 * z.scale;
+      const gL = (T.heightAt(cx + fx * L, cz + fz * L) - T.heightAt(cx - fx * L, cz - fz * L)) / (2 * L);
+      const gW = (T.heightAt(cx - fz * W, cz + fx * W) - T.heightAt(cx + fz * W, cz - fx * W)) / (2 * W);
+      _a.set(-(gL * fx - gW * fz), 1, -(gL * fz + gW * fx)).normalize();
+      z.tilt.setFromUnitVectors(UP, _a);
+    }
     this.kills++;
     this.audio?.playAt('zombie_death', z.pos, { volume: 0.9, pitchVar: 0.12, rate: z.def.voice });
     if (this.onKill) this.onKill(z, part);
@@ -603,7 +742,7 @@ export class Zombies {
     if (knock > 0 && dist > 1e-3) p.knock(dx / dist, dz / dist, knock, 3);
   }
 
-  _recover(z, time) { z.state = 'recover'; z.stateT = 0; z.recoverT = time; }
+  _recover(z, time) { z.state = 'recover'; z.stateT = 0; z.recoverT = time; if (z.def.boss) this._play(z, 'HitBody', 0.25, 0.45, true, 0.5); }
 
   update(dt) {
     this.time += dt;
@@ -616,7 +755,7 @@ export class Zombies {
     this._frustum.setFromProjectionMatrix(this._pv.multiplyMatrices(cam.projectionMatrix, cam.matrixWorldInverse));
     const camPos = cam.position;
     const fovK = Math.tan(THREE.MathUtils.degToRad(cam.fov) / 2) / 0.7265;
-    const frame = this.engine.renderer.info.render.frame;
+    const frame = (this._tick = (this._tick || 0) + 1);   // own counter: throttling must not depend on rendering
     for (let i = this.list.length - 1; i >= 0; i--) {
       const z = this.list[i], def = z.def, set = z.set;
       z.stateT += dt;
@@ -636,16 +775,25 @@ export class Zombies {
           while (l > 0 && d < LOD_DIST[l - 1] * 0.92) l--;
         }
         if (l !== z.lod || z.mesh.geometry !== set.lods[l]) { z.lod = l; z.mesh.geometry = set.lods[l]; }
-        z.mesh.castShadow = camD < 45;
+        z.mesh.castShadow = camD < 28;
       }
       if (!z.alive) {
-        if (z.stateT < 1.6) {
+        if (z.stateT < 2) {
+          // momentum carries the body on a little; it turns into the fall and settles onto the slope
+          if (z.kickX || z.kickZ) {
+            z.pos.x += z.kickX * dt; z.pos.z += z.kickZ * dt;
+            const kd = Math.exp(-dt * 4); z.kickX *= kd; z.kickZ *= kd;
+            if (Math.abs(z.kickX) + Math.abs(z.kickZ) < 0.01) z.kickX = z.kickZ = 0;
+            const c = this.col.resolveCapsule(z.pos, 0.3, 1.0);
+            if (c.lengthSq() > 0) { z.pos.x += c.x; z.pos.z += c.z; z.kickX *= 0.5; z.kickZ *= 0.5; }
+          }
+          if (z.deathYaw) { const st = z.deathYaw * Math.min(1, dt * 7); z.yaw += st; z.deathYaw -= st; if (Math.abs(z.deathYaw) < 1e-3) z.deathYaw = 0; }
           const gy = T.heightAt(z.pos.x, z.pos.z);
           if (z.hasTilt) {
             z.pos.y += (gy - z.pos.y) * Math.min(1, dt * 6);
             const k = clamp(z.stateT / 1.1, 0, 1);
             z.root.quaternion.identity().slerp(z.tilt, k * k * (3 - 2 * k)).multiply(_qy.setFromAxisAngle(UP, z.yaw));
-          }
+          } else z.root.rotation.set(0, z.yaw, 0);
           z.root.position.copy(z.pos);
         }
         // blood gathers under the torso once the body is down
@@ -658,16 +806,18 @@ export class Zombies {
           }
         }
         if (z.stateT > z.corpseT) {
-          z.fade += dt;
-          z.pos.y -= dt * 0.28;
-          z.root.position.y = z.pos.y;
-          if (z.fade > 3.2 * Math.max(1, z.scale)) { this._release(z); this.list.splice(i, 1); continue; }
+          // taken away where nobody is looking; only a body kept in view for very long sinks away
+          if (!seen || camD > 70) { this._release(z); this.list.splice(i, 1); continue; }
+          if (z.stateT > z.corpseT * 2.5) {
+            z.fade += dt; z.pos.y -= dt * 0.12; z.root.position.y = z.pos.y;
+            if (z.fade > 6 * Math.max(1, z.scale)) { this._release(z); this.list.splice(i, 1); continue; }
+          }
         }
-        if (z.mixer && z.stateT < 5) z.mixer.update(dt);
+        if (z.mixer && z.stateT < 5) this._animate(z, dt, false);
         continue;
       }
       // awareness: sight / hearing radius
-      if (!z.aware && hunting && (dist < 30 || (dist < 90 && p.input.fire && p.enabled))) { z.aware = true; if (dist < 60) { if (z.type === 'brute' && this.audio?.exact('brute_growl')) this.audio.playAt('brute_growl', z.pos, { volume: 1, pitchVar: 0.08, ref: 8 }); else this.audio?.playAt('zombie_alert', z.pos, { volume: 0.8, pitchVar: 0.12, rate: def.voice }); } }
+      if (!z.aware && hunting && (dist < 30 || (dist < 90 && p.input.fire && p.enabled))) { z.aware = true; z.alertT = Math.min(0.5, dist * 0.015) + Math.random() * 0.3; if (dist < 60) { if (z.type === 'brute' && this.audio?.exact('brute_growl')) this.audio.playAt('brute_growl', z.pos, { volume: 1, pitchVar: 0.08, ref: 8 }); else this.audio?.playAt('zombie_alert', z.pos, { volume: 0.8, pitchVar: 0.12, rate: def.voice }); } }
       z.groan -= dt;
       if (z.groan <= 0) { z.groan = 4 + Math.random() * 9; if (dist < 70 && !this.passive) {
         const a = this.audio;
@@ -675,7 +825,16 @@ export class Zombies {
         else if (z.type === 'brute' && a?.exact('brute_growl')) a.playAt('brute_growl', z.pos, { volume: 0.8, pitchVar: 0.1, ref: 7 });
         else a?.playAt('zombie_idle', z.pos, { volume: 0.55, pitchVar: 0.15, rate: def.voice });
       } }
-      z.slow = Math.max(0, z.slow - dt);
+      z.slow = Math.max(0, z.slow - dt); z.shoveT -= dt;
+      // the wounded bleed
+      if (z.health < z.maxHealth * 0.6 && seen && camD < 35) {
+        z.dripT -= dt;
+        if (z.dripT <= 0) {
+          z.dripT = 0.2 + (z.health / z.maxHealth) * 1.3 + Math.random() * 0.4;
+          if (z.bones.Hips) z.bones.Hips.getWorldPosition(_a); else _a.set(z.pos.x, z.pos.y + 1, z.pos.z);
+          this.fx.drip?.(_a, z.pos.y);
+        }
+      }
       z.avoidT -= dt; z.attackCd -= dt; z.chargeCd -= dt; z.slamCd -= dt;
 
       const reach = def.reach, level = Math.abs(p.pos.y - z.pos.y) < 1.6 * Math.max(1, z.scale);
@@ -689,12 +848,15 @@ export class Zombies {
           if (dist < reach + 0.55 && p.alive && level) this._strike(z, p, dx, dz, dist, def.damage[0] + Math.random() * (def.damage[1] - def.damage[0]), def.knock);
         }
         if (z.stateT >= dur) { z.state = 'idle'; z.stateT = 0; z.attackCd = (0.45 + Math.random() * 0.45) / def.attackRate; }
-      } else if (st === 'hit') {
-        if (z.stateT >= 0.38) { z.state = 'idle'; z.stateT = 0; }
+      } else if (st === 'hit' || st === 'startle' || st === 'stagger') {
+        face = st === 'startle';
+        if (z.stateT >= z.hitDur) { z.state = 'idle'; z.stateT = 0; }
       } else if (st === 'roar') {
-        // the wind-up that gives a charge away
+        // the wind-up that gives a charge away, or the bellow on entry
         face = true;
-        if (z.stateT >= def.charge.windup) { z.state = 'charge'; z.stateT = 0; z.chargeHit = false; }
+        if (z.stateT >= (def.charge ? def.charge.windup : 0.9)) {
+          if (z.entry || !def.charge) { z.entry = false; z.state = 'idle'; z.stateT = 0; } else { z.state = 'charge'; z.stateT = 0; z.chargeHit = false; }
+        }
       } else if (st === 'charge') {
         // a straight run that can barely steer: side-step or roll and it thunders past
         const ch = def.charge, ahead = dx * Math.sin(z.yaw) + dz * Math.cos(z.yaw);
@@ -721,6 +883,10 @@ export class Zombies {
         if (z.stateT >= sl.windup + sl.recover) { z.state = 'idle'; z.stateT = 0; z.slamCd = sl.cooldown; }
       } else if (st === 'recover') {
         if (z.stateT >= z.recoverT) { z.state = 'idle'; z.stateT = 0; }
+      } else if (z.aware && hunting && z.alertT > 0) {
+        // a beat before it reacts (the far ones later), then the start and the turn
+        z.alertT -= dt; z.state = 'idle';
+        if (z.alertT <= 0) this._startle(z);
       } else if (z.aware && hunting) {
         const near = dist < reach && level;
         if (def.slam && z.slamCd <= 0 && dist < def.slam.range && level) {
@@ -752,15 +918,20 @@ export class Zombies {
           let tx = dx, tz = dz;
           if (z.direct) {
             // packs come in on an arc and close from the side
-            if (def.flank && dist > 7) { const off = Math.min(dist * 0.5, 9) * z.side; tx += (-dz / dist) * off; tz += (dx / dist) * off; }
+            // packs swing wide and weave as they come, so they are hard to line up
+            if (def.flank && dist > 6) { const off = Math.min(dist * 0.5, 9) * z.side + Math.sin(this.time * 1.3 + z.seed) * Math.min(2.5, dist * 0.2); tx += (-dz / dist) * off; tz += (dx / dist) * off; }
           } else if (this._flowDir(z, _a)) { tx = _a.x; tz = _a.z; }
           const tl = Math.hypot(tx, tz) || 1, k = 1 - Math.exp(-dt * 6);
           z.navX += (tx / tl - z.navX) * k; z.navZ += (tz / tl - z.navZ) * k;
           const nl = Math.hypot(z.navX, z.navZ);
           if (nl > 1e-3) { wishX = z.navX / nl; wishZ = z.navZ / nl; }
           // ease off on the last metres so it arrives able to stop
-          target = Math.min(z.speed * (z.slow > 0 ? 0.45 : 1), Math.sqrt(2 * def.brake * Math.max(0, dist - reach * 0.7)) + 0.7);
-          z.state = z.speed > 2 ? 'run' : 'walk';
+          // a walker that gets close lunges the last metres
+          z.lungeT -= dt; z.lungeCd -= dt;
+          if (def.lunge && z.lungeCd <= 0 && z.direct && dist < 3.8 && dist > reach + 0.4) { z.lungeT = 0.8; z.lungeCd = 5 + Math.random() * 4; }
+          const top = z.lungeT > 0 ? def.lunge : z.speed * (z.slow > 0 ? 0.45 : 1);
+          target = Math.min(top, Math.sqrt(2 * def.brake * Math.max(0, dist - reach * 0.7)) + 0.7);
+          z.state = target > 2 ? 'run' : 'walk';
           // progress probe: stop pushing against something, and tell the director if it never clears
           z.probeT += dt;
           if (z.probeT >= 1.5) {
@@ -776,8 +947,12 @@ export class Zombies {
         z.wanderT -= dt;
         if (z.wanderT <= 0) { z.wanderT = 3 + Math.random() * 6; z.wander.set(Math.random() - 0.5, 0, Math.random() - 0.5).normalize(); z.wanderGo = Math.random() < 0.6; }
         if (z.wanderGo && this.flow && !this.flow.walkable(z.pos.x + z.wander.x * 1.8, z.pos.z + z.wander.z * 1.8)) { z.wanderGo = false; z.wanderT = Math.min(z.wanderT, 0.6 + Math.random()); }
-        if (z.wanderGo) { wishX = z.wander.x; wishZ = z.wander.z; target = Math.min(z.speed, 0.8); z.state = 'walk'; } else z.state = 'idle';
+        if (z.wanderGo) { wishX = z.wander.x; wishZ = z.wander.z; target = Math.min(z.speed, 0.6 * z.gaits.Walk * z.scale); z.state = 'walk'; } else z.state = 'idle';
       }
+      // before it notices anything the head drifts about
+      const lookOn = !z.aware && (z.state === 'idle' || z.state === 'walk') ? 1 : 0;
+      z.lookW += (lookOn - z.lookW) * Math.min(1, dt * 2);
+      z.look = Math.sin(this.time * 0.43 + z.seed) * 0.7 * Math.max(0, Math.sin(this.time * 0.17 + z.seed * 1.7) + 0.3);
 
       // ---- locomotion: turn towards where it wants to go and move along the facing.
       // The turn rate eases in and out, speed changes by acceleration, nothing slides sideways.
@@ -803,7 +978,16 @@ export class Zombies {
         if (o === z || !o.alive) continue;
         const ax = z.pos.x - o.pos.x, az = z.pos.z - o.pos.z, rr = z.rad + o.rad + 0.12;
         const d2 = ax * ax + az * az;
-        if (d2 < rr * rr && d2 > 1e-6) { const d = Math.sqrt(d2), push = (rr - d) * (o.def.mass / (z.def.mass + o.def.mass)) * Math.min(1, dt * 7); sx += (ax / d) * push; sz += (az / d) * push; }
+        if (d2 < rr * rr && d2 > 1e-6) {
+          const d = Math.sqrt(d2), push = (rr - d) * (o.def.mass / (z.def.mass + o.def.mass)) * Math.min(1, dt * 7); sx += (ax / d) * push; sz += (az / d) * push;
+          // a brute on the move shoulders the small ones out of its way
+          if (def.shove && z.spd > 0.8 && o.def.mass < 2 && o.shoveT <= 0 && o.state !== 'attack') { o.shoveT = 1.6; o.aware = true; o.alertT = -1; this._flinch(o, -ax / d, -az / d, 0.6, false); }
+        }
+      }
+      if (z.kickX || z.kickZ) {
+        sx += z.kickX * dt; sz += z.kickZ * dt;
+        const kd = Math.exp(-dt * 6); z.kickX *= kd; z.kickZ *= kd;
+        if (Math.abs(z.kickX) + Math.abs(z.kickZ) < 0.01) z.kickX = z.kickZ = 0;
       }
       z.pos.x += sx; z.pos.z += sz;
       // bodies do not overlap the player; the big ones are not pushed aside
@@ -824,27 +1008,22 @@ export class Zombies {
       const adv = Math.max(0, ((z.pos.x - ox - sx) * hx + (z.pos.z - oz - sz) * hz) / Math.max(dt, 1e-4));
       z.gs += (adv - z.gs) * (1 - Math.exp(-dt * 12));
       if (adv < z.spd * 0.5 && (Math.abs(z.pos.x - sx - ax0) + Math.abs(z.pos.z - sz - az0)) > 1e-6) z.spd = Math.max(adv, z.spd - 25 * dt);   // held up by something solid: stop pushing, no treadmill
-      const s2 = z.state;
-      if (s2 === 'walk' || s2 === 'run' || s2 === 'idle' || s2 === 'charge' || s2 === 'recover') {
-        if (z.moving ? z.gs < 0.1 : z.gs > 0.26) z.moving = !z.moving;
-        if (z.moving) {
-          const runClip = set.clips[def.clips.run] ? def.clips.run : 'Run';
-          const tsW = z.gs / ((set.clipSpeed.Walk || 0.5) * z.scale), tsR = z.gs / ((set.clipSpeed[runClip] || 3.4) * z.scale);
-          // the gait whose playback rate is closer to natural, with a preference for the one already playing
-          let run = false;
-          if (def.gait !== 'walk' && set.clips[runClip]) {
-            const cw = Math.abs(Math.log(tsW)) * (z.gait === 'Walk' ? 1 : 1.3), cr = Math.abs(Math.log(tsR)) * (z.gait === runClip ? 1 : 1.3);
-            run = cr < cw;
-          }
-          z.gait = run ? runClip : 'Walk';
-          this._play(z, z.gait, 0.25, clamp(run ? tsR : tsW, 0.3, 3.2));
-        } else { z.gait = ''; this._play(z, 'Idle', 0.3); }
-      }
+      // turning on the spot is done in small steps, never a pirouette on frozen legs
+      const busy = z.state === 'attack' || z.state === 'slam' || z.state === 'roar';
+      const v = Math.max(z.gs, busy ? 0 : Math.min(Math.abs(z.yawV) * 0.4, 0.45 * z.gaits.Walk) * z.scale);
+      this._gait(z, v, dt);
+      // lean into turns, a little forward when gathering speed and back when braking; recoil from hits
+      const acc = clamp((z.gs - z.gsPrev) / Math.max(dt, 1e-4), -8, 8); z.gsPrev = z.gs;
+      z.lean += (clamp(-z.yawV * z.gs * 0.045, -0.15, 0.15) - z.lean) * (1 - Math.exp(-dt * 6));
+      z.pitch += (clamp(acc * 0.01, -0.05, 0.06) - z.pitch) * (1 - Math.exp(-dt * 4));
+      const rk = Math.exp(-dt * 5); z.recoil *= rk; z.twist *= rk;
       z.root.position.copy(z.pos);
-      z.root.rotation.set(0, z.yaw, 0);
+      z.root.rotation.set(z.pitch + z.recoil * 0.13, z.yaw, z.lean);
       if (z.mixer && seen) {
-        const far = camD > 45;
-        if (!far || (frame & 1) === (i & 1)) z.mixer.update(far ? dt * 2 : dt);
+        // far bodies animate less often (the accumulated time keeps them in step)
+        z.animAcc = Math.min(0.25, z.animAcc + dt);
+        const every = camD < 18 ? 1 : camD < 36 ? 2 : camD < 70 ? 3 : 4;
+        if (every === 1 || (frame + i) % every === 0) { this._animate(z, z.animAcc, camD < 22); z.animAcc = 0; }
       }
     }
   }

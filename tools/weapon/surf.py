@@ -289,7 +289,50 @@ def hook_sniper(c):
     engrave(c)
 
 
-HOOKS = dict(arms=(hook_arms, 1.6), rifle=(hook_rifle, 3.0), pistol=(hook_pistol, 3.0), sniper=(hook_sniper, 3.0))
+def hook_rifle2(c):
+    """AKM clean-sheet rifle (rifle_geo.py): worn dark-grey steel with bright edges, handling polish, pitting and old oil; dark varnished laminate worn pale"""
+    p, n, tag, pid, M = c.p, c.n, c.tag, c.pid, c.M; x, y, z = p[:, 0], p[:, 1], p[:, 2]
+    mv = np.isin(tag, (4, 11, 13, 20, 21)); c.a[mv] = 0.72 + 0.28 * c.a[mv]        # magazine, bolt, trigger, rounds, casing: baked inside, seen outside
+    rc = (tag == 1) & (pid == STEEL); Ls = rc & (n[:, 0] < -0.8); Rs = rc & (n[:, 0] > 0.8)
+    m = Ls & (y < -18) & (y > -70); c.stamp[m] = T.stamp_text(-y[m], z[m], (18, 70, 4, 44), [('^', 22, 32, 5.0), ('1978', 29, 32.5, 3.4), ('ЛТ 2417', 22, 22, 3.4)])
+    m = Rs & (y > 70) & (y < 95); c.stamp[m] = T.stamp_text(y[m], z[m], (70, 95, 2, 34), [('АВ', 75, 25, 3.6), ('ОД', 75, 10.5, 3.6)])
+    cv = (tag == 3) & (pid == STEEL); m = cv & (n[:, 2] > 0.75) & (y < -38) & (y > -62)
+    c.stamp[m] = np.maximum(c.stamp[m], T.stamp_text(x[m], y[m], (-13, 13, -62, -38), [('ЛТ 2417', -9.5, -54, 3.0)]))
+    leaf = (tag == 10) & (n[:, 2] > 0.6) & (y > 160) & (y < 214); tick = np.zeros(M, f4)
+    for k in range(9): tick[leaf] = np.maximum(tick[leaf], np.exp(-((y[leaf] - (164 + 5.6 * k)) / 0.22) ** 2) * (np.abs(x[leaf]) > 1.6))
+    c.stamp = np.maximum(c.stamp, tick)
+    fl = rc & (np.abs(n[:, 0]) > 0.8) & (z > 6) & (z < 42); c.xw[fl] += 0.25 * ss(0.4, 0.75, fbm(p[fl], (1 / 60., 1 / 12., 1 / 12.), 3, 81))
+    rib = np.zeros(M, bool)
+    for y0 in (-48, -20, 8, 64, 100): rib |= cv & (np.abs(y - y0 - 2.25) < 2.7) & (n[:, 2] > 0.25)
+    c.xw[rib] += 0.25; c.xw[cv & ~rib] += 0.15 * ss(0.5, 0.8, fbm(p[cv & ~rib], 1 / 25., 3, 82))
+    sel = (tag == 1) & (x > 17) & (y > 50) & (y < 76) & (z < 20); c.xw[sel] += 0.4
+    mg = tag == 4; c.xw[mg] += 0.3 * ss(-90, -5, z[mg]) * ss(0.4, 0.7, fbm(p[mg], (1 / 1.2, 1 / 30., 1 / 30.), 3, 78))
+    common(c, look=2)
+    st = pid == STEEL
+    if st.any(): c.put(st, m_metal2(c, st, (0.20, 0.205, 0.22), rough=0.46, wear=1.35, rust=0.25, oil=1.3, scratch=0.7, dirt=0.75, coat=0.55))
+    stm = st | (pid == MAGS); cav = np.clip(1 - c.a, 0, 1)
+    pits = ss(0.74, 0.84, fbm(p, 1 / 0.45, 2, 83)) * ss(0.25, 0.55, fbm(p, 1 / 14., 2, 84)) * (0.4 + cav)
+    oil = ss(0.12, 0.5, cav) * ss(0.35, 0.65, fbm(p, 1 / 6., 3, 85))
+    c.hadd[stm] -= 0.10 * pits[stm]; c.col[stm] *= (1 - 0.3 * pits[stm] - 0.3 * oil[stm])[:, None]; c.col[stm] += np.array([0.02, 0.012, 0.0], f4) * oil[stm][:, None]
+    c.rough[stm] = mix(c.rough[stm], 0.24, 0.6 * oil[stm])
+    c.col[(tag == 12) & st] *= 0.6
+    w = (pid == WOOD) | (pid == GRIPW)                                              # dark varnish worn pale where hands and slings rub, dents and gouges
+    if w.any():
+        pw, tw = p[w], tag[w]; hand = np.where(tw == 7, 0.45, np.where(tw == 6, 0.32, np.where(tw == 8, 0.12, 0.0)))
+        t = np.clip(ss(0.55, 0.8, 0.5 * fbm(pw, 1 / 16., 3, 71) + 0.25 + hand) + ss(0.08, 0.3, c.e[w]) * 0.8, 0, 1)
+        gg = ss(0.88, 0.93, fbm(pw, (1 / 0.7, 1 / 24., 1 / 0.7), 2, 72)) * ss(0.72, 0.82, fbm(pw, 1 / 40., 2, 73))
+        cw = c.col[w]; dark = cw * np.array([0.5, 0.36, 0.30], f4); pale = cw * 0.55 + np.array([0.62, 0.50, 0.36], f4) * 0.45
+        c.col[w] = dark * (1 - t)[:, None] + pale * t[:, None]; c.col[w] = c.col[w] * (1 - gg)[:, None] + np.array([0.58, 0.45, 0.30], f4) * gg[:, None]
+        c.rough[w] = 0.3 * (1 - t) + 0.62 * t; c.hadd[w] -= 0.3 * gg
+    f = pid == FABRIC
+    if f.any():
+        pf = p[f]; wv = 0.5 + 0.5 * np.sin(2 * np.pi * pf[:, 1] / 1.1) * np.sin(2 * np.pi * (pf[:, 0] + pf[:, 2]) / 1.1); hf = fbm(pf, 1 / 6., 3, 74)
+        col = np.array([0.31, 0.29, 0.19], f4) * (0.75 + 0.3 * hf + 0.12 * wv)[:, None] * (0.6 + 0.4 * c.a[f])[:, None]
+        c.put(f, (col, np.full(int(f.sum()), 0.9, f4), np.zeros(int(f.sum()), f4), 0.05 * wv))
+    engrave(c)
+
+
+HOOKS = dict(arms=(hook_arms, 1.6), rifle=(hook_rifle, 3.0), rifle2=(hook_rifle2, 3.0), pistol=(hook_pistol, 3.0), sniper=(hook_sniper, 3.0))
 if __name__ == '__main__':
     for an in sys.argv[2:]:
         c = load(an); HOOKS[an][0](c); finish(c, an, HOOKS[an][1])
