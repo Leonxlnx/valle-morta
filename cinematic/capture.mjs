@@ -99,7 +99,7 @@ async function open() {
   page = await browser.newPage();
   page.on('pageerror', (e) => log('page error: ' + String(e).slice(0, 200)));
   const qo = arg('qo', false) ? `&qo=${arg('qo')}` : !LIGHT && !PREVIEW ? `&qo=${FINAL_QO}` : '';
-  await page.goto(`http://127.0.0.1:5183/?q=${Q}&auto=1${qo}`, { waitUntil: 'load', timeout: 600000 });
+  await page.goto(`${process.env.VM_URL || 'http://127.0.0.1:5183/'}?q=${Q}&auto=1${qo}`, { waitUntil: 'load', timeout: 600000 });
   await page.waitForFunction('window.__vm && window.__vm.film', { timeout: 1200000, polling: 1000 });
   const mode = ALOG ? 'sdr' : LIGHT ? null : PREVIEW ? 'sdr' : 'hdr';
   info = await page.evaluate((w, h, mode, over) => window.__vm.film.prepare(w, h, mode, over), LIGHT && !ALOG ? 0 : W, LIGHT && !ALOG ? 0 : H, mode, Object.keys(OVER).length ? OVER : null);
