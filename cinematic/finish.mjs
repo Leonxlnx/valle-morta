@@ -112,13 +112,16 @@ if (useVideo) {
   const a = probe(P.out, 'stream=codec_name,sample_rate,channels,bit_rate,duration', 'a:0').streams[0];
   report.mux = { file: P.out, video: `${vs.codec_name} ${vs.pix_fmt} ${vs.color_transfer || ''} ${side(vs)}`.trim(), audio: `${a.codec_name} ${a.sample_rate} Hz ${a.channels} ch ${Math.round(a.bit_rate / 1000)} kb/s` };
   if (final && !has('no-sdr')) {
-    // SDR copies for X, tone-mapped from the HDR master (as in render-film.ps1, but limited range BT.709)
-    const tm = 'zscale=t=linear:npl=203,format=gbrpf32le,zscale=p=bt709,tonemap=hable:desat=0,zscale=t=bt709:m=bt709:r=tv,format=yuv420p';
+    // SDR versions for X from the native SDR master (rendered beside the HDR one through the game's own SDR tone
+    // curve and grade, capture.mjs): the 4K file copies that video stream, the 1080p one is scaled from it; no tone mapping
+    const sdrSrc = arg('sdr', `${OUT}/sdr_video.mp4`);
+    if (!fs.existsSync(sdrSrc)) throw new Error(`native SDR master not found: ${sdrSrc}`);
     const dir = path.dirname(P.out), tag = ['-color_primaries', 'bt709', '-color_trc', 'bt709', '-colorspace', 'bt709', '-color_range', 'tv'];
     const x264 = (crf, maxrate, level) => ['-c:v', 'libx264', '-profile:v', 'high', '-level', level, '-preset', 'slow', '-crf', String(crf), '-maxrate', maxrate, '-bufsize', maxrate.replace('M', '') * 2 + 'M', '-pix_fmt', 'yuv420p', ...tag];
-    for (const [name, size, crf, maxrate, level] of [['valle-morta-4k-sdr.mp4', '3840:2160', 16, '60M', '5.2'], ['valle-morta-1080p-sdr.mp4', '1920:1080', 17, '20M', '4.2']]) {
+    for (const [name, size, crf, maxrate, level] of [['valle-morta-4k-sdr.mp4', null], ['valle-morta-1080p-sdr.mp4', '1920:1080', 16, '24M', '4.2']]) {
       const f = path.join(dir, name);
-      ff(['-i', P.out, '-map', '0:v:0', '-map', '0:a:0', '-vf', `${tm},scale=${size}:flags=lanczos,setsar=1`, ...x264(crf, maxrate, level), '-c:a', 'copy', '-movflags', '+faststart', f], { stdio: ['ignore', 'ignore', 'pipe'] });
+      const v = size ? ['-vf', `scale=${size}:flags=lanczos:in_range=tv:out_range=tv,setsar=1`, ...x264(crf, maxrate, level)] : ['-c:v', 'copy', ...tag];
+      ff(['-i', sdrSrc, '-i', P.wav, '-map', '0:v:0', '-map', '1:a:0', ...v, ...AAC, '-t', D.toFixed(3), '-movflags', '+faststart', f], { stdio: ['ignore', 'ignore', 'pipe'] });
       const s = probe(f, 'stream=codec_name,profile,width,height,pix_fmt,color_transfer,color_primaries,color_space,bit_rate:format=duration');
       report.mux[name] = `${s.streams[0].codec_name} ${s.streams[0].profile} ${s.streams[0].width}x${s.streams[0].height} ${s.streams[0].pix_fmt} ${s.streams[0].color_primaries}/${s.streams[0].color_transfer} ${Math.round(s.streams[0].bit_rate / 1e6)} Mb/s ${(+s.format.duration).toFixed(2)} s`;
     }

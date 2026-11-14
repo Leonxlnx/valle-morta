@@ -174,8 +174,8 @@ export class FX {
     if (surface === 'flesh') { this.blood(point, dirIn, k); return; }
     const sk = Math.sqrt(k);
     if (surface === 'water') {
-      for (let i = 0; i < Math.round(9 * k); i++) this.spawn({ x: px, y: py, z: pz, vx: (r() - 0.5) * 1.6 * sk, vy: (2 + r() * 3.5) * sk, vz: (r() - 0.5) * 1.6 * sk, size: (0.08 + r() * 0.12) * sk, grow: 0.5, life: 0.45 + r() * 0.3, grav: 9, drag: 0.6, r: 0.85, g: 0.9, b: 0.95, a: 0.5 });
-      this.spawn({ x: px, y: py + 0.05, z: pz, vy: 0.3, size: 0.35 * sk, grow: 1.6, life: 0.7, drag: 2, r: 0.8, g: 0.86, b: 0.9, a: 0.3 });
+      for (let i = 0; i < Math.round(7 * k); i++) this.spawn({ x: px, y: py, z: pz, vx: (r() - 0.5) * 1.4 * sk, vy: (2 + r() * 3.2) * sk, vz: (r() - 0.5) * 1.4 * sk, size: (0.04 + r() * 0.07) * sk, grow: 0.25, life: 0.35 + r() * 0.25, grav: 9, drag: 0.6, r: 0.78, g: 0.83, b: 0.88, a: 0.35 });
+      this.spawn({ x: px, y: py + 0.05, z: pz, vy: 0.25, size: 0.2 * sk, grow: 0.8, life: 0.45, drag: 2, r: 0.75, g: 0.8, b: 0.85, a: 0.14 });
       return;
     }
     const pal = {
@@ -183,9 +183,11 @@ export class FX {
     }[surface] || [0.5, 0.5, 0.5];
     const soft = surface === 'dirt' || surface === 'grass' || surface === 'gravel';
     // dust burst along the normal
-    for (let i = 0; i < Math.round((soft ? 5 : 3) * k); i++) {
+    // (soft ground: a small, thin, quick kick of dust, not a cloud)
+    for (let i = 0; i < Math.round(3 * k); i++) {
       const s = (0.8 + r() * 1.8) * sk;
-      this.spawn({ x: px, y: py, z: pz, vx: normal.x * s + (r() - 0.5) * 0.9, vy: normal.y * s + r() * 0.9, vz: normal.z * s + (r() - 0.5) * 0.9, size: (0.1 + r() * 0.12) * sk, grow: (0.7 + r() * 0.6) * sk, life: (0.7 + r() * 0.8) * sk, drag: 2.6, grav: -0.15, r: pal[0], g: pal[1], b: pal[2], a: soft ? 0.26 : 0.16 });
+      if (soft) this.spawn({ x: px, y: py, z: pz, vx: normal.x * s * 0.8 + (r() - 0.5) * 0.6, vy: normal.y * s * 0.8 + r() * 0.6, vz: normal.z * s * 0.8 + (r() - 0.5) * 0.6, size: (0.06 + r() * 0.07) * sk, grow: (0.3 + r() * 0.3) * sk, life: (0.35 + r() * 0.4) * sk, drag: 3.2, grav: -0.1, r: pal[0] * 0.8, g: pal[1] * 0.8, b: pal[2] * 0.8, a: 0.13 });
+      else this.spawn({ x: px, y: py, z: pz, vx: normal.x * s + (r() - 0.5) * 0.9, vy: normal.y * s + r() * 0.9, vz: normal.z * s + (r() - 0.5) * 0.9, size: (0.1 + r() * 0.12) * sk, grow: (0.7 + r() * 0.6) * sk, life: (0.7 + r() * 0.8) * sk, drag: 2.6, grav: -0.15, r: pal[0], g: pal[1], b: pal[2], a: 0.16 });
     }
     // chips / clods
     for (let i = 0; i < Math.round((soft ? 7 : 6) * k); i++) {
@@ -219,9 +221,9 @@ export class FX {
   // a short burst at the muzzle that the wind takes; `k` scales with the charge
   muzzleSmoke(pos, dir, k = 1) {
     const r = this.rnd;
-    for (let i = 0; i < 3; i++) {
+    for (let i = 0; i < 2; i++) {
       const s = (1.2 + r() * 2.6) * k;
-      this.spawn({ x: pos.x + dir.x * 0.1, y: pos.y + dir.y * 0.1, z: pos.z + dir.z * 0.1, vx: dir.x * s + (r() - 0.5) * 0.5, vy: dir.y * s + 0.25 + r() * 0.4, vz: dir.z * s + (r() - 0.5) * 0.5, size: (0.06 + r() * 0.05) * k, grow: 0.75 * k, life: 0.6 + r() * 0.7, drag: 3.2, grav: -0.35, r: 0.62, g: 0.62, b: 0.62, a: 0.17 });
+      this.spawn({ x: pos.x + dir.x * 0.1, y: pos.y + dir.y * 0.1, z: pos.z + dir.z * 0.1, vx: dir.x * s + (r() - 0.5) * 0.5, vy: dir.y * s + 0.25 + r() * 0.4, vz: dir.z * s + (r() - 0.5) * 0.5, size: (0.04 + r() * 0.035) * k, grow: 0.45 * k, life: 0.3 + r() * 0.4, drag: 3.4, grav: -0.35, r: 0.56, g: 0.56, b: 0.56, a: 0.085 });
     }
   }
 

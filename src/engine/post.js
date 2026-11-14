@@ -333,10 +333,20 @@ vec3 pqOETF(vec3 nits) {
   vec3 p = pow(y, vec3(m1));
   return pow((c1 + c2 * p) / (1.0 + c3 * p), vec3(m2));
 }
+// film renderer only: stage 1 stops at the scene-referred colour (for accumulating sub-frames in
+// linear light), stage 2 takes such an accumulated picture from tScene and does the display part
+uniform int uStage;
+uniform sampler2D tScene;
+uniform float uGrainScale;
+uniform float uSoftClip;
 void main() {
+  vec3 col;
+  if (uStage == 2) {
+    col = texture(tScene, vUv).rgb;
+  } else {
   vec3 hdr = vmComposite();
   vec3 bloom = texture(tBloom, vUv).rgb;
-  vec3 col = mix(hdr, bloom, uBloom) * uExposure;
+  col = mix(hdr, bloom, uBloom) * uExposure;
   // local contrast: each pixel is pushed away from the brightness of its wider surroundings
   if (uClarity > 0.0) {
     float lw = dot(texture(tWide, vUv).rgb, vec3(0.2126, 0.7152, 0.0722)) * uExposure;
@@ -347,6 +357,8 @@ void main() {
   vec2 q = vUv - 0.5;
   float vig = 1.0 - uVignette * smoothstep(0.25, 0.95, dot(q, q) * 2.2);
   col *= vig;
+  if (uStage == 1) { outColor = vec4(col, 1.0); return; }
+  }
   // AgX-style inset so that bright saturated colours desaturate gracefully
   const mat3 inset = mat3(0.842479062253094, 0.0423282422610123, 0.0423756549057051,
                           0.0784335999999992, 0.878468636469772, 0.0784336,
@@ -371,10 +383,16 @@ void main() {
   float hi = smoothstep(0.35, 1.0, luma);
   col *= mix(vec3(1.0), uShadowTint, sh) * mix(vec3(1.0), uHighlightTint, hi);
   col = col * uGain + uLift * (1.0 - col);
+  // film renderer, SDR master only: a soft knee on the largest channel (hue kept), so sunlit plaster and
+  // clouds roll off towards white with their texture instead of clipping (0 = off, the game's own look)
+  if (uSoftClip > 0.0 && uMode == 0) {
+    float mx = max(col.r, max(col.g, col.b)), kn = 1.0 - uSoftClip;
+    if (mx > kn) col *= (kn + uSoftClip * (1.0 - exp(-(mx - kn) / uSoftClip))) / mx;
+  }
   col = max(col, 0.0) * uFade;
   // film grain, stronger in the mid-tones
   float g = hash12(gl_FragCoord.xy + fract(uTime * 7.31) * 173.0) - 0.5;
-  float gm = uGrain * (0.35 + 0.65 * (1.0 - abs(luma * 2.0 - 1.0)));
+  float gm = uGrain * uGrainScale * (0.35 + 0.65 * (1.0 - abs(luma * 2.0 - 1.0)));
   if (uMode == 0) {
     vec3 s = srgbOETF(clamp(col, 0.0, 1.0));
     s += g * gm;
@@ -547,6 +565,7 @@ export class PostFX {
       uContrast: { value: 1 }, uSaturation: { value: 1 }, uLift: { value: new THREE.Vector3(0, 0, 0) }, uGain: { value: new THREE.Vector3(1, 1, 1) },
       uShadowTint: { value: new THREE.Vector3(0.93, 0.99, 1.08) }, uHighlightTint: { value: new THREE.Vector3(1.05, 1.0, 0.93) },
       uVignette: { value: 0.3 }, uGrain: { value: 0.01 }, uTime: { value: 0 }, uFade: { value: 1 }, uMode: { value: 0 }, uPaperWhite: { value: 203 }, uRes: { value: new THREE.Vector2() },
+      uStage: { value: 0 }, tScene: { value: null }, uGrainScale: { value: 1 }, uSoftClip: { value: 0 },
     });
     this.final = new Pass(FINAL_FS, { tLDR: { value: null }, uTexel: { value: new THREE.Vector2() }, uSharpen: { value: 0.4 }, uFXAA: { value: 1 } });
     this.targets = null;

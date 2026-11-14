@@ -7,6 +7,8 @@
 //                                                  + out/preview_sheet.jpg + out/preview_events.json, then finish.mjs --preview
 //   node cinematic/capture.mjs                     final: 3840x2160 HDR10 (PQ / BT.2020), HEVC Main 10, ultra, 3 sub-frames
 //                                                  -> out/seg_XX.mkv (resumable) -> valle-morta-4k-hdr.mp4 + out/film_events.json
+//   node cinematic/capture.mjs --smoke             final settings, 4 frames per shot -> out/smoke_hdr.mkv, smoke_f*.jpg, smoke_sheet.jpg, smoke_stats.json
+//                                                  (--seekdraw: draw every sub-frame in between too, the render's exact path; use with --w 1280 --h 720)
 //   node cinematic/capture.mjs --bench             time one sub-frame under the film's settings
 //   options: --w --h --sub --crf --shots 1,2,5 --q ultra --set aoFull=1,reflect=1
 //
@@ -21,7 +23,7 @@ import http from 'node:http';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { spawn, execFileSync } from 'node:child_process';
+import { spawn, execFile, execFileSync } from 'node:child_process';
 import { acquireGpuLock } from '../tools/lib/gpulock.mjs';
 
 const arg = (name, def) => {
@@ -30,11 +32,16 @@ const arg = (name, def) => {
   const v = process.argv[i + 1];
   return v === undefined || v.startsWith('--') ? true : v;
 };
-const STILLS = !!arg('stills', false), BENCH = !!arg('bench', false), PREVIEW = !!arg('preview', false), TRACE = arg('trace', false);
-const LIGHT = STILLS || TRACE;
+const STILLS = !!arg('stills', false), BENCH = !!arg('bench', false), PREVIEW = !!arg('preview', false), TRACE = arg('trace', false), SMOKE = !!arg('smoke', false), SIM = !!arg('sim', false), PROBE = arg('probe', false), ALOG = arg('alog', false);
+const LIGHT = STILLS || TRACE || SIM || !!ALOG;
 const FPS = 30;
 const W = Number(arg('w', LIGHT || PREVIEW ? 1280 : 3840)), H = Number(arg('h', LIGHT || PREVIEW ? 720 : 2160));
-const SUB = Number(arg('sub', PREVIEW || LIGHT ? 2 : 3)), CRF = String(arg('crf', PREVIEW ? 18 : 17));
+// final: 10 to 16 sub-frames over a 180 degree shutter (stratified sample times; camera and weapon interpolated inside the 12-step simulation), see film.js
+const SUB = Number(arg('sub', PREVIEW || LIGHT ? 2 : 10)), CRF = String(arg('crf', PREVIEW ? 18 : 17)), SDR_CRF = String(arg('sdrcrf', PREVIEW ? 18 : 15));
+const SHUTTER = Number(arg('shutter', 0.5));
+// adaptive sample count: up to SUBMAX sub-frames in a frame with fast screen motion (about one per 2.5 px of motion)
+const SUBMAX = Number(arg('submax', PREVIEW || LIGHT ? 4 : 16));
+const MASTERS = PREVIEW ? ['sdr'] : ['hdr', 'sdr'];
 const Q = arg('q', LIGHT ? 'high' : 'ultra');
 const SAFE = W <= 1280 && H <= 720;
 // film-only quality where it is free offline: full-resolution AO and reflections, longest shadow range and grass reach
@@ -47,25 +54,30 @@ const FRACS = NFR === 2 && F0 === 0 && F1 === 1 ? [0.3, 0.85] : Array.from({ len
 const only = arg('shots', '') ? String(arg('shots', '')).split(',').map((s) => Number(s) - 1) : null;
 const FRAME_TIMEOUT = Number(arg('timeout', 45)) * 60000;   // per output frame; generous because the job yields to other work
 const OUT = 'cinematic/out';
-const SEG = PREVIEW ? (i) => `${OUT}/pseg_${String(i + 1).padStart(2, '0')}.mp4` : (i) => `${OUT}/seg_${String(i + 1).padStart(2, '0')}.mkv`;
+// segments per master: preview pseg_XX.mp4; final seg_XX.mkv (HDR10) and sseg_XX.mkv (native SDR)
+const SEGM = (m, i) => (PREVIEW ? `${OUT}/pseg_${String(i + 1).padStart(2, '0')}.mp4` : `${OUT}/${m === 'hdr' ? 'seg' : 'sseg'}_${String(i + 1).padStart(2, '0')}.mkv`);
+const SEG = (i) => SEGM(PREVIEW ? 'sdr' : 'hdr', i);
 const TAPE = PREVIEW ? (i) => `${OUT}/pseg_${String(i + 1).padStart(2, '0')}.tape.json` : (i) => `${OUT}/seg_${String(i + 1).padStart(2, '0')}.tape.json`;
 fs.mkdirSync(OUT, { recursive: true });
 const log = (s) => console.log(`[${new Date().toISOString().slice(11, 19)}] ${s}`);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-if (!SAFE && !BENCH && !arg('final', false) && !LIGHT && !PREVIEW) log('final 4K render: pass --final to confirm');
-if (!SAFE && !BENCH && !arg('final', false) && !LIGHT && !PREVIEW) process.exit(2);
+if (!SAFE && !BENCH && !SMOKE && !PROBE && !arg('final', false) && !LIGHT && !PREVIEW) log('final 4K render: pass --final to confirm');
+if (!SAFE && !BENCH && !SMOKE && !PROBE && !arg('final', false) && !LIGHT && !PREVIEW) process.exit(2);
 
 try { os.setPriority(os.constants.priority.PRIORITY_BELOW_NORMAL); } catch (e) { /* not fatal */ }
 await acquireGpuLock(3600000);
 
 // ---- encoder feed: the page POSTs finished planar Y'CbCr frames here
-let sink = null;
+// one encoder per master: POST /frame/hdr and /frame/sdr
+let sinks = null;
 const server = http.createServer((req, res) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
   if (req.method !== 'POST') { res.end(); return; }
+  const m = String(req.url).split('/').pop();
   const chunks = [];
   req.on('data', (c) => chunks.push(c));
   req.on('end', () => {
+    const sink = sinks && sinks[m];
     if (!sink) { res.statusCode = 500; res.end(); return; }
     const buf = Buffer.concat(chunks);
     if (sink.stdin.write(buf)) res.end('ok'); else sink.stdin.once('drain', () => res.end('ok'));
@@ -86,19 +98,30 @@ async function open() {
   });
   page = await browser.newPage();
   page.on('pageerror', (e) => log('page error: ' + String(e).slice(0, 200)));
-  const qo = !LIGHT && !PREVIEW ? `&qo=${FINAL_QO}` : '';
+  const qo = arg('qo', false) ? `&qo=${arg('qo')}` : !LIGHT && !PREVIEW ? `&qo=${FINAL_QO}` : '';
   await page.goto(`http://127.0.0.1:5183/?q=${Q}&auto=1${qo}`, { waitUntil: 'load', timeout: 600000 });
   await page.waitForFunction('window.__vm && window.__vm.film', { timeout: 1200000, polling: 1000 });
-  const mode = LIGHT ? null : PREVIEW ? 'sdr' : 'hdr';
-  info = await page.evaluate((w, h, mode, over) => window.__vm.film.prepare(w, h, mode, over), LIGHT ? 0 : W, LIGHT ? 0 : H, mode, Object.keys(OVER).length ? OVER : null);
-  await page.evaluate((sub) => { window.__vm.film.sub = sub; }, SUB);
+  const mode = ALOG ? 'sdr' : LIGHT ? null : PREVIEW ? 'sdr' : 'hdr';
+  info = await page.evaluate((w, h, mode, over) => window.__vm.film.prepare(w, h, mode, over), LIGHT && !ALOG ? 0 : W, LIGHT && !ALOG ? 0 : H, mode, Object.keys(OVER).length ? OVER : null);
+  await page.evaluate((sub, sh, ss, sm) => { const f = window.__vm.film; f.sub = sub; f.subMax = sm; f.shutter = sh; if (ss) f.simSub = ss; }, SUB, SHUTTER, Number(arg('simsub', 0)), SUBMAX);
 }
-async function close() { try { await browser?.close(); } catch (e) { /* already gone */ } browser = null; page = null; }
+// A few things in the game carry over from one shot to the next (the film resets what it can), so every run plays the
+// shots before shot i first, simulation only (about a second for all of them): a retried shot in a fresh browser, a
+// part of the film (--shots) and the smoke test then play exactly as in a full render.
+let played = -1;
+async function prime(i) {
+  for (let j = played + 1; j < i; j++) await page.evaluate((j) => window.__vm.film.simShot(j), j);
+  played = i;
+}
+async function close() { played = -1; await close0(); }
+async function close0() { try { await browser?.close(); } catch (e) { /* already gone */ } browser = null; page = null; }
 
-function encoder(file) {
-  if (PREVIEW) {
+function encoder(file, m = 'hdr') {
+  if (m === 'sdr') {
+    // native SDR: the game's own tone curve and grade, BT.709 limited range; final: visually lossless H.264 High
+    const enc = PREVIEW ? ['-preset', 'medium', '-crf', SDR_CRF, '-x264-params', 'colorprim=bt709:transfer=bt709:colormatrix=bt709:range=tv'] : ['-profile:v', 'high', '-level', '5.2', '-preset', 'slow', '-crf', SDR_CRF, '-x264-params', 'aq-mode=3:deblock=-1,-1:colorprim=bt709:transfer=bt709:colormatrix=bt709:range=tv'];
     return spawn('ffmpeg', ['-hide_banner', '-loglevel', 'error', '-y', '-f', 'rawvideo', '-pix_fmt', 'yuv420p', '-s', `${info.w}x${info.h}`, '-r', String(FPS), '-i', 'pipe:0',
-      '-c:v', 'libx264', '-preset', 'medium', '-crf', CRF, '-pix_fmt', 'yuv420p', '-color_range', 'tv', '-color_primaries', 'bt709', '-color_trc', 'bt709', '-colorspace', 'bt709', '-an', file], { stdio: ['pipe', 'inherit', 'inherit'] });
+      '-c:v', 'libx264', ...enc, '-pix_fmt', 'yuv420p', '-color_range', 'tv', '-color_primaries', 'bt709', '-color_trc', 'bt709', '-colorspace', 'bt709', '-an', file], { stdio: ['pipe', 'inherit', 'inherit'] });
   }
   // HEVC Main 10, PQ, BT.2020, mastering metadata
   const x265 = 'hdr10=1:hdr10-opt=1:repeat-headers=1:colorprim=bt2020:transfer=smpte2084:colormatrix=bt2020nc:range=limited:master-display=G(13250,34500)B(7500,3000)R(34000,16000)WP(15635,16450)L(10000000,1):max-cll=1000,400:log-level=error';
@@ -108,18 +131,20 @@ function encoder(file) {
 }
 
 async function renderShot(i) {
-  const seg = SEG(i);
-  if (fs.existsSync(seg) && fs.existsSync(TAPE(i))) { log(`shot ${i + 1} already rendered`); return; }
+  // a shot counts as rendered only when every master and the tape exist; otherwise all its masters are rendered again
+  const segs = MASTERS.map((m) => SEGM(m, i));
+  if (segs.every((s) => fs.existsSync(s)) && fs.existsSync(TAPE(i))) { log(`shot ${i + 1} already rendered`); return; }
   while (os.freemem() < 4 * 1024 ** 3) { log('low memory, waiting 60 s'); await sleep(60000); }
-  const part = seg.replace(/\.(mkv|mp4)$/, '.part.$1');
-  const ff = encoder(part);
-  const done = new Promise((r) => ff.on('exit', r));
-  sink = ff;
-  ff.stdin.on('error', () => {});
-  ff.on('exit', () => { if (sink === ff) sink = null; });
+  const parts = segs.map((s) => s.replace(/\.(mkv|mp4)$/, '.part.$1'));
+  const encs = MASTERS.map((m, k) => { const e = encoder(parts[k], m); e.stdin.on('error', () => {}); return e; });
+  const dones = encs.map((e) => new Promise((r) => e.on('exit', r)));
+  const done = Promise.all(dones);
+  const ff = { kill: () => encs.forEach((e) => e.kill()), stdin: { end: () => encs.forEach((e) => e.stdin.end()) } };
+  sinks = Object.fromEntries(MASTERS.map((m, k) => [m, encs[k]]));
   const t0 = Date.now();
   let tape = null;
   try {
+    await prime(i);
     await page.evaluate((i) => window.__vm.film.begin(i, true), i);
     const n = info.shots[i].frames;
     for (let f = 0; f < n; f++) {
@@ -128,27 +153,32 @@ async function renderShot(i) {
     }
     tape = await page.evaluate(() => window.__vm.film.endTape());
   } catch (e) {
-    sink = null;
+    sinks = null;
     try { ff.kill(); } catch (e2) { /* gone */ }
     await done;
     throw e;
   }
-  sink = null;
+  sinks = null;
   ff.stdin.end();
-  const code = await done;
-  if (code !== 0) throw new Error(`ffmpeg exit ${code}`);
+  const codes = await done;
+  if (codes.some((c) => c !== 0)) throw new Error(`ffmpeg exit ${codes.join(',')}`);
   fs.writeFileSync(TAPE(i), JSON.stringify({ name: info.shots[i].name, start: info.shots[i].start, duration: info.shots[i].duration, events: (tape && tape.events) || [], taped: !!tape }));
-  fs.renameSync(part, seg);
+  parts.forEach((p, k) => fs.renameSync(p, segs[k]));
   const st = await page.evaluate((i) => window.__vm.film.state(i), i);
   log(`shot ${i + 1} done in ${((Date.now() - t0) / 60000).toFixed(1)} min, ${((Date.now() - t0) / 1000 / info.shots[i].frames).toFixed(2)} s/frame, tape ${tape ? tape.events.length + ' events' : 'none'}; ${JSON.stringify(st)}`);
 }
 
 function stitch() {
-  const segs = info.shots.map((_, i) => SEG(i));
-  if (!segs.every((s) => fs.existsSync(s))) { log('some shots are still missing; run again to continue'); return false; }
-  fs.writeFileSync(`${OUT}/list.txt`, segs.map((s) => `file '${path.resolve(s).replace(/\\/g, '/')}'`).join('\n'));
-  const outFile = PREVIEW ? `${OUT}/preview_video.mp4` : 'cinematic/valle-morta-4k-hdr.mp4';
-  execFileSync('ffmpeg', ['-hide_banner', '-loglevel', 'error', '-y', '-f', 'concat', '-safe', '0', '-i', `${OUT}/list.txt`, '-c', 'copy', ...(PREVIEW ? [] : ['-tag:v', 'hvc1']), '-movflags', '+faststart', outFile], { stdio: 'inherit' });
+  if (!MASTERS.every((m) => info.shots.every((_, i) => fs.existsSync(SEGM(m, i))))) { log('some shots are still missing; run again to continue'); return false; }
+  // preview: out/preview_video.mp4; final: the HDR10 master and the native SDR master (out/sdr_video.mp4, silent; finish.mjs muxes)
+  let outFile = '';
+  for (const m of MASTERS) {
+    const segs = info.shots.map((_, i) => SEGM(m, i));
+    fs.writeFileSync(`${OUT}/list_${m}.txt`, segs.map((s) => `file '${path.resolve(s).replace(/\\/g, '/')}'`).join('\n'));
+    const f = PREVIEW ? `${OUT}/preview_video.mp4` : m === 'hdr' ? 'cinematic/valle-morta-4k-hdr.mp4' : `${OUT}/sdr_video.mp4`;
+    execFileSync('ffmpeg', ['-hide_banner', '-loglevel', 'error', '-y', '-f', 'concat', '-safe', '0', '-i', `${OUT}/list_${m}.txt`, '-c', 'copy', ...(m === 'hdr' ? ['-tag:v', 'hvc1'] : []), '-movflags', '+faststart', f], { stdio: 'inherit' });
+    outFile += (outFile ? ', ' : '') + f;
+  }
   // one sound tape for the whole film
   const shots = info.shots.map((s, i) => { const t = JSON.parse(fs.readFileSync(TAPE(i), 'utf8')); return { name: s.name, start: s.start, duration: s.duration, events: t.events }; });
   const ev = `${OUT}/${PREVIEW ? 'preview_events' : 'film_events'}.json`;
@@ -171,15 +201,15 @@ function stitch() {
 let failed = false;
 try {
   await open();
-  log(`film ready: ${info.w}x${info.h}, q=${Q} ${JSON.stringify(OVER)}, sub=${SUB}, ${FPS} fps, ${info.shots.reduce((a, s) => a + s.frames, 0)} frames`);
+  log(`film ready: ${info.w}x${info.h}, q=${Q} ${JSON.stringify(OVER)}, sub=${SUB}-${SUBMAX}, ${FPS} fps, ${info.shots.reduce((a, s) => a + s.frames, 0)} frames`);
   if (TRACE) {
     const i = Number(TRACE) - 1;
-    const { trace, state } = await page.evaluate((i, sub) => window.__vm.film.traceShot(i, sub), i, SUB);
+    const { trace, state, simSub: SS } = await page.evaluate((i) => window.__vm.film.traceShot(i), i);
     fs.writeFileSync(`${OUT}/trace_${String(i + 1).padStart(2, '0')}.csv`, 't,yaw,pitch,recoil_sway,rounds\n' + trace.map((r) => r.join(',')).join('\n'));
     // angular speed of the view per output frame (deg/s), and the change of speed between frames
     const fr = [];
-    for (let k = SUB; k < trace.length; k += SUB) {
-      const a = trace[k - SUB], b = trace[k];
+    for (let k = SS; k < trace.length; k += SS) {
+      const a = trace[k - SS], b = trace[k];
       const dy = Math.atan2(Math.sin(b[1] - a[1]), Math.cos(b[1] - a[1])), dp = (b[2] + b[3]) - (a[2] + a[3]);
       fr.push({ t: b[0], v: Math.hypot(dy, dp) * FPS * 180 / Math.PI, rounds: b[4] });
     }
@@ -188,6 +218,24 @@ try {
     log(`trace ${i + 1}: ${fr.length} frames, ${state.fired} rounds, ${state.hit} hits (${state.heads} head), view speed deg/s median ${pct(vs, 0.5).toFixed(1)} p90 ${pct(vs, 0.9).toFixed(1)} max ${Math.max(...vs).toFixed(1)}; speed change deg/s2 p90 ${pct(acc, 0.9).toFixed(0)} max ${Math.max(...acc).toFixed(0)}`);
     const rows = fr.filter((_, k) => k % 3 === 0).map((f) => `${f.t.toFixed(2)}:${f.v.toFixed(0)}${f.rounds ? '/' + f.rounds : ''}`);
     log('t:deg/s/rounds ' + rows.join(' '));
+  } else if (SIM) {
+    // simulation only, every shot (or --shots): rounds, hits and head hits, and the state at --at fractions
+    const at = String(arg('at', '')).split(',').filter(Boolean).map(Number);
+    let F = 0, Hh = 0;
+    for (let i = 0; i < info.shots.length; i++) {
+      if (only && !only.includes(i)) continue;
+      await prime(i);
+      const r = await page.evaluate((i, at) => window.__vm.film.simShot(i, at), i, at);
+      for (const m of r.mid) log(`  ${i + 1} ${JSON.stringify(m)}`);
+      log(`sim ${i + 1} ${JSON.stringify(r.end)}`);
+      F += r.end.fired; Hh += r.end.hit;
+    }
+    if (arg('fp', false)) {
+      // fingerprint of shot --fp after begin, written to out/fp_<label>.json (compare two runs)
+      const fp = await page.evaluate((i) => window.__vm.film.fingerprint(i), Number(arg('fp', 2)) - 1);
+      fs.writeFileSync(`${OUT}/fp_${arg('label', 'a')}.json`, JSON.stringify(fp, null, 0).replace(/,"/g, ',\n"'));
+    }
+    log(`sim total: ${Hh}/${F} hits (${F ? Math.round(100 * Hh / F) : 0}%)`);
   } else if (STILLS) {
     log('survey ' + JSON.stringify(await page.evaluate(() => window.__vm.film.survey())));
     const files = [];
@@ -206,6 +254,110 @@ try {
       }
     }
     execFileSync('node', ['tools/sheet.mjs', `${OUT}/stills.jpg`, '400', String(Math.min(6, Math.max(4, NFR))), ...files], { stdio: 'inherit' });
+  } else if (SMOKE) {
+    // final settings and pipeline, four frames per shot: the simulation runs up to each frame, only those frames are drawn
+    const tag = only ? `_s${only.map((x) => x + 1).join('')}` : '';   // a part of the shots: files get a suffix
+    // --sf 0.2,0.5: other frame fractions (any count); --tag name: own file names
+    const SF = arg('sf', '') ? String(arg('sf', '')).split(',').map(Number) : [0.1, 0.35, 0.6, 0.85];
+    const tag2 = arg('tag', '') ? `_${arg('tag', '')}` : tag;
+    const file = `${OUT}/smoke_hdr${tag2}.mkv`, sfile = `${OUT}/smoke_sdr${tag2}.mkv`, url = `http://127.0.0.1:${PORT}/frame`;
+    const encs = [encoder(file, 'hdr'), encoder(sfile, 'sdr')];
+    encs.forEach((e) => e.stdin.on('error', () => {}));
+    const done = Promise.all(encs.map((e) => new Promise((r) => e.on('exit', r))));
+    const ff = { stdin: { end: () => encs.forEach((e) => e.stdin.end()) } };
+    sinks = { hdr: encs[0], sdr: encs[1] };
+    const pid = browser.process().pid;
+    let peak = 0, minFree = os.freemem(), lowMem = false, polling = false;
+    const ps = `$p=Get-CimInstance Win32_Process; $k=@(${pid}); do { $n=$k.Count; $k=@(@($k) + @($p | ? { $k -contains $_.ParentProcessId } | % ProcessId) | sort -Unique) } while ($k.Count -gt $n); ($p | ? { $k -contains $_.ProcessId } | measure WorkingSetSize -Sum).Sum`;
+    const poll = () => {
+      minFree = Math.min(minFree, os.freemem()); if (os.freemem() < 6 * 1024 ** 3) lowMem = true;
+      if (polling) return; polling = true;
+      execFile('powershell', ['-NoProfile', '-Command', ps], { encoding: 'utf8' }, (e, o) => { polling = false; if (!e) peak = Math.max(peak, Number(String(o).trim()) || 0); });
+    };
+    const timer = setInterval(poll, 3000); poll();
+    await page.evaluate(() => { window.__vm.film.check = true; });
+    const rows = [], ends = [];
+    const t00 = Date.now();
+    try {
+      for (let i = 0; i < info.shots.length; i++) {
+        if (only && !only.includes(i)) continue;
+        await prime(i);
+        await page.evaluate((i) => window.__vm.film.begin(i, false), i);
+        const n = info.shots[i].frames;
+        let cur = 0;
+        for (const u of SF) {
+          const f = Math.round(u * n), ta = Date.now();
+          const st = await page.evaluate((k, d) => window.__vm.film.seek(k, d), f - cur, !!arg('seekdraw', false));
+          const tb = Date.now();
+          const s = await page.evaluate((f, url) => window.__vm.film.frame(f, url), f, url);
+          const tc = Date.now();
+          cur = f + 1;
+          const row = { shot: i + 1, name: info.shots[i].name, f, seek: (tb - ta) / 1000, render: +((tc - tb - s.ms) / 1000).toFixed(2), ...s, alive: st.alive, dead: st.dead, fired: st.fired };
+          rows.push(row);
+          log(`smoke ${JSON.stringify(row)} freeGB ${(os.freemem() / 1024 ** 3).toFixed(1)} browserGB ${(peak / 1024 ** 3).toFixed(2)}`);
+          if (lowMem) throw new Error('free RAM below 6 GB');
+        }
+        const end = await page.evaluate((k, d) => window.__vm.film.seek(k, d), n - cur, !!arg('seekdraw', false));
+        ends.push(end);
+        log(`smoke end state shot ${i + 1}: ${JSON.stringify(end)}`);
+      }
+    } finally { clearInterval(timer); }
+    sinks = null;
+    const te = Date.now();
+    ff.stdin.end();
+    const code = (await done).join(',');
+    log(`encoder exit ${code}, tail ${((Date.now() - te) / 1000).toFixed(1)} s, total ${((Date.now() - t00) / 60000).toFixed(1)} min; peak browser RAM ${(peak / 1024 ** 3).toFixed(2)} GB, min free RAM ${(minFree / 1024 ** 3).toFixed(1)} GB`);
+    fs.writeFileSync(`${OUT}/smoke_stats${tag2}.json`, JSON.stringify({ w: info.w, h: info.h, sub: SUB, shutter: SHUTTER, q: Q, over: OVER, peakBrowserBytes: peak, minFreeBytes: minFree, rows, ends }, null, 1));
+    await close();
+    // stills from the native SDR master, a contact sheet and 1:1 crops (--crop w:h:x:y, default the weapon at the lower right)
+    execFileSync('ffmpeg', ['-hide_banner', '-loglevel', 'error', '-y', '-i', sfile, '-vf', 'scale=in_range=tv:out_range=pc,format=yuvj420p', '-q:v', '2', `${OUT}/smoke${tag2}_f%02d.jpg`], { stdio: 'inherit' });
+    const files = rows.map((_, k) => `${OUT}/smoke${tag2}_f${String(k + 1).padStart(2, '0')}.jpg`).filter((f) => fs.existsSync(f));
+    const crop = String(arg('crop', `${Math.round(info.w * 0.25)}:${Math.round(info.h * 0.25)}:${Math.round(info.w * 0.6)}:${Math.round(info.h * 0.62)}`));
+    const crops = files.map((f) => { const c = f.replace(/\.jpg$/, '_crop.jpg'); execFileSync('ffmpeg', ['-hide_banner', '-loglevel', 'error', '-y', '-i', f, '-vf', `crop=${crop}`, '-q:v', '2', c]); return c; });
+    const cols = String(Math.min(4, files.length));
+    execFileSync('node', ['tools/sheet.mjs', `${OUT}/smoke_sheet${tag2}.jpg`, '480', cols, ...files], { stdio: 'inherit' });
+    execFileSync('node', ['tools/sheet.mjs', `${OUT}/smoke_crops${tag2}.jpg`, crop.split(':')[0], cols, ...crops], { stdio: 'inherit' });
+    for (const c of crops) fs.rmSync(c, { force: true });
+    log(`smoke done: ${files.length} stills, ${OUT}/smoke_sheet${tag2}.jpg, ${OUT}/smoke_crops${tag2}.jpg`);
+  } else if (ALOG) {
+    // the complete action log of every shot (or --shots): --draw 1 draws every sub-frame as a render would (no read-back)
+    const DRAW = arg('draw', '0') === '1' || arg('draw', '0') === true;
+    await page.evaluate(() => { window.__vm.film.logging = true; });
+    const all = [];
+    for (let i = 0; i < info.shots.length; i++) {
+      if (only && !only.includes(i)) continue;
+      await prime(i);
+      await page.evaluate((i) => window.__vm.film.begin(i, false), i);
+      const end = await page.evaluate((n, d) => window.__vm.film.seek(n, d), info.shots[i].frames, DRAW);
+      const e = await page.evaluate(() => window.__vm.film.alog.e);
+      all.push({ shot: i + 1, end, e });
+      log(`alog ${i + 1}: ${e.filter((x) => x[0] === 'shot').length} rounds, hits ${end.hit}, heads ${end.heads}, ${e.length} entries`);
+    }
+    fs.writeFileSync(`${OUT}/alog_${ALOG}.json`, JSON.stringify(all));
+  } else if (PROBE) {
+    // diagnostics: one frame (final pipeline) of shot:frame per variant (film.probe switches), SDR and linear, 1:1 crops
+    const [ps, pf] = String(PROBE).split(':').map(Number);
+    const vars = String(arg('variants', 'base')).split(',');
+    const tag = String(arg('tag', 'p'));
+    const crop = String(arg('crop', `${Math.round(info.w * 0.25)}:${Math.round(info.h * 0.25)}:${Math.round(info.w * 0.6)}:${Math.round(info.h * 0.62)}`));
+    const got = {};
+    const POUT = String(arg('pout', 'sdr,lin')).split(',');
+    sinks = Object.fromEntries(['sdr', 'lin', 'hdr'].map((m) => [m, { stdin: { write: (b) => { got[m] = b; return true; } } }]));
+    await page.evaluate((o) => { window.__vm.film.outputs = o; window.__vm.film.check = true; }, POUT);
+    const files = [];
+    for (const v of vars) {
+      await page.evaluate((i, f, v) => { const film = window.__vm.film; for (let j = 0; j < i; j++) film.simShot(j); film.begin(i, false); film.seek(f); window.__undo = film.probe(v); }, ps - 1, pf, v);
+      const st = await page.evaluate((f, url) => window.__vm.film.frame(f, url), pf, `http://127.0.0.1:${PORT}/frame`);
+      await page.evaluate(() => { window.__undo(); });
+      for (const m of POUT.filter((x) => x !== 'hdr')) {
+        const f = `${OUT}/probe_${tag}_${v}_${m}.jpg`;
+        execFileSync('ffmpeg', ['-hide_banner', '-loglevel', 'error', '-y', '-f', 'rawvideo', '-pix_fmt', 'yuv420p', '-s', `${info.w}x${info.h}`, '-i', 'pipe:0', '-vf', `crop=${crop},scale=in_range=tv:out_range=pc,format=yuvj420p`, '-q:v', '2', f], { input: got[m] });
+        files.push(f);
+      }
+      log(`probe ${v}: ${JSON.stringify({ clip: st.sdrClip, mean: st.sdrMean, maxCll: st.maxCll, fall: st.fall, sub: st.sub })}`);
+    }
+    execFileSync('node', ['tools/sheet.mjs', `${OUT}/probe_${tag}.jpg`, String(arg('tile', crop.split(':')[0])), String(POUT.filter((x) => x !== 'hdr').length * Number(arg('pcols', 1))), ...files], { stdio: 'inherit' });
+    log(`probe sheet ${OUT}/probe_${tag}.jpg (rows: ${vars.join(', ')}; left SDR, right linear)`);
   } else if (BENCH) {
     await page.evaluate(() => window.__vm.film.begin(2));
     const r = await page.evaluate(() => window.__vm.film.bench(3));
@@ -233,7 +385,7 @@ try {
   failed = true;
   log('GAVE UP: ' + (e && e.message));
 } finally {
-  if (sink) { try { sink.stdin.end(); } catch (e) { /* closing */ } }
+  if (sinks) for (const s of Object.values(sinks)) { try { s.stdin.end(); } catch (e) { /* closing */ } }
   await close();
   server.close();
 }
