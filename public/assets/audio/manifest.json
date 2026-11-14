@@ -531,6 +531,13 @@
       ],
       "volume": 0.85,
       "category": "sfx"
+    },
+    "music_film": {
+      "files": [
+        "music_film.mp3"
+      ],
+      "volume": 0.6,
+      "category": "music"
     }
   }
 }

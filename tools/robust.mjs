@@ -20,7 +20,7 @@ try {
   page.on('console', (m) => { if (m.type() === 'error' || m.type() === 'warning' || m.type() === 'warn') msgs.push(`${m.type()} ${m.text().slice(0, 240)}`); });
   page.on('requestfailed', (r) => msgs.push('requestfailed ' + r.url().slice(-60)));
   page.on('response', (r) => { if (r.status() >= 400) msgs.push(`http ${r.status()} ${r.url().slice(-60)}`); });
-  await page.goto('http://127.0.0.1:5173/', { waitUntil: 'load', timeout: 300000 });
+  await page.goto('http://127.0.0.1:5183/', { waitUntil: 'load', timeout: 300000 });
   await page.waitForFunction(() => window.__vm && window.__vm.ready && document.querySelector('.menu.show'), { timeout: 600000, polling: 500 });
   await page.evaluate(() => { Object.defineProperty(document, 'pointerLockElement', { configurable: true, get: () => document.getElementById('view') }); __vm.progress.reset(); __vm.progress.grant(3000); });
   const cdp = await page.target().createCDPSession();

@@ -10,7 +10,7 @@ This is the shared reference for everyone working on the game. Read the sections
 - Quality and performance come first. Target: 60 fps or better at 1280x720 on the "high" preset on an integrated Radeon 780M (about 14 ms per frame in `tools/shot.mjs --bench`), no hitches.
 - UI: clean, modern, minimal and clearly designed, not a default template. One sans-serif family (Inter). Neutral palette with at most one restrained accent, a muted red only for danger. No serif, no monospace, no all-caps or letter-spaced eyebrow labels, no clutter.
 - The machine is a laptop shared with other jobs and must never be overloaded: one GPU job at a time (`tools/lib/gpulock.mjs`, already used by `shot.mjs` and `playtest.mjs`), Blender with at most 6 threads and CPU Cycles at low sample counts, check `powershell -NoProfile -File tools\sysmon.ps1` before long jobs.
-- The vite dev server already runs at http://127.0.0.1:5173. Never start another. `?auto=1` is the tooling mode (no menu, `window.__vm` API).
+- The vite dev server already runs at http://127.0.0.1:5183. Never start another. `?auto=1` is the tooling mode (no menu, `window.__vm` API).
 - Only edit the files your task owns. Do not commit; the lead commits.
 
 ## Controls

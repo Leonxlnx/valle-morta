@@ -94,7 +94,7 @@ try {
   page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text().slice(0, 300)); });
   // no hot reload: other work saving files must not reload the page under a running test
   await page.evaluateOnNewDocument(() => { const W = window.WebSocket; window.WebSocket = function (u, p) { if (String(p).includes('vite')) return { addEventListener() {}, removeEventListener() {}, send() {}, close() {}, readyState: 0 }; return new W(u, p); }; });
-  await page.goto(`http://127.0.0.1:5173/?q=${String(q).split(",")[0]}&auto=1${extra}`, { waitUntil: 'load', timeout: 120000 });
+  await page.goto(`http://127.0.0.1:5183/?q=${String(q).split(",")[0]}&auto=1${extra}`, { waitUntil: 'load', timeout: 120000 });
   await page.waitForFunction('window.__vm && window.__vm.ready', { timeout: 180000, polling: 250 });
   const groups = await page.evaluate(SETUP);
   const ev = async (...a) => { for (let k = 0; ; k++) { try { return await page.evaluate(...a); } catch (e) { if (k > 3 || !/context was destroyed|navigation|__perf/.test(String(e))) throw e; log('  (page reloaded, retrying)'); await page.waitForFunction('window.__vm && window.__vm.ready', { timeout: 180000, polling: 250 }); await page.evaluate(SETUP); } } };
@@ -138,7 +138,7 @@ try {
     const abRows = [];
     for (const [tag, gq] of confs) {
     if (tag) {
-      await page.goto(`http://127.0.0.1:5173/?q=${String(q).split(",")[0]}&auto=1${extra}${gq}`, { waitUntil: 'load', timeout: 120000 });
+      await page.goto(`http://127.0.0.1:5183/?q=${String(q).split(",")[0]}&auto=1${extra}${gq}`, { waitUntil: 'load', timeout: 120000 });
       await page.waitForFunction('window.__vm && window.__vm.ready', { timeout: 180000, polling: 250 });
       await page.evaluate(SETUP);
       for (let i = 0; i < 90; i++) await page.evaluate(() => new Promise((r) => requestAnimationFrame(r)));
@@ -213,7 +213,7 @@ try {
     // weapon, post:<pass>, other (sky panorama, terrain updates, clears).
     const presets = arg('presets', false) ? ['low', 'medium', 'high', 'ultra'] : String(q).split(',');
     for (const p of presets) {
-      await page.goto(`http://127.0.0.1:5173/?q=${p}&auto=1${extra}`, { waitUntil: 'load', timeout: 120000 });
+      await page.goto(`http://127.0.0.1:5183/?q=${p}&auto=1${extra}`, { waitUntil: 'load', timeout: 120000 });
       await page.waitForFunction('window.__vm && window.__vm.ready', { timeout: 180000, polling: 250 });
       await page.evaluate(SETUP);
       for (const view of views) {
@@ -277,7 +277,7 @@ try {
   if (arg('presets', false) && !arg('split', false)) {
     for (const p of ['low', 'medium', 'high', 'ultra']) {
       // grass density and texture sizes are fixed at build time: load the page on each preset
-      await page.goto(`http://127.0.0.1:5173/?q=${p}&auto=1${extra}`, { waitUntil: 'load', timeout: 120000 });
+      await page.goto(`http://127.0.0.1:5183/?q=${p}&auto=1${extra}`, { waitUntil: 'load', timeout: 120000 });
       await page.waitForFunction('window.__vm && window.__vm.ready', { timeout: 180000, polling: 250 });
       await page.evaluate(SETUP);
       const r = await page.evaluate(async (p, n) => {

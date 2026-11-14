@@ -18,7 +18,7 @@ try {
   const page = await b.newPage();
   page.on('pageerror', (e) => errors.push(String(e).slice(0, 200)));
   page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text().slice(0, 200)); });
-  await page.goto('http://127.0.0.1:5173/?q=low&auto=1', { waitUntil: 'load', timeout: 120000 });
+  await page.goto('http://127.0.0.1:5183/?q=low&auto=1', { waitUntil: 'load', timeout: 120000 });
   await page.waitForFunction('window.__vm && window.__vm.ready', { timeout: 240000, polling: 250 });
   const GAIT = { walker: [1.0, 3.0, 4.2], runner: [1.5, 3.4, 5.2], brute: [1.6, 3.2, 4.4], boss: [2.2, 6.6, 7.6] };
   const rows = [];

@@ -35,7 +35,7 @@ try {
   await page.evaluateOnNewDocument(() => { const W = window.WebSocket; window.WebSocket = function (u, p) { if (String(p).includes('vite')) return { addEventListener() {}, removeEventListener() {}, send() {}, close() {}, readyState: 0 }; return new W(u, p); }; });
   page.on('console', (m) => { if (m.type() === 'error' || m.type() === 'warning') errors.push(`[${m.type()}] ${m.text()}`.slice(0, 300)); });
   page.on('pageerror', (e) => errors.push(`[pageerror] ${String(e).slice(0, 400)}`));
-  await page.goto('http://127.0.0.1:5173/?q=high&auto=1', { waitUntil: 'load', timeout: 120000 });
+  await page.goto('http://127.0.0.1:5183/?q=high&auto=1', { waitUntil: 'load', timeout: 120000 });
   await page.waitForFunction('window.__vm && window.__vm.ready && window.__vm.game.weapon.views.rifle', { timeout: 180000, polling: 250 });
   await page.evaluate(() => {
     const vm = window.__vm, g = vm.game, p = g.player;

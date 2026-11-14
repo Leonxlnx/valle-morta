@@ -24,7 +24,7 @@ try {
   const page = await browser.newPage();
   page.on('pageerror', (e) => errors.push(String(e).slice(0, 300)));
   page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text().slice(0, 300)); });
-  await page.goto(`http://127.0.0.1:5173/?q=${arg('q', 'medium')}&auto=1`, { waitUntil: 'load', timeout: 300000 });
+  await page.goto(`http://127.0.0.1:5183/?q=${arg('q', 'medium')}&auto=1`, { waitUntil: 'load', timeout: 300000 });
   await page.waitForFunction('window.__vm && window.__vm.ready', { timeout: 600000, polling: 500 });
   if (arg('probe', false)) {
     const r = await page.evaluate(() => {

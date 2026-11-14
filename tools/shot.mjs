@@ -19,7 +19,7 @@ const q = arg('q', 'high');
 const out = arg('out', 'tools/_preview/shots');
 const tag = arg('tag', '');
 const extra = arg('eval', '');
-const url = arg('url', 'http://127.0.0.1:5173/');
+const url = arg('url', 'http://127.0.0.1:5183/');
 const query = arg('query', '');
 const settle = Number(arg('settle', 12));
 fs.mkdirSync(out, { recursive: true });

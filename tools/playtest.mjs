@@ -23,7 +23,7 @@ const W = 1280, H = 720;
 const q = arg('q', 'high');
 const out = arg('out', 'tools/_preview/playtest');
 const only = String(arg('only', 'game,ui,operation')).split(',');
-const url = arg('url', 'http://127.0.0.1:5173/');
+const url = arg('url', 'http://127.0.0.1:5183/');
 const nWaves = Number(arg('waves', 3));
 const secs = arg('sec', '') ? String(arg('sec', '')).split(',') : null;
 const run = (name) => !secs || secs.includes(name);

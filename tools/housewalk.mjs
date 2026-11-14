@@ -12,7 +12,7 @@ try {
   const page = await b.newPage();
   page.on('pageerror', (e) => errors.push(String(e).slice(0, 200)));
   page.on('console', (m) => { if (m.type() === 'error' || m.type() === 'warning') errors.push(m.text().slice(0, 200)); });
-  await page.goto('http://127.0.0.1:5173/?q=low&auto=1', { waitUntil: 'load', timeout: 300000 });
+  await page.goto('http://127.0.0.1:5183/?q=low&auto=1', { waitUntil: 'load', timeout: 300000 });
   await page.waitForFunction('window.__vm && window.__vm.ready', { timeout: 600000, polling: 500 });
   const r = await page.evaluate(async () => {
     const vm = __vm, g = vm.game, p = g.player, T = vm.THREE, col = g.collision, Z = g.zombies, H = (x, z) => vm.terrain.heightAt(x, z);

@@ -14,7 +14,7 @@ npm install
 npm run dev
 ```
 
-Then open http://127.0.0.1:5173. A GPU with WebGL2 is required; the game is tuned on an integrated Radeon 780M and has four quality presets in Settings.
+Then open http://127.0.0.1:5183. A GPU with WebGL2 is required; the game is tuned on an integrated Radeon 780M and has four quality presets in Settings.
 
 ## Modes
 

@@ -38,7 +38,7 @@ try {
     });
   }
   const boot = async () => {
-  await page.goto(`http://127.0.0.1:5173/?q=${q}&auto=1`, { waitUntil: 'load', timeout: 120000 });
+  await page.goto(`http://127.0.0.1:5183/?q=${q}&auto=1`, { waitUntil: 'load', timeout: 120000 });
   await page.waitForFunction('window.__vm && window.__vm.ready', { timeout: 240000, polling: 250 });
   await page.evaluate(() => {
     const vm = window.__vm, g = vm.game, T = vm.THREE, Z = g.zombies, p = g.player;
