@@ -782,6 +782,48 @@ export async function build(ctx) {
     const KM = place(T.x + 20, T.z + 2.6, 0.3, [2.4, 0.9]).multiply(TR(0, -0.02, 0, -0.06, 0, -0.02));
     buildTruck(mb, KM, (m, w, h, d) => col('metal', m, w, h, d));
     for (let x = -2.8; x <= 2.8; x += 0.35) for (const s of [-1, 1]) if (rnd() < 0.6) spot(KM, x, s * (1.1 + rnd() * 0.3), 6 + rnd() * 5, 0.3 + rnd() * 0.25);
+    // town cover: lorries, barrels, lamp posts (same rust mesh), crate stacks (crate mesh)
+    const town = { truck: 0, barrels: 0, lamp: 0, crates: 0 };
+    const barrel = latheGeo([[0, 0], [0.27, 0], [0.285, 0.025], [0.3, 0.13], [0.312, 0.14], [0.322, 0.44], [0.312, 0.74], [0.3, 0.75], [0.285, 0.855], [0.27, 0.88], [0.24, 0.88], [0, 0.875]], 14, { smooth: 40 });
+    for (const c of layout.cover || []) {
+      const cm = col.bind(null, c.type === 'crates' ? 'wood' : 'metal');
+      if (c.type === 'truck') {
+        const M = place(c.x, c.z, -c.rot, [2.4, 0.9]).multiply(TR(0, -0.03, 0, (rnd() - 0.5) * 0.04, 0, (rnd() - 0.5) * 0.03));
+        buildTruck(mb, M, (m, w, h, d) => cm(m, w, h, d));
+        for (let x = -2.8; x <= 2.8; x += 0.5) for (const s of [-1, 1]) if (rnd() < 0.45) spot(M, x, s * (1.15 + rnd() * 0.3), 5 + rnd() * 4, 0.25 + rnd() * 0.2);
+        town.truck++;
+      } else if (c.type === 'barrels') {
+        const M = place(c.x, c.z, -c.rot, [0.7, 0.6]);
+        [[-0.33, -0.2], [0.33, -0.2], [0, 0.37]].forEach(([lx, lz], i) => {
+          if (i === 2 && rnd() < 0.35) return;
+          const v = new V3(lx, 0, lz).applyMatrix4(M), y = Math.min(hAt(v.x, v.z), hAt(v.x + 0.25, v.z), hAt(v.x - 0.25, v.z), hAt(v.x, v.z + 0.25), hAt(v.x, v.z - 0.25)) - 0.015;
+          const BM = TR(v.x, y, v.z, (rnd() - 0.5) * 0.03, rnd() * TAU, (rnd() - 0.5) * 0.03), paint = rnd();
+          mb.add(barrel, BM, [1, 0.25 + paint * 0.55, 0, 0.15 + rnd() * 0.3]);
+          cm(mul(BM, TR(0, 0.44, 0)), 0.6, 0.88, 0.6);
+        });
+        town.barrels++;
+      } else if (c.type === 'lamp') {
+        const y0 = Math.min(hAt(c.x - 0.2, c.z), hAt(c.x + 0.2, c.z), hAt(c.x, c.z - 0.2), hAt(c.x, c.z + 0.2));
+        const lean = rnd() < 0.3 ? 0.08 + rnd() * 0.1 : 0.01;
+        const M = mul(TR(c.x, y0, c.z, 0, -c.rot, 0), TR(0, 0, 0, lean * (rnd() < 0.5 ? 1 : -1), 0, 0));
+        const L0 = (x, y, z) => new V3(x, y, z).applyMatrix4(M), K = [1, 0.55, 0, 0.15];
+        mb.add(boxG(0.3, 0.45, 0.3, 0.02), mul(M, TR(0, 0.12, 0)), K);
+        mb.add(tubeGeo([L0(0, 0.3, 0), L0(0, 2.0, 0), L0(0, 3.7, 0)], 0.055, 8), null, K);
+        mb.add(tubeGeo([L0(0, 3.5, 0), L0(0, 3.78, -0.2), L0(0, 3.72, -0.55), L0(0, 3.55, -0.62)], 0.025, 6), null, K);
+        mb.add(boxG(0.2, 0.3, 0.2, 0.01), mul(M, TR(0, 3.35, -0.62)), K);
+        mb.add(boxG(0.3, 0.05, 0.3, 0.01), mul(M, TR(0, 3.52, -0.62)), K);
+        cm(mul(M, TR(0, 1.85, 0)), 0.16, 3.7, 0.16);
+        town.lamp++;
+      } else if (c.type === 'crates' && TM) {
+        const M = place(c.x, c.z, -c.rot, [0.95, 0.45]);
+        [[-0.5, 0, -0.05, 0.02], [0.5, 0, 0.0, -0.05], [-0.25, 0.32, 0.02, 0.12], [0.5, 0, 0.47, 0.3]].forEach(([lx, ly, lz, yaw], i) => {
+          if (i === 3 && rnd() < 0.5) return;
+          buildCrate(wp, mul(M, TR(lx, ly, lz, 0, yaw, 0)), i === 4 && rnd() < 0.4, (m, w, h, d) => col('wood', m, w, h, d));
+        });
+        town.crates++;
+      }
+    }
+    stats.town = town;
     put('truck', mb.geometry(), rustM);
     if (TM) {
       [[-1.2, 3.4, 0.3, 0, false], [-2.1, 4.0, 1.25, 0, true], [-1.15, 3.42, 0.55, 0.316, false], [-0.1, 4.5, -0.5, 0, false]].forEach(([lx, lz, yaw, dy, open]) => {
@@ -795,6 +837,20 @@ export async function build(ctx) {
     const b = layout.bridge; if (!b) return;
     const ex = b.x + b.dirx * (b.length / 2 + 9), ez = b.z + b.dirz * (b.length / 2 + 9), cx = ex - b.dirz * 3.4, cz = ez + b.dirx * 3.4, mb = new MB(61);
     buildBags(mb, hAt, cx, cz, Math.atan2(-b.dirz, -b.dirx), (m, w, h, d) => col('stone', m, w, h, d));
+    // straight sandbag walls along the town streets: two bags deep, four courses
+    for (const c of layout.cover || []) {
+      if (c.type !== 'bags') continue;
+      const M = place(c.x, c.z, -c.rot, [c.w / 2, c.d / 2]), n = Math.max(3, Math.floor(c.w / 0.6));
+      for (let k = 0; k < 4; k++) {
+        const rows = k < 1 ? [-0.17, 0.17] : [0], off = k % 2 ? 0.3 : 0, cnt = n - (k % 2 ? 1 : 0) - (k === 3 ? 1 : 0);
+        for (const rz of rows) for (let i = 0; i < cnt; i++) {
+          if (k === 3 && rnd() < 0.3) continue;
+          const lx = -c.w / 2 + 0.32 + off + i * (c.w - 0.64) / (n - 1);
+          mb.add(bagGeo(rnd), mul(M, TR(lx, 0.07 + k * 0.145, rz + (k >= 2 ? (rnd() - 0.5) * 0.06 : 0), 0, (rnd() - 0.5) * 0.12, 0), TR(0, 0, 0, (rnd() - 0.5) * 0.14, 0, (rnd() - 0.5) * 0.1)), [1 - (3 - k) * 0.06, 0, 0, 0.3 - k * 0.08]);
+        }
+      }
+      col('stone', mul(M, TR(0, 0.32, 0)), c.w - 0.1, 0.64, 0.6);
+    }
     put('sandbags', mb.geometry(), bagM);
     stats.bagsAt = [Math.round(cx), Math.round(cz)];
   });

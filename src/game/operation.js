@@ -7,6 +7,7 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { enhance } from '../engine/materials.js';
 import { INFECTED } from './zombies.js';
 import { SLOT_KEYS, stockBuild, abilityItem } from './progress.js';
+import { Abilities } from './abilities.js';
 
 export const SALVAGE = { walker: 5, runner: 7, brute: 25, boss: 150, head: 1.5, wave: [20, 10] };   // per kill; per cleared wave: 20 + 10 * wave
 export const EXTRACT = { every: 5, window: 30, bonus: 0.25, keep: 0.5, reach: 5.5, board: 0.9, ride: 3.2 };
@@ -367,6 +368,7 @@ export class Operation {
   // called by game.start once the world is reset: load up and fly in
   begin() {
     const g = this.game, p = g.player, b = this.build;
+    if (!this.kit) this.kit = new Abilities(this);          // the ability effects, fitted on the first run
     this.salvage = 0; this.gain = 0; this.gainSeq = 0; this.cleared = 0; this.extraction = null; this.riding = false; this.outT = 0;
     for (const id in b.weapon) { const s = g.weapon.state[id]; if (s && Number.isFinite(s.reserve)) s.reserve = Math.round(s.def.reserve * b.weapon[id].reserve); }
     p.bandages = Math.min(p.bandageMax, 1 + b.run.bandages);
@@ -402,6 +404,7 @@ export class Operation {
   // nothing of the run stays in the world (menu, Base, the next start)
   stop() {
     this._endAbilities(); this.burning.clear(); this.extraction = null; this.phase = 'idle'; this.riding = false;
+    if (this.kit) this.kit.clear();
     if (this.heli) this.heli.hide();
   }
 
@@ -412,6 +415,7 @@ export class Operation {
     const banked = out ? Math.round(earned * (1 + EXTRACT.bonus + this.build.run.bonus)) : Math.floor(earned * EXTRACT.keep);
     const rec = this.progress.recordRun({ outcome, wave: g.wave, cleared: this.cleared, kills: s.kills, earned, banked });
     this._endAbilities(); this.burning.clear(); this.extraction = null;
+    if (this.kit) this.kit.settle();
     this.riding = out && this.phase === 'riding';
     this.phase = 'idle';
     return { mode: 'operation', outcome, wave: g.wave, cleared: this.cleared, kills: s.kills, headshots: s.headshots, accuracy: s.shots ? Math.round((100 * s.hits) / s.shots) : 0, time: g.playTime, earned, banked, balance: rec.balance, record: rec.record };
@@ -674,7 +678,8 @@ export class Operation {
   update(dt) {
     const g = this.game, p = g.player, cam = g.engine.camera, heli = this.heli, lz = this.lz;
     if (!heli || this.phase === 'idle') return;
-    heli.update(dt);
+    heli.update(dt * g.timeScale);
+    if (this.kit) this.kit.update(dt);
     if (this.phase === 'insertion') {
       if (heli.state !== 'ground') { heli.seatPose(cam.position, cam.quaternion); p.pos.copy(heli.group.position); return; }
       if (this.outT === 0) {

@@ -155,7 +155,7 @@ export class Player {
     this.onGround = true; this.adsT = 0; this.scopeT = 0;
     this.h = H_STAND; this.crouch = 0; this.prone = 0; this.stance = 'stand'; this.proneWanted = false; this.blocked = false; this.fromRoll = false;
     this.rollT = 0; this.rollCd = 0; this.rollBuf = 0; this.rolling = false;
-    this.fallTop = this.pos.y; this.fallPend = 0; this.lastFall = null; this.knockT = 0;
+    this.fallTop = this.pos.y; this.fallPend = 0; this.lastFall = null; this.knockT = 0; this.boost = false; this.vehicle = null;
     this.bandageT = 0; this.bandaging = 0;
     this.recoilPitch = this.recoilYaw = 0; this.swayPitch = this.swayYaw = 0; this.shake = 0; this.fireShake = 0; this.landKick = 0; this.fovKick = 0;
     this.hitKickR = this.hitKickP = 0; this.bobSuppress = 0;
@@ -168,7 +168,7 @@ export class Player {
 
   // fromDir: the direction the blow travels (attacker -> player), or null (fall)
   damage(amount, fromDir, kind = 'hit') {
-    if (!this.alive || !(amount > 0)) return;
+    if (!this.alive || !(amount > 0) || this.vehicle) return;
     if (kind !== 'fall') amount *= 1 - clamp(this.mods.armour, 0, 0.9);
     this.health = Math.max(0, this.health - amount);
     this.lastDamage = this.time;
@@ -308,6 +308,8 @@ export class Player {
     if (!this.enabled) { this.mouse.ax = this.mouse.ay = 0; this._applyCamera(dt); return; }
     this._readInput(dt);
     this._applyLook();
+    // mounted (the Operation tank): the vehicle takes the input and owns the camera
+    if (this.vehicle) { this.vehicle.drive(dt, this); return; }
     const i = this.input;
     const alive = this.alive;
 
@@ -365,7 +367,7 @@ export class Player {
       const sp = (ROLL.dist / (ROLL.time * 0.7)) * (1 - 0.6 * u) * (1 - 0.45 * this.inWater);
       this.vel.x = this.rollDir.x * sp; this.vel.z = this.rollDir.z * sp;
     } else {
-      const accel = this.onGround ? (this.knockT > 0 ? 2 : 14) : 2.2;
+      const accel = this.onGround ? (this.knockT > 0 ? 2 : 14) : this.boost ? 0.12 : 2.2;      // a jump-pack leap keeps its momentum
       const k = 1 - Math.exp(-accel * dt);
       this.vel.x += (_wish.x - this.vel.x) * k;
       this.vel.z += (_wish.z - this.vel.z) * k;
@@ -413,7 +415,7 @@ export class Player {
     }
     this.swimming = swim;
     if (grounded && !this.onGround && !swim) {
-      const drop = this.fallTop - this.pos.y;
+      const drop = this.boost ? 0 : this.fallTop - this.pos.y;          // the jump pack brakes its own landing
       if (preVy < -3.5) {
         this.landKick = Math.min(1, -preVy / 12);
         if (this.onLand) this.onLand(-preVy, drop);
@@ -428,7 +430,7 @@ export class Player {
         }
       }
     }
-    if (grounded || swim) this.fallTop = this.pos.y; else this.fallTop = Math.max(this.fallTop, this.pos.y);
+    if (grounded || swim) { this.fallTop = this.pos.y; this.boost = false; } else this.fallTop = Math.max(this.fallTop, this.pos.y);
     this.onGround = grounded;
 
     // soft world boundary

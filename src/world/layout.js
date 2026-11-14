@@ -226,25 +226,77 @@ export function createLayout() {
   buildings.push(mkHouse(196, -96, -0.3, 10, 7.5, 2, 0.8, { id: 'slopeRuin' }));
   buildings.push(mkHouse(168, -58, 0.2, 7, 6, 1, 0.75, { id: 'slopeShed' }));
 
-  const tryPlace = (b) => {
-    for (const o of buildings) if (obbOverlap(b, o, 0.8)) return false;
+  // the church square stays open: nothing within ~12 m of its centre
+  const SQ = { x: 44, z: -92, r: 12 };
+  const siteOk = (b, grow = 0.8, streetD = 2.2, skip = null) => {
+    for (const o of buildings) if (o !== skip && obbOverlap(b, o, grow)) return false;
+    if (footprintDist(b, SQ.x, SQ.z) < SQ.r) return false;
+    if (footprintDist(b, 15, -55) < 2.6) return false;          // survival start
     // keep streets and the road clear
     const q = {};
     for (const p of [...streets, roadEast]) {
       const cs = obbCorners(b, 0.2);
-      for (const c of [...cs, [b.x, b.z]]) { if (p.query(c[0], c[1], q).d < 2.2) return false; }
+      for (const c of [...cs, [b.x, b.z]]) { if (p.query(c[0], c[1], q).d < streetD) return false; }
       // sample edges
       for (let i = 0; i < 4; i++) {
         const a = cs[i], c2 = cs[(i + 1) % 4];
-        for (let t = 0.25; t < 1; t += 0.25) {
-          if (p.query(a[0] + (c2[0] - a[0]) * t, a[1] + (c2[1] - a[1]) * t, q).d < 2.2) return false;
+        for (let t = 0.125; t < 1; t += 0.125) {
+          if (p.query(a[0] + (c2[0] - a[0]) * t, a[1] + (c2[1] - a[1]) * t, q).d < streetD) return false;
         }
       }
     }
     if (river.query(b.x, b.z, q).d < 26) return false;
+    return true;
+  };
+  const tryPlace = (b) => {
+    if (!siteOk(b)) return false;
     buildings.push(b);
     return true;
   };
+
+  // ---- hand-planned town core (placed before the random fill so the fill packs around it).
+  // Frontage helper: a house on street `si` at arclength s, side +-1, front wall (local -z,
+  // wall 1) facing the street at `front` metres from the centreline. With `gable` the
+  // building turns end-on: local +x points away from the street and the gable (wall 3) faces it.
+  let seedK = 9100;
+  const frontage = (si, s, side, w, d, floors, damage, extra = {}, o = {}) => {
+    const st = streets[si];
+    for (const ds of [0, 1.5, -1.5, 3, -3, 4.5, -4.5]) {
+      const [px, pz, tx, tz] = st.at(s + ds);
+      const nx = -tz * side, nz = tx * side, front = o.front || 2.9;
+      const depth = o.gable ? w : d, rot = o.gable ? Math.atan2(nz, nx) : Math.atan2(tz, tx) + (side < 0 ? Math.PI : 0);
+      const b = { kind: 'house', x: px + nx * (front + depth / 2), z: pz + nz * (front + depth / 2), rot, w, d, floors, floorH: 2.75, damage, seed: seedK++ * 7919, ...extra };
+      if (siteOk(b, 0.4, 2.6)) { buildings.push(b); return b; }
+    }
+    return null;
+  };
+  // terrace of narrow houses sharing party walls (0.06 m apart), along a straight line
+  const terrace = (si, s, side, ws, d, floorsList, dmg, extras) => {
+    const st = streets[si], total = ws.reduce((a, b) => a + b, 0) + 0.06 * (ws.length - 1);
+    for (const ds of [0, 2, -2, 4, -4, 6]) {
+      const [px, pz, tx, tz] = st.at(s + ds + total / 2);
+      const nx = -tz * side, nz = tx * side, rot = Math.atan2(tz, tx) + (side < 0 ? Math.PI : 0);
+      const ux = Math.cos(rot), uz = Math.sin(rot);
+      let off = -total / 2;
+      const row = ws.map((w, i) => {
+        const c = off + w / 2; off += w + 0.06;
+        return { kind: 'house', x: px + nx * (3.0 + d / 2) + ux * c, z: pz + nz * (3.0 + d / 2) + uz * c, rot, w, d, floors: floorsList[i], floorH: 2.75, damage: dmg[i], seed: seedK++ * 7919, terrace: true, ...(extras[i] || {}) };
+      });
+      if (row.every((b) => siteOk(b, 0.4, 2.6))) { buildings.push(...row); return row; }
+    }
+    return [];
+  };
+  // inn with a ground-floor arcade and a timber balcony, on the square's south side
+  frontage(1, 15, 1, 13, 9.5, 3, 0.34, { id: 'inn', enterable: true, special: 'inn' });
+  // town hall / school: gable with the clock towards the north lane, opposite the church
+  frontage(2, 13, -1, 12, 9, 2, 0.4, { id: 'townhall', enterable: true, special: 'townhall', floorH: 3.3 }, { gable: true });
+  // stone barn with a cart doorway in its gable, on the short lane
+  frontage(3, 13, 1, 11, 8.2, 1, 0.5, { id: 'barn', enterable: true, special: 'barn', floorH: 4.2 }, { gable: true });
+  // row of narrow terraced houses on the main street, knocked through at ground level
+  terrace(0, 31, -1, [6.4, 5.4, 7.8, 5.8], 8.6, [3, 3, 2, 3], [0.38, 0.45, 0.5, 0.7],
+    [{ id: 'terraceA', enterable: true, special: 'terraceA' }, { id: 'terraceB', enterable: true, special: 'terraceB' }, { id: 'terraceC', enterable: true, special: 'terraceC' }, { id: 'terraceD' }]);
+  // corner house on the east street: enterable, stairs, overlooking the lane junction
+  for (const s of [33, 40, 26, 47, 20]) if (frontage(1, s, -1, 9.4, 8.2, 2, 0.42, { id: 'corner', enterable: true, special: 'corner' })) break;
   // houses lining the streets
   streets.forEach((st, si) => {
     for (const side of [-1, 1]) {
@@ -252,13 +304,13 @@ export function createLayout() {
       while (s < st.length - 3) {
         const w = rng.range(7.5, 12.5), d = rng.range(6.5, 9.5);
         const [px, pz, tx, tz] = st.at(s + w / 2);
-        const setback = 2.6 + rng.range(0, 1.6) + d / 2;
+        const setback = 2.7 + rng.range(0, 0.9) + d / 2;
         // normal to the street
         const nx = -tz * side, nz = tx * side;
         const b = mkHouse(px + nx * setback, pz + nz * setback, Math.atan2(tz, tx) + rng.range(-0.06, 0.06), w, d,
           rng.chance(0.35) ? 3 : 2, clamp(rng.range(0.25, 0.8) + (si === 0 ? -0.05 : 0.05), 0.2, 0.85));
-        if (rng.chance(0.86)) tryPlace(b);
-        s += w + rng.range(0.6, 5.5);
+        if (rng.chance(0.93) && siteOk(b, 0.35, 2.5)) buildings.push(b);
+        s += w + rng.range(0.3, 1.8);
       }
     }
   });
@@ -268,6 +320,31 @@ export function createLayout() {
     const x = 52 + Math.cos(a) * r * 1.15, z = -92 + Math.sin(a) * r * 0.85;
     const b = mkHouse(x, z, rng.range(-0.5, 0.5) + (rng.chance(0.5) ? Math.PI / 2 : 0), rng.range(6.5, 11), rng.range(6, 8.5), rng.chance(0.25) ? 3 : 2, rng.range(0.3, 0.9));
     tryPlace(b);
+  }
+  // infill: close the street fronts, leaving only a few bomb gaps
+  {
+    const rf = new RNG(WORLD.seed + 919);
+    let added = 0;
+    const order = [[0, 1], [0, -1], [1, 1], [1, -1], [2, 1], [2, -1], [3, 1], [3, -1]];
+    for (const [si, side] of order) {
+      const st = streets[si];
+      let s = 3;
+      while (s < st.length - 5 && added < 16) {
+        const w0 = rf.range(6.2, 9.5), d = rf.range(7, 9.2), floors = rf.chance(0.4) ? 3 : 2, damage = rf.range(0.3, 0.85), seed = Math.floor(rf.f() * 1e9), jr = rf.range(-0.04, 0.04);
+        let ok = null;
+        for (const w of [w0, 6.0, 5.0]) {
+          const [px, pz, tx, tz] = st.at(s + w / 2);
+          const nx = -tz * side, nz = tx * side;
+          for (const dd of [d, 6.4]) {
+            const setback = 2.8 + dd / 2;
+            const b = { kind: 'house', x: px + nx * setback, z: pz + nz * setback, rot: Math.atan2(tz, tx) + (side < 0 ? Math.PI : 0) + jr, w, d: dd, floors, floorH: 2.75, damage, seed, infill: true };
+            if (siteOk(b, 0.3, 2.6)) { ok = b; break; }
+          }
+          if (ok) break;
+        }
+        if (ok) { buildings.push(ok); added++; s += ok.w + rf.range(0.4, 1.2) + (rf.chance(0.12) ? rf.range(5, 8) : 0); } else s += 1;
+      }
+    }
   }
   buildings.forEach((b, i) => { if (!b.id) b.id = 'house' + i; });
 
@@ -360,6 +437,71 @@ export function createLayout() {
   addCraters(22, 50, -90, 130, 95, 1.3, 4.2);    // in and around the village
   addCraters(14, 220, -90, 70, 70, 1.5, 4.0);    // slope below the watchtower
   addCraters(8, -170, 30, 60, 80, 1.6, 4.5);     // west bank
+
+  // ------------------------------------------------------------ street cover & furniture
+  // Oriented footprints { type, x, z, rot, w (along local x), d } in the same convention as
+  // buildings. Placed along the street edges (a >= 3.8 m lane stays open), in bomb gaps and
+  // around the square; never on a building, crater, the square's centre or the start point.
+  const cover = [];
+  {
+    const rc = new RNG(WORLD.seed + 4321), q = {};
+    const coverOk = (c, sqR = 12.5, minD = 1.9) => {
+      const pts = [...obbCorners(c, 0), [c.x, c.z]];
+      for (const b of buildings) { if (Math.abs(b.x - c.x) > 30 || Math.abs(b.z - c.z) > 30) continue; if (obbOverlap(c, b, 0.04)) return false; }
+      for (const o of cover) if (obbOverlap(c, o, 0.3)) return false;
+      for (const p of pts) {
+        if (Math.hypot(p[0] - SQ.x, p[1] - SQ.z) < sqR) return false;
+        if (Math.hypot(p[0] - 15, p[1] + 55) < 3.5) return false;
+        for (const st of streets) if (st.query(p[0], p[1], q).d < minD) return false;
+        if (roadEast.query(p[0], p[1], q).d < 3.6) return false;
+        for (const cr of craters) if (Math.hypot(p[0] - cr.x, p[1] - cr.z) < cr.r * 1.3 + 0.3) return false;
+        if (river.query(p[0], p[1], q).d < 24) return false;
+      }
+      if (Math.hypot(c.x - tank.x, c.z - tank.z) < 9) return false;
+      if (Math.hypot(c.x - church.towerX, c.z - church.towerZ) < 6) return false;
+      return true;
+    };
+    const SIZE = { bags: [3.2, 0.72], barrels: [1.5, 1.3], crates: [2.0, 1.0], cart: [3.0, 1.45], barricade: [3.4, 1.2], truck: [5.9, 2.1], lamp: [0.45, 0.45], fence: [5.5, 0.3], stall: [2.6, 1.7] };
+    const along = (type, si, s, side, offs, extra = {}) => {
+      const st = streets[si], [w, d] = SIZE[type];
+      for (const ds of [0, 1.2, -1.2, 2.4, -2.4]) for (const o of offs) {
+        if (s + ds < 2 || s + ds > st.length - 2) continue;
+        const [px, pz, tx, tz] = st.at(s + ds), off = o + d / 2;
+        const c = { type, x: px - tz * side * off, z: pz + tx * side * off, rot: Math.atan2(tz, tx) + (side < 0 ? Math.PI : 0) + (extra.jr ? rc.range(-extra.jr, extra.jr) : 0), w, d, seed: Math.floor(rc.f() * 1e6) };
+        if (coverOk(c, extra.sqR, extra.minD)) { cover.push(c); return c; }
+      }
+      return null;
+    };
+    const cycles = [
+      ['bags', 'barrels', 'barricade', 'crates', 'cart', 'bags', 'crates'],
+      ['truck', 'bags', 'crates', 'barrels', 'cart', 'barricade', 'bags'],
+      ['cart', 'barrels', 'bags', 'crates', 'barricade'],
+      ['barricade', 'crates', 'truck', 'barrels', 'bags'],
+    ];
+    let trucks = 0;
+    streets.forEach((st, si) => {
+      let s = 4 + si * 1.7, k = 0, side = si % 2 ? 1 : -1;
+      while (s < st.length - 3) {
+        let type = cycles[si][k % cycles[si].length];
+        if (type === 'truck' && trucks >= 2) type = 'crates';
+        const c = along(type, si, s, side, type === 'truck' ? [2.0, 2.4] : [1.95, 2.2, 2.6, 3.2], { jr: type === 'bags' || type === 'truck' ? 0.05 : 0.25 });
+        if (c) { if (type === 'truck') trucks++; k++; side = -side; s += rc.range(6, 10); } else s += 2;
+      }
+      // lamp posts on the street edge, roughly every 22 m, alternating sides
+      for (let s2 = 9, sd = 1; s2 < st.length - 3; s2 += 30, sd = -sd) along('lamp', si, s2, sd, [2.0, 2.3], { minD: 1.9 });
+      // timber garden fences on the frontage line where a house is missing
+      for (let s2 = 6; s2 < st.length - 6; s2 += 2) for (const sd of [-1, 1]) if (cover.filter((c) => c.type === 'fence').length < 3 * (si + 1) && rc.chance(0.5) && along('fence', si, s2, sd, [3.1], { minD: 2.6, jr: 0.03 })) s2 += 6;
+    });
+    // around the church square: a dry fountain off to the north-west, a few market stall frames, lamps
+    for (const [x, z] of [[47.5, -103.8], [46.5, -105], [33, -101]]) { const c = { type: 'fountain', x, z, rot: 0.3, w: 3.1, d: 3.1, seed: 7 }; if (coverOk(c, 11)) { cover.push(c); break; } }
+    for (let a = 0; a < 6.283; a += 0.26) {
+      if (cover.filter((c) => c.type === 'stall').length >= 4) break;
+      const r = 13.2, x = SQ.x + Math.cos(a) * r, z = SQ.z + Math.sin(a) * r;
+      const c = { type: 'stall', x, z, rot: a + Math.PI / 2, w: 2.6, d: 1.7, seed: Math.floor(rc.f() * 1e6) };
+      if (coverOk(c, 11.2, 2.6)) cover.push(c);
+    }
+    for (const a of [0.9, 2.6, 4.2, 5.6]) { const x = SQ.x + Math.cos(a) * 12.2, z = SQ.z + Math.sin(a) * 12.2, c = { type: 'lamp', x, z, rot: a, w: 0.45, d: 0.45, seed: 1 }; if (coverOk(c, 11, 2.2)) cover.push(c); }
+  }
 
   // ------------------------------------------------------------ final height
   // Returns terrain height; if `m` is given, also fills surface masks.
@@ -474,7 +616,7 @@ export function createLayout() {
 
   return {
     playCenter: WORLD.playCenter, playRadius: WORLD.playRadius,
-    noise, noiseB, river, sBridge, bridge, roads, streets, streetRoads, allRoads, tank, tower, church, buildings, craters,
+    noise, noiseB, river, sBridge, bridge, roads, streets, streetRoads, allRoads, tank, tower, church, buildings, craters, cover,
     waterLevel, riverHalfWidth, baseHeight, designHeight, obbCorners, footprintDist,
   };
 }

@@ -32,7 +32,7 @@ const { acquireGpuLock } = await import('./lib/gpulock.mjs');
 const release = await acquireGpuLock();
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const errors = [];
-const shots = { game: [], weapon: [], new: [], ui: [], op: [] };
+const shots = { game: [], weapon: [], new: [], ui: [], op: [], ab: [] };
 
 const browser = await puppeteer.launch({
   executablePath: 'C:/Program Files/Google/Chrome/Application/chrome.exe',
@@ -1392,6 +1392,222 @@ try {
     await page.evaluate(() => { __vm.progress.reset(); });
     await page.close();
   }
+
+  // ---- Operation abilities: each one used in a stepped run, its effect measured, one picture each
+  if (only.includes('abilities')) {
+    const page = await open(`q=${q}`, 'ab');
+    await page.waitForFunction('window.__vm && window.__vm.ready && window.__vm.game.state === "menu"', { timeout: 240000, polling: 250 });
+    await page.evaluate(LIB);
+    await page.evaluate(() => { Object.defineProperty(document, 'pointerLockElement', { configurable: true, get: () => document.getElementById('view') }); __vm.stop(); });
+    const shotAb = async (name) => {
+      await page.evaluate(async () => { const vm = window.__vm; window.__ptState = vm.game.state; vm.game.state = 'paused'; vm.start(); for (let i = 0; i < 6; i++) await new Promise((r) => requestAnimationFrame(r)); });
+      const file = path.join(out, `ab_${name}.jpg`); await page.screenshot({ path: file, type: 'jpeg', quality: 88 }); shots.ab.push(file);
+      await page.evaluate(() => { const vm = window.__vm; vm.stop(); vm.game.state = window.__ptState; });
+    };
+    await section(page, 'ab setup', () => {
+      const vm = __vm, g = vm.game, op = g.operation, p = g.player, P = vm.progress, { r2 } = pt;
+      op.nextLz = 'meadow'; g.start('operation');
+      const t = pt.sim(25, 1 / 30, () => op.phase !== 'run');
+      pt.hold(); g.zombies.clear(); p.script = () => {};
+      window.__ab = (key, level) => {
+        const item = P.item('ability.' + key), a = item.ability, i = level - 1, params = {};
+        for (const k in a.params) params[k] = Array.isArray(a.params[k]) ? a.params[k][i] : a.params[k];
+        const ab = { id: key, slot: 0, key: 'G', name: item.name, short: a.short, level, cooldown: a.cooldown[i], duration: a.duration[i], params, cd: 0, active: 0, ready: true, uses: 0 };
+        op._endAbilities(); op.abilities = [ab];
+        return ab;
+      };
+      return { phase: op.phase, flyIn: r2(t, 1), kit: !!op.kit, pos: pt.arr(p.pos) };
+    });
+    await section(page, 'ab tank drop', () => {
+      const vm = __vm, g = vm.game, op = g.operation, p = g.player, kit = op.kit, { r2 } = pt;
+      const ab = __ab('tank', 1); p.pitch = 0.04;
+      const used = op.useAbility(0), t = kit.tanks[kit.tanks.length - 1];
+      if (!used || !t) return { used, refused: true, pos: pt.arr(p.pos) };
+      window.__tank = t; window.__tankAb = ab;
+      let tSlam = null, lastV = 0, prevY = t.pos.y;
+      pt.sim(3.5, 1 / 60, (tt, dt) => { if (t.state === 'drop' && t.root.visible) lastV = (prevY - t.pos.y) / dt; prevY = t.pos.y; if (tSlam === null && t.state !== 'drop') { tSlam = tt; return false; } });
+      pt.sim(0.15);
+      return { used, toSpot: r2(Math.hypot(t.pos.x - p.pos.x, t.pos.z - p.pos.z), 1), slamAt: r2(tSlam), touchdownSpeed: r2(lastV, 1), state: t.state, driveTimeKept: r2(ab.active, 1), playerHealth: p.health };
+    });
+    await shotAb('tank_drop');
+    await section(page, 'ab tank drive', () => {
+      const vm = __vm, g = vm.game, p = g.player, Z = g.zombies, t = window.__tank, { r2 } = pt;
+      if (!t) return 'no tank';
+      pt.sim(1.5, 1 / 60, () => t.state !== 'drive');
+      const o = { state: t.state, mounted: p.vehicle === t, weaponHidden: !g.weapon.visible, eyeAboveGround: r2(g.engine.camera.position.y - vm.terrain.heightAt(t.pos.x, t.pos.z)) };
+      const fx = t.fwdX, fz = t.fwdZ, rx = Math.cos(t.yaw), rz = -Math.sin(t.yaw);
+      Z.passive = true;
+      const at = (d, l, type = 'walker') => { const z = Z.spawn(t.pos.x + fx * d + rx * l, t.pos.z + fz * d + rz * l, { type }); if (z) pt.still(z); return z; };
+      const inPath = [at(11, 0), at(15, -1.1), at(19, 1.2), at(23, 0.4, 'runner')].filter(Boolean), aside = at(17, 4.2);
+      const x0 = t.pos.x, z0 = t.pos.z;
+      let vmax = 0, pmin = 0, pmax = 0;
+      p.yaw = t.yaw; p.pitch = -0.05;
+      p.script = (dt, pl) => { pl.input.fwd = 1; };
+      pt.sim(4.5, 1 / 60, () => { vmax = Math.max(vmax, Math.abs(t.v)); pmin = Math.min(pmin, t.pitch); pmax = Math.max(pmax, t.pitch); });
+      o.drive = { dist: r2(Math.hypot(t.pos.x - x0, t.pos.z - z0), 1), vmax: r2(vmax, 1), crushed: `${inPath.filter((z) => !z.alive).length}/${inPath.length}`, asideAlive: aside ? aside.alive : null, pitchDeg: [r2(pmin * 57.3, 1), r2(pmax * 57.3, 1)], treads: op_t(), invulnerable: p.health === p.maxHealth };
+      function op_t() { return g.operation.kit.treads.count; }
+      p.script = (dt, pl) => { pl.input.fwd = t.v > 0.3 ? -1 : 0; };
+      const tb = pt.sim(4, 1 / 60, () => Math.abs(t.v) > 0.3);
+      const y0 = t.yaw, pp = t.pos.clone();
+      p.script = (dt, pl) => { pl.input.fwd = 0; pl.input.strafe = 1; };
+      pt.sim(2.5);
+      o.brake = r2(tb, 2);
+      o.pivot = { turnedDeg: r2((y0 - t.yaw) * 57.3, 0), moved: r2(Math.hypot(t.pos.x - pp.x, t.pos.z - pp.z), 2), rateDegS: r2(-t.w * 57.3, 0) };
+      p.script = (dt, pl) => { pl.input.strafe = 0; };
+      pt.sim(1.2);
+      // the main gun at an infected 30 m ahead
+      const z = Z.spawn(t.pos.x + t.fwdX * 30, t.pos.z + t.fwdZ * 30, { type: 'brute' });
+      if (z) pt.still(z);
+      p.yaw = t.yaw; const mY = t.pos.y + 1.95; p.pitch = Math.atan2(z.pos.y + 0.4 - mY, 25.5);
+      pt.sim(1.6);
+      const k0 = g.operation.kit.stats.blastKills, sh0 = t.shots, pv0 = t.pv;
+      p.script = (dt, pl) => { pl.input.fire = true; };
+      pt.sim(1 / 60); p.script = () => {};
+      o.gun = { fired: t.shots - sh0, recoil: r2(t.recoil, 2), hullKick: r2(t.pv - pv0, 2), reload: r2(t.reload, 1), target: z ? z.alive : null, blast: g.operation.kit.stats.lastBlast };
+      pt.sim(0.12);
+      return o;
+    });
+    await shotAb('tank_gun');
+    await section(page, 'ab tank end', () => {
+      const vm = __vm, g = vm.game, p = g.player, T = vm.THREE, col = g.collision, t = window.__tank, ab = window.__tankAb, kit = g.operation.kit, { r2 } = pt;
+      if (!t) return 'no tank';
+      const o = {};
+      // a wall across the way: the hull stops at it
+      const wx = t.pos.x + t.fwdX * 12, wz = t.pos.z + t.fwdZ * 12;
+      const wall = new T.Mesh(new T.BoxGeometry(12, 3, 0.6), new T.MeshStandardMaterial({ color: 0x8c8983 }));
+      wall.position.set(wx, vm.terrain.heightAt(wx, wz) + 1.2, wz); wall.rotation.y = t.yaw; wall.userData.surface = 'stone'; wall.updateMatrixWorld(true);
+      vm.engine.scene.add(wall); col.build([...vm.world.colliders, wall]);
+      p.script = (dt, pl) => { pl.input.fwd = 1; };
+      pt.sim(4);
+      o.wall = { frontGap: r2((wx - t.pos.x) * t.fwdX + (wz - t.pos.z) * t.fwdZ - 0.3 - 3.4, 2), speed: r2(t.v, 2) };
+      vm.engine.scene.remove(wall); col.build(vm.world.colliders);
+      p.script = () => {};
+      const tEnd = pt.sim(16, 1 / 30, () => p.vehicle === t);
+      o.dismount = { after: r2(tEnd, 1), state: t.state, gap: r2(Math.hypot(p.pos.x - t.pos.x, p.pos.z - t.pos.z), 2), solid: !!t.box, weapon: g.weapon.visible, onGround: p.onGround, abActive: ab.active };
+      const pv = p.pos.clone();
+      p.yaw = t.yaw + Math.PI * 0.5;
+      p.script = (dt, pl) => { pl.input.fwd = 1; };
+      pt.sim(3); p.script = () => {};
+      o.walkedAway = r2(Math.hypot(p.pos.x - pv.x, p.pos.z - pv.z), 1);
+      let leftAt = null;
+      const tg = pt.sim(60, 1 / 30, (tt) => { if (leftAt === null && t.state === 'leave') leftAt = tt; return kit.tanks.includes(t); });
+      o.leave = { startedAfter: r2(leftAt, 1), removedAfter: r2(tg, 1), tanks: kit.tanks.length, engineLoop: g.audio.want.has('tank_engine'), lastDist: r2(Math.hypot(p.pos.x - t.pos.x, p.pos.z - t.pos.z), 0) };
+      return o;
+    });
+    await section(page, 'ab mortar', () => {
+      const vm = __vm, g = vm.game, op = g.operation, p = g.player, Z = g.zombies, kit = op.kit, { r2 } = pt;
+      Z.clear(); Z.passive = true; p.health = p.maxHealth;
+      const fx = -Math.sin(p.yaw), fz = -Math.cos(p.yaw), mx = p.pos.x + fx * 30, mz = p.pos.z + fz * 30;
+      const tgt = new vm.THREE.Vector3(mx, vm.terrain.heightAt(mx, mz), mz);
+      p.script = (dt, pl) => pl.lookAt(tgt, 999, dt); pt.sim(0.3);
+      __ab('mortar', 3);
+      const zs = [];
+      for (let i = 0; i < 11; i++) { const a = i * 2.4, r = i < 8 ? 0.8 + i * 0.75 : 17 + i; const z = Z.spawn(mx + Math.cos(a) * r, mz + Math.sin(a) * r, { type: 'walker' }); if (z) { pt.still(z); zs.push(z); } }
+      const used = op.useAbility(0), mark = kit.marks[kit.marks.length - 1];
+      window.__mortar = { zs, impacts: kit.shells.map((s) => s.pos.clone()), h0: p.health, k0: kit.stats.blastKills, R: 5.5 };
+      pt.sim(3.25);
+      return { used, markErr: mark ? r2(mark.pos.distanceTo(tgt), 2) : null, shells: window.__mortar.impacts.length, landedSoFar: window.__mortar.impacts.length - kit.shells.length };
+    });
+    await shotAb('mortar');
+    await section(page, 'ab mortar end', () => {
+      const vm = __vm, g = vm.game, p = g.player, kit = g.operation.kit, m = window.__mortar, { r2 } = pt;
+      pt.sim(5);
+      const near = (z) => Math.min(...m.impacts.map((q) => Math.hypot(q.x - z.pos.x, q.z - z.pos.z)));
+      const inside = m.zs.filter((z) => near(z) < m.R - 0.5), outside = m.zs.filter((z) => near(z) > m.R + 0.3);
+      const o = { insideRadius: `${inside.filter((z) => !z.alive || z.health < z.maxHealth).length}/${inside.length} hit, ${inside.filter((z) => !z.alive).length} dead`, outsideUntouched: `${outside.filter((z) => z.alive && z.health >= z.maxHealth).length}/${outside.length}`, kills: kit.stats.blastKills - m.k0, playerAt30m: r2(m.h0 - p.health, 1), scorches: kit.scorches.count, particles: g.fx.n };
+      // a shell at 3 m from the player: it hurts, a little
+      const h1 = p.health; kit.explode(new vm.THREE.Vector3(p.pos.x + 3, vm.terrain.heightAt(p.pos.x + 3, p.pos.z), p.pos.z), { radius: 5.5, damage: 420, player: 0.08 });
+      o.playerAt3m = r2(h1 - p.health, 1); pt.sim(2); p.health = p.maxHealth;
+      return o;
+    });
+    await section(page, 'ab sentry', () => {
+      const vm = __vm, g = vm.game, op = g.operation, p = g.player, Z = g.zombies, kit = op.kit, { r2 } = pt;
+      Z.clear(); Z.passive = true; p.script = () => {}; p.pitch = -0.1;
+      __ab('sentry', 1);
+      const used = op.useAbility(0), s = kit.sentries[kit.sentries.length - 1];
+      window.__sentry = s;
+      const fx = -Math.sin(p.yaw), fz = -Math.cos(p.yaw), rx = Math.cos(p.yaw), rz = -Math.sin(p.yaw);
+      window.__sz = [[12, -5], [16, 3], [20, -1], [25, 6]].map(([d, l]) => { const z = Z.spawn(p.pos.x + fx * d + rx * l, p.pos.z + fz * d + rz * l, { type: 'walker' }); if (z) pt.still(z); return z; }).filter(Boolean);
+      pt.sim(1.3);
+      const st = s.state;
+      const t = pt.sim(4, 1 / 60, () => s.shots < 4);
+      return { used, stateAfter13: st, firstShotsAfter: r2(t + 1.3, 2), gap: r2(Math.hypot(s.pos.x - p.pos.x, s.pos.z - p.pos.z), 2) };
+    });
+    await shotAb('sentry');
+    await section(page, 'ab sentry result', () => {
+      const vm = __vm, g = vm.game, op = g.operation, p = g.player, Z = g.zombies, T = vm.THREE, col = g.collision, kit = op.kit, { r2 } = pt;
+      let s = window.__sentry;
+      pt.sim(10);
+      const o = { kills: s.kills, shots: s.shots, dead: `${window.__sz.filter((z) => !z.alive).length}/${window.__sz.length}` };
+      op._endAbilities(); pt.sim(1.2);
+      o.afterEnd = s.state;
+      // the wall: the only infected stands behind it
+      Z.clear(); p.yaw += 1.2; pt.sim(0.1);
+      __ab('sentry', 1); op.useAbility(0); s = kit.sentries[kit.sentries.length - 1];
+      const fx = -Math.sin(p.yaw), fz = -Math.cos(p.yaw), wx = s.pos.x + fx * 5, wz = s.pos.z + fz * 5;
+      const wall = new T.Mesh(new T.BoxGeometry(7, 3.4, 0.5), new T.MeshStandardMaterial({ color: 0x8c8983 }));
+      wall.position.set(wx, vm.terrain.heightAt(wx, wz) + 1.5, wz); wall.rotation.y = p.yaw; wall.userData.surface = 'stone'; wall.updateMatrixWorld(true);
+      vm.engine.scene.add(wall); col.build([...vm.world.colliders, wall]);
+      const z = Z.spawn(s.pos.x + fx * 10, s.pos.z + fz * 10, { type: 'walker' }); pt.still(z);
+      pt.sim(5);
+      o.wall = { shots: s.shots, targetHealth: z.health, target: s.target ? 'locked' : 'none' };
+      vm.engine.scene.remove(wall); col.build(vm.world.colliders);
+      pt.sim(4);
+      o.wallRemoved = { shots: s.shots, targetHealth: r2(z.health, 0), alive: z.alive };
+      op._endAbilities(); pt.sim(1.2);
+      return o;
+    });
+    await section(page, 'ab adrenaline', () => {
+      const vm = __vm, g = vm.game, op = g.operation, p = g.player, Z = g.zombies, kit = op.kit, post = vm.engine.post.settings, { r2 } = pt;
+      Z.clear(); Z.passive = false; pt.god = true;
+      const fx = -Math.sin(p.yaw), fz = -Math.cos(p.yaw);
+      for (let i = 0; i < 3; i++) Z.spawn(p.pos.x + fx * (22 + i * 3) + i * 2 - 2, p.pos.z + fz * (22 + i * 3), { type: 'runner', aware: true });
+      p.pitch = 0;
+      const sat0 = post.saturation;
+      __ab('adrenaline', 1);
+      const used = op.useAbility(0);
+      pt.sim(0.8);
+      const t0 = Z.time, x0 = p.pos.clone();
+      p.script = (dt, pl) => { pl.input.fwd = 1; };
+      pt.sim(1); p.script = () => {};
+      return { used, timeScale: r2(g.timeScale, 3), worldSecondsPerSecond: r2(Z.time - t0, 2), playerMetresPerSecond: r2(Math.hypot(p.pos.x - x0.x, p.pos.z - x0.z), 2), saturation: [r2(sat0), r2(post.saturation)], vignette: r2(post.vignette), heartbeat: g.audio.want.has('heartbeat'), pulse: r2(g.pulse) };
+    });
+    await shotAb('adrenaline');
+    await section(page, 'ab adrenaline end', () => {
+      const vm = __vm, g = vm.game, kit = g.operation.kit, post = vm.engine.post.settings, { r2 } = pt;
+      pt.sim(6); pt.god = false; g.zombies.clear();
+      return { timeScale: g.timeScale, restored: kit.post0 === null, saturation: r2(post.saturation), vignette: r2(post.vignette), pulse: g.pulse };
+    });
+    await section(page, 'ab jump', () => {
+      const vm = __vm, g = vm.game, op = g.operation, p = g.player, kit = op.kit, { r2 } = pt;
+      p.health = p.maxHealth; p.pitch = 0;
+      __ab('jump', 3);
+      p.script = (dt, pl) => { pl.input.fwd = 1; }; pt.sim(0.5);
+      const used = op.useAbility(0);
+      p.script = (dt, pl) => { pl.input.fwd = 1; pl.pitch = -0.8; };
+      pt.sim(0.2);
+      return { used, vy: r2(p.vel.y, 1), vh: r2(Math.hypot(p.vel.x, p.vel.z), 1), above: r2(pt.above()) };
+    });
+    await shotAb('jump');
+    await section(page, 'ab jump land', () => {
+      const vm = __vm, g = vm.game, p = g.player, kit = g.operation.kit, { r2 } = pt;
+      pt.sim(3, 1 / 60, () => !kit.stats.jump.landed);
+      p.script = () => {};
+      const j = kit.stats.jump;
+      return { apex: r2(j.apex - j.y0), dist: r2(j.dist, 1), health: [j.health, j.healthAfter], wouldHurtWithoutPack: r2(p.fallDamage(j.apex - j.y0), 1), boostCleared: !p.boost };
+    });
+    await section(page, 'ab hud + quit', () => {
+      const vm = __vm, g = vm.game, p = g.player;
+      p.mods.maxHealth = 125; p.health = 110; g.ui.update(g, 0.016);
+      const segs = document.querySelectorAll('.hud .hp b').length, fill = [...document.querySelectorAll('.hud .hp i')].map((i) => i.style.transform);
+      p.mods.maxHealth = 100; p.health = 100; g.ui.update(g, 0.016);
+      const back = document.querySelectorAll('.hud .hp b').length;
+      g.pause(); g.toMenu();
+      return { segmentsAt125: segs, fill, segmentsAt100: back, stateAfterQuit: g.state, timeScale: g.timeScale, tanks: g.operation.kit.tanks.length };
+    });
+    await page.evaluate(() => { __vm.progress.reset(); });
+    await page.close();
+  }
 } catch (e) {
   console.log('PLAYTEST ABORTED:', String((e && e.stack) || e).slice(0, 1500));
 } finally {
@@ -1403,5 +1619,5 @@ console.log(uniq.length ? `--- console (${uniq.length}):\n` + uniq.slice(0, 20).
 for (const [name, files] of Object.entries(shots)) {
   if (!files.length) continue;
   const file = path.join(out, `sheet_${name}.jpg`);
-  try { execFileSync(process.execPath, ['tools/sheet.mjs', file, '640', name === 'op' ? '3' : '2', ...files], { stdio: 'pipe' }); console.log('sheet:', file); } catch (e) { console.log('sheet failed:', String(e.message).slice(0, 300)); }
+  try { execFileSync(process.execPath, ['tools/sheet.mjs', file, '640', name === 'op' || name === 'ab' ? '3' : '2', ...files], { stdio: 'pipe' }); console.log('sheet:', file); } catch (e) { console.log('sheet failed:', String(e.message).slice(0, 300)); }
 }

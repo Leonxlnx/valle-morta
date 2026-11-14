@@ -9,6 +9,7 @@ import { buildHouse } from './bld/house.js';
 import { buildChurch } from './bld/church.js';
 import { buildBridge } from './bld/bridge.js';
 import { buildStoneWalls, buildDebris } from './bld/extras.js';
+import { buildTown, specialCfg } from './bld/town.js';
 
 // hand-tuned hero buildings
 function heroCfg(b, B) {
@@ -52,7 +53,7 @@ function heroCfg(b, B) {
       ramp: { xb: 4.35, xt: -1.5, z0: 1.25, z1: 3.42, h: 2.75 },
     };
   }
-  return {};
+  return b.special || b.terrace ? specialCfg(b) : {};
 }
 
 export async function build(ctx) {
@@ -81,6 +82,14 @@ export async function build(ctx) {
   B.mb = chunk('walls'); B.cb = new CB();
   try { buildStoneWalls(B); } catch (e) { console.error('[buildings] stone walls failed:', e); }
   pushCol('stonewalls');
+  // street furniture in the structure material, merged into the nearest chunk
+  const cbW = new CB(), cbS = new CB();
+  let town = null;
+  try { town = buildTown(B, (c) => chunk(c.x < 30 ? 'v0' : c.x < 80 ? 'v1' : 'v2'), cbW, cbS); } catch (e) { console.error('[buildings] town furniture failed:', e); }
+  for (const [cb, surf] of [[cbW, 'wood'], [cbS, 'stone']]) {
+    const m = cb.mesh('town-' + surf);
+    if (m) { m.userData.surface = surf; ctx.colliders.push(m); colTris += cb.tris; colMeshes++; }
+  }
 
   const group = new THREE.Group();
   group.name = 'buildings';
@@ -92,7 +101,7 @@ export async function build(ctx) {
   }
   for (const im of buildDebris(B, material)) { group.add(im); tris += im.count * im.geometry.index.count / 3; }
   ctx.scene.add(group);
-  const stats = { tris: Math.round(tris), meshes: group.children.length, stones: B.stones.length, tiles: B.tiles.length, verts, cat: B.stat, colTris, colMeshes, ms: Math.round(performance.now() - t0), missing: material.userData.missing };
+  const stats = { town, tris: Math.round(tris), meshes: group.children.length, stones: B.stones.length, tiles: B.tiles.length, verts, cat: B.stat, colTris, colMeshes, ms: Math.round(performance.now() - t0), missing: material.userData.missing };
   if (typeof location !== "undefined" && new URLSearchParams(location.search).has("bldstats")) console.error(`[buildings] ${JSON.stringify(stats)} ${parts.join(' ')}`);
   return { group, material, stats };
 }

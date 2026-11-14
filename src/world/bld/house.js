@@ -518,8 +518,48 @@ function buildRamp(B, r, W, rng) {
     B.cb.quad([xs, -sl * Math.abs(xs - r.xb), r.z0], [r.xt, r.h, r.z0], [r.xt, r.h, r.z1], [xs, -sl * Math.abs(xs - r.xb), r.z1]);
     const xe = r.xt + (r.xt < r.xb ? -0.45 : 0.45);
     B.cb.quad([r.xt, r.h, r.z0], [xe, r.h, r.z0], [xe, r.h, r.z1], [r.xt, r.h, r.z1]);
+    const sgn = Math.sign(r.z0 - r.z1);
+    for (let i = 0; i < 4; i++) {
+      const k0 = i / 4, k1 = (i + 1) / 4, xa = r.xb + (r.xt - r.xb) * k0, xb2 = r.xb + (r.xt - r.xb) * k1, ya = r.h * k0, yb = r.h * k1;
+      B.cb.quad([xa, ya, r.z0], [xb2, yb, r.z0], [xb2, -0.15, r.z0 + sgn * (0.35 + yb * 0.95)], [xa, -0.15, r.z0 + sgn * (0.35 + ya * 0.95)]);
+    }
   }
   void T;
+}
+
+// straight timber staircase in local space: runs along z from z0 (floor) to z1 (landing at
+// height h), centred on x, width w; closed spandrel on the open side, handrail.
+export function buildStair(B, st, burnt) {
+  const mb = B.mb, { x, z0, z1, h } = st, w = st.w || 0.95, sg = Math.sign(z1 - z0), run = Math.abs(z1 - z0);
+  const n = Math.max(8, Math.round(h / 0.185)), rise = h / n, tr = run / n, x0 = x - w / 2, x1 = x + w / 2;
+  const wood = burnt ? LY.wood_charred : LY.wood_planks, tint = burnt ? CHAR_T : [1.0, 0.94, 0.86];
+  for (let i = 0; i < n; i++) {
+    const za = z0 + sg * i * tr, zb = z0 + sg * (i + 1) * tr, y = (i + 1) * rise;
+    mb.set(wood, tint);
+    mb.abox(x0, y - 0.045, Math.min(za, zb) - 0.03, x1, y, Math.max(za, zb), { axis: 'x', tile: 2, uo: i * 0.31, skip: 2 });
+    mb.set(wood, [tint[0] * 0.85, tint[1] * 0.85, tint[2] * 0.85]);
+    mb.abox(x0 + 0.02, y - rise, za - 0.015, x1 - 0.02, y - 0.045, za + 0.015, { axis: 'x', tile: 2, uo: i * 0.17, skip: 3 });
+  }
+  // stringers along both sides, spandrel boards on the open side, newel and rail
+  mb.set(burnt ? LY.wood_charred : LY.wood_beam, burnt ? CHAR_T : WOOD_T);
+  for (const sx of [x0 - 0.035, x1 + 0.035]) mb.beam([sx, 0.06, z0 - sg * 0.12], [sx, h - 0.06, z1 + sg * 0.02], 0.07, 0.3, { uo: sx });
+  const xo = st.open > 0 ? x1 + 0.06 : x0 - 0.06;
+  mb.set(wood, [tint[0] * 0.8, tint[1] * 0.8, tint[2] * 0.8]);
+  for (let k = 0; k < 6; k++) {
+    const za = z0 + sg * run * k / 6, zb = z0 + sg * run * (k + 1) / 6, ya = h * k / 6, yb = h * (k + 1) / 6;
+    mb.quad([xo, -0.1, za], [xo, -0.1, zb], [xo, yb - 0.1, zb], [xo, ya - 0.1, za], [Math.sign(xo - x), 0, 0], [za / 2, 0], [zb / 2, 0], [zb / 2, yb / 2], [za / 2, ya / 2], 0.55, 0, 0, true);
+  }
+  mb.set(burnt ? LY.wood_charred : LY.wood_beam, burnt ? CHAR_T : WOOD_T);
+  mb.abox(xo - 0.05, -0.05, z0 - 0.05, xo + 0.05, 1.05, z0 + 0.05, { axis: 'y', skip: 2 });
+  mb.beam([xo, 1.0, z0], [xo, h + 0.95, z1], 0.06, 0.07);
+  for (let k = 1; k < 5; k++) { const zz = z0 + sg * run * k / 5, yy = h * k / 5; mb.beam([xo, yy, zz], [xo, yy + 0.92, zz], 0.035, 0.035); }
+  if (B.cb) {
+    // ramp through the nosings, flat run onto the landing, spandrel wall and rail
+    const zs = z0 - sg * tr;
+    B.cb.quad([x0, -0.05, zs], [x1, -0.05, zs], [x1, h, z1 - sg * tr], [x0, h, z1 - sg * tr]);
+    B.cb.quad([x0, h, z1 - sg * tr], [x1, h, z1 - sg * tr], [x1, h, z1 + sg * 0.3], [x0, h, z1 + sg * 0.3]);
+    B.cb.quad([xo, -0.1, z0], [xo, -0.1, z1], [xo, h + 1.0, z1], [xo, 1.0, z0]);
+  }
 }
 
 // ---------------------------------------------------------------- house
@@ -558,6 +598,7 @@ export function buildHouse(B, b, cfg = {}) {
   const mark = (k) => { B.stat[k] = (B.stat[k] || 0) + mb.tris - tm; tm = mb.tris; };
   // --- walls
   const tO = PLASTER[rng.int(0, PLASTER.length - 1)].map((v) => v * rng.range(0.94, 1.04));
+  if (cfg.tint) for (let k = 0; k < 3; k++) tO[k] = cfg.tint[k];
   const tI = [tO[0] * 0.9, tO[1] * 0.9, tO[2] * 0.9];
   // which wall faces the nearest street -> door
   let best = 1e9, dxs = 0, dzs = 1;
@@ -570,14 +611,19 @@ export function buildHouse(B, b, cfg = {}) {
     const ops = [], n = gable ? (L > 5.6 && rng.chance(0.7) ? 2 : 1) : Math.max(1, Math.floor((L - 1.0) / 2.5));
     const cols = [];
     for (let k = 0; k < n; k++) cols.push({ uc: L * (k + 0.5) / n + rng.range(-0.25, 0.25), wd: rng.range(0.82, 1.0) });
-    const dc = wi === doorWall ? rng.int(0, n - 1) : -1;
+    const dc = wi === doorWall && !cfg.doors ? rng.int(0, n - 1) : -1;
     if (dc >= 0) cols[dc].wd = 1.04;
     for (let k = 0; k < n; k++) for (let f = 0; f < floors; f++) {
       const cc = cols[k], fy = f * fH;
-      if (f === 0 && k === dc) { ops.push({ u0: cc.uc - 0.52, u1: cc.uc + 0.52, v0: 0, v1: 2.1, door: true, soot: burnt && rng.chance(0.4) }); continue; }
+      if (f === 0 && k === dc) { ops.push({ u0: cc.uc - 0.53, u1: cc.uc + 0.53, v0: 0, v1: 2.15, door: true, soot: burnt && rng.chance(0.4) }); continue; }
       if (!rng.chance(gable ? 0.62 : 0.9)) continue;
       const hh = f === 2 ? 1.0 : 1.3;
       ops.push({ u0: cc.uc - cc.wd / 2, u1: cc.uc + cc.wd / 2, v0: fy + 0.95, v1: fy + 0.95 + hh, frame: rng.chance(0.4) ? rng.int(1, 2) : 0, shutter: rng.chance(0.3) ? rng.int(1, 15) : 0, soot: burnt && rng.chance(0.55) });
+    }
+    if (cfg.doors) for (const dr of cfg.doors) if (dr.wall === wi) {
+      const hw = dr.w ? dr.w / 2 : 0.53;
+      for (let k = ops.length - 1; k >= 0; k--) if (ops[k].v0 < 2.4 && ops[k].u1 > dr.u - hw - 0.45 && ops[k].u0 < dr.u + hw + 0.45) ops.splice(k, 1);
+      ops.push({ u0: dr.u - hw, u1: dr.u + hw, v0: 0, v1: dr.h || 2.15, door: true, soot: burnt && rng.chance(0.4) });
     }
     return ops;
   };
@@ -596,8 +642,8 @@ export function buildHouse(B, b, cfg = {}) {
   }
   // interior partition
   if (w > 8.6 && d < 0.78 && !cfg.noPartition) {
-    const px = rng.range(-0.18, 0.18) * w, fr = mkFrame(px, -dd / 2 + t, px, dd / 2 - t, 1, 0, 0.28), ops = [];
-    for (let f = 0; f < floors; f++) { const u = rng.range(1.2, fr.L - 1.2); ops.push({ u0: u - 0.5, u1: u + 0.5, v0: f * fH, v1: f * fH + 2.05, door: true }); }
+    const px = cfg.partX !== undefined ? cfg.partX : rng.range(-0.18, 0.18) * w, fr = mkFrame(px, -dd / 2 + t, px, dd / 2 - t, 1, 0, 0.28), ops = [];
+    for (let f = 0; f < floors; f++) { const u = rng.range(1.2, fr.L - 1.2); ops.push({ u0: u - 0.52, u1: u + 0.52, v0: f * fH, v1: f * fH + 2.15, door: true }); }
     buildWall(B, fr, { ...base, y0: -0.3, openings: ops, uvo: rng.range(0, 40), tO: tI, tI, aoO: 0.5, ends: [0, 0], top: (u) => yRoof(fr.oz + fr.uz * u) - 0.1, noLintel: true, cell: 0.45 });
   }
   mark('walls');
@@ -612,8 +658,11 @@ export function buildHouse(B, b, cfg = {}) {
     for (let k = 1; k <= floors; k++) {
       const y = k * fH, attic = k === floors;
       if (attic && (cfg.floorFn ? false : !(d < 0.55 && rng.chance(0.6)))) continue;
-      const fo = (d - 0.6) * 1.6 + (attic ? 0.3 : 0);
-      const solid = cfg.floorFn ? (x, z) => cfg.floorFn(k, x, z, field) : (x, z) => Math.max(field(x, y + 0.3, z) + 0.3, 1.3 * B.noise.fbm2(x * 0.3 + sx + k * 3.1, z * 0.3, 3) + fo) < 0;
+      const fo = (d - 0.6) * 1.6 + (attic ? 0.3 : 0) - (b.enterable ? 0.5 : 0);
+      const inR = (r, x, z) => x > r[0] && x < r[1] && z > r[2] && z < r[3];
+      const holes = (cfg.holes || []).filter((r) => (r[4] || 1) === k), solids = (cfg.solids || []).filter((r) => (r[4] || 1) === k);
+      const solid0 = cfg.floorFn ? (x, z) => cfg.floorFn(k, x, z, field) : (x, z) => Math.max(field(x, y + 0.3, z) + 0.3, 1.3 * B.noise.fbm2(x * 0.3 + sx + k * 3.1, z * 0.3, 3) + fo) < 0;
+      const solid = (x, z) => (holes.some((r) => inR(r, x, z)) ? false : solids.some((r) => inR(r, x, z)) ? field(x, y + 0.3, z) < 0.35 : solid0(x, z));
       buildFloor(B, { x0, x1, z0, z1, y, solid, wallOk: wallOk(y), joist: (x, z) => solid(x, z) || field(x, y, z) < (cfg.floorFn ? 0.5 : -0.1), burnt, rng, collide: !!b.enterable });
     }
   }
@@ -622,11 +671,12 @@ export function buildHouse(B, b, cfg = {}) {
   const hasRoof = !cfg.noRoof && d < 0.86;
   if (hasRoof) {
     const rt = rng.range(0.86, 1.08);
-    buildRoof(B, { w, d: dd, eave: H, pitch, field, roofF, rng, burnt, uvo: rng.range(0, 40), chimTint: tO,
+    buildRoof(B, { w, d: dd, eave: H, pitch, field, roofF, rng, burnt, uvo: rng.range(0, 40), chimTint: tO, og: cfg.og, oe: cfg.oe,
       chimney: rng.chance(0.75) ? [rng.range(-0.3, 0.3) * w, (rng.chance(0.5) ? 1 : -1) * dd * rng.range(0.12, 0.3)] : null, tint: [rt * rng.range(0.96, 1.06), rt, rt * rng.range(0.94, 1.02)] });
   }
   mark('roof');
   if (cfg.ramp) buildRamp(B, cfg.ramp, W, rng);
+  if (cfg.stair) buildStair(B, cfg.stair, burnt);
   if (cfg.extra) cfg.extra(B, b, field, W, rng);
   houseRubble(B, b, cfgCopy, field, W, rng, H, hasRoof);
   mark('rubble');

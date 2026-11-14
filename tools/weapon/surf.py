@@ -251,7 +251,42 @@ def hook_pistol(c):
     if m.any(): c.put(m, m_metal2(c, m, (0.56, 0.56, 0.55), rough=0.3, wear=0.6, rust=0.03, oil=0.6, coat=1.0, dirt=0.4))
     c.col[inn] *= (0.8 + 0.4 * pyr[inn])[:, None]; c.col *= (1 - 0.4 * np.maximum(gr, np.maximum(g2, g3)))[:, None]; c.rough[inn] = np.clip(c.rough[inn] + 0.1, 0, 1); c.rough[top] = np.clip(c.rough[top] + 0.12, 0, 1)
     engrave(c)
-def hook_sniper(c): common(c); engrave(c)
+def m_web(c, m):
+    """synthetic stock: OD green with a tan / black marbled web (moulded-in colour), slightly worn on the edges"""
+    p = c.p[m]; col, r, mt, h = m_poly(c, m, (0.20, 0.215, 0.15), 0.72, 1.6)
+    w1 = ss(0.52, 0.57, fbm(p, 1 / 18., 4, 71)); w2 = ss(0.6, 0.65, fbm(p, 1 / 11., 4, 72))
+    col = mixc(col, col * np.array([1.75, 1.55, 1.3], f4), w1 * 0.8); col = mixc(col, col * 0.4, w2 * 0.75)
+    return col, r, mt, h
+
+
+def hook_sniper(c):
+    p, n, tag, pid, M = c.p, c.n, c.tag, c.pid, c.M; x, y, z = p[:, 0], p[:, 1], p[:, 2]; wave = lambda t: np.abs((t % 1.0) - 0.5) * 2
+    BZ, SZ, YT = 48.0, 108.0, 70.0
+    mv = (tag == 3) | (tag == 4) | (tag == 20); c.a[mv] = 0.7 + 0.3 * c.a[mv]        # bolt, magazine, rounds: baked inside the weapon, seen outside it
+    rc = (tag == 1) & (pid == STEEL); Ls = rc & (n[:, 0] < -0.6) & (np.abs(z - BZ) < 13)
+    c.stamp[Ls] = T.stamp_text(-y[Ls], z[Ls], (-176, -10, 39, 58), [('VALLE MORTA ARMS', -170, 50.0, 3.4), ('VM-12 LR   7.62x51 NATO', -170, 43.0, 2.7)])
+    Rs = rc & (n[:, 0] > 0.6) & (y > 176) & (np.abs(z - BZ) < 10); c.stamp[Rs] = T.stamp_text(y[Rs], z[Rs], (176, 199, 38, 58), [('VM 0417', 178, 44.0, 2.6)])
+    bl = (tag == 2) & (pid == STEEL) & (n[:, 0] < -0.6) & (y < 320); c.stamp[bl] = T.stamp_text(-y[bl], z[bl], (-320, -212, 40, 56), [('.308 WIN  1:10  STAINLESS', -312, 46.0, 2.6)])
+    tick = np.zeros(M, bool)                                                    # turret graduations (white fill): elevation on top, windage on the right
+    for ax, band, u, v in ((z - SZ, (24.6, 31.0), x, y - YT), (x, (24.6, 26.2), z - SZ, y - YT)):
+        m = (tag == 7) & (ax > band[0]) & (ax < band[1]) & (np.hypot(u, v) > 14.4); i = np.nonzero(m)[0]
+        ang = np.degrees(np.arctan2(u[i], v[i])); d = np.abs(((ang + 4.5) % 9) - 4.5); maj = np.abs(((ang + 22.5) % 45) - 22.5) < 1.6
+        tick[i[(d < 1.1) & ((ax[i] > band[0] + 0.55 * (band[1] - band[0])) | maj)]] = True
+    c.hadd[tick] -= 0.12
+    st5 = (tag == 5) & (pid == OLIVE)                                            # stippled grip and fore-end panels
+    stip = st5 & (((z < 4) & (y > -90) & (y < 30)) | ((np.abs(x) > 26) & (y > 200) & (y < 400) & (z > 12) & (z < 38)))
+    c.hadd[stip] += 0.14 * ss(0.42, 0.62, fbm(p[stip], 1 / 0.55, 2, 61))
+    pad = (pid == RUBBER) & (tag == 5) & (np.abs(n[:, 1]) > 0.6); c.hadd[pad] -= 0.25 * ss(0.55, 0.2, wave(z[pad] / 3.2))
+    knob = (tag == 3) & (pid == BLUED); c.xw[knob] += 0.15
+    rl = (tag == 8) & (pid == PARK); c.xw[rl] += 0.25 * ss(0.5, 0.75, fbm(p[rl], 1 / 9., 3, 62)) * (n[rl, 2] > 0.5)
+    common(c, look=2)
+    if st5.any(): c.put(st5, m_web(c, st5))
+    m = pid == BOLT                                                              # bolt body and handle: bare machined steel
+    if m.any(): c.put(m, m_metal2(c, m, (0.6, 0.6, 0.59), rough=0.28, wear=0.5, rust=0.02, oil=0.9, coat=1.0, dirt=0.35))
+    m = pid == GLASS
+    if m.any(): c.put(m, m_glass(c, m, (0.0, SZ)))
+    c.col[stip] *= 0.9; c.col[tick] = np.array([0.82, 0.82, 0.78], f4); c.rough[tick] = 0.6; c.metal[tick] = 0.0
+    engrave(c)
 
 
 HOOKS = dict(arms=(hook_arms, 1.6), rifle=(hook_rifle, 3.0), pistol=(hook_pistol, 3.0), sniper=(hook_sniper, 3.0))

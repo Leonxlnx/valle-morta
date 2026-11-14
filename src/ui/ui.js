@@ -263,9 +263,16 @@ export class UI {
     const p = game.player, w = game.weapon, L = this._last, cam = game.engine.camera;
     const set = (key, val, fn) => { if (L[key] !== val) { L[key] = val; fn(val); } };
     // health in four segments, bandages beside it
-    const seg = p.maxHealth / 4;
+    // one 25 point segment each: the maximum-health upgrade adds segments
+    const nSeg = Math.max(1, Math.round(p.maxHealth / 25)), seg = p.maxHealth / nSeg;
+    set('nseg', nSeg, (n) => {
+      const hp = this.hud.querySelector('.hp');
+      hp.innerHTML = '<b><i></i></b>'.repeat(n); hp.style.gridTemplateColumns = `repeat(${n}, 1fr)`; hp.style.width = `${n * 44}px`;
+      this.hpSegs = [...hp.querySelectorAll('i')];
+      for (const k in L) if (/^seg\d/.test(k)) delete L[k];
+    });
     set('hp', Math.ceil(p.health), (v) => { this.hpNum.textContent = v; this.hud.classList.toggle('low', v <= 35); });
-    for (let i = 0; i < 4; i++) set('seg' + i, Math.round(Math.max(0, Math.min(1, (p.health - i * seg) / seg)) * 50), (v) => { this.hpSegs[i].style.transform = `scaleX(${v / 50})`; });
+    for (let i = 0; i < nSeg; i++) set('seg' + i, Math.round(Math.max(0, Math.min(1, (p.health - i * seg) / seg)) * 50), (v) => { this.hpSegs[i].style.transform = `scaleX(${v / 50})`; });
     set('band', p.bandaging > 0 ? 'Bandaging' : `${p.bandages} ${p.bandages === 1 ? 'bandage' : 'bandages'}`, (v) => { this.band.textContent = v; });
     set('wname', w.name, (v) => { this.wname.textContent = v; });
     set('mag', w.ammo, (v) => { this.mag.textContent = v; this.mag.classList.toggle('empty', v <= Math.max(1, w.magSize / 6)); });

@@ -60,6 +60,7 @@ export function buildStoneWalls(B) {
     for (const o of paths) if (o.p !== self && o.p.query(x, z, q).d < 3.5) return true;
     if (L.roads[0].path.query(x, z, q).d < 3.5) return true;
     if (Math.hypot(x - 44, z + 92) < 17.5) return true;
+    if (L.cover) for (const c of L.cover) if (Math.abs(x - c.x) < 8 && Math.abs(z - c.z) < 8 && L.footprintDist(c, x, z) < 0.45) return true;
     if (Math.hypot(x - L.church.towerX, z - L.church.towerZ) < 6) return true;
     L.river.query(x, z, q);
     return q.d < L.riverHalfWidth(q.s) + 3;

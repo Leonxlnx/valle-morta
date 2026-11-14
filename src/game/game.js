@@ -140,6 +140,8 @@ export class Game {
     this.lastSummary = null;
     this._on = {};
     this._boss = { name: '', health: 0, maxHealth: 1, frac: 0, state: '', pos: null };
+    this.timeScale = 1;        // the world's clock (adrenaline slows it; the player keeps nearly full speed)
+    this.pulse = 0;            // a heartbeat that is not about health (adrenaline)
   }
 
   // events for the HUD and the other modes: wave, waveCleared, kill, hurt, death, crate, crateOpened, pickup, bossSpawn, bossDown
@@ -298,6 +300,8 @@ export class Game {
 
   // the backdrop behind the menu; Base (between Operation runs) shares it and has its own music
   toMenu(state = 'menu') {
+    // leaving an Operation run from the pause menu goes back to Base, not the title screen
+    if (state === 'menu' && this.operation && this.operation.active) state = 'base';
     if (this.operation) {
       if (this.operation.active) this.lastSummary = this.operation.finish('abandon');     // left mid-run: half is kept
       this.operation.stop();
@@ -495,7 +499,9 @@ export class Game {
     this.time += dt;
     const { player: p, zombies, weapon } = this;
     const op = this.mode === 'operation' ? this.operation : null;
+    const ts = this.state === 'playing' ? this.timeScale : 1, pdt = dt * (1 - (1 - ts) * 0.12);
     if (this.state === 'playing' || this.state === 'film') {
+      const rdt = dt; dt *= ts;
       if (this.state === 'playing') {
         this.playTime += dt;
         // wave director
@@ -546,14 +552,14 @@ export class Game {
         for (const z of zombies.list) if (z.alive && z.aware) threat += (z.pos.distanceToSquared(p.pos) < 45 * 45 ? 1 : 0.3) * (z.def.boss ? 4 : 1);
         this.audio.setLoopVolume('music_combat', THREE.MathUtils.clamp(threat / 5, 0, 1) * 0.8, 1.5);
         this.audio.setMuffle(p.alive ? clamp((35 - p.health) / 35, 0, 1) * 0.8 : 1);
-        this._vitals(p.alive ? clamp((40 - p.health) / 40, 0, 1) : 0);
+        this._vitals(p.alive ? Math.max(clamp((40 - p.health) / 40, 0, 1), this.pulse) : 0);
         if (!p.alive) {
           this.overT += dt;
           if (this.overT > 2.6) this.endRun('death');
         }
       }
-      p.update(dt);
-      weapon.update(dt);
+      p.update(pdt);
+      weapon.update(pdt);
       zombies.update(dt);
       this.fx.update(dt);
       this.supply.update(dt, p, (pk) => { p.bandages++; this.ui?.toast('Bandage', `${p.bandages} of ${p.bandageMax} carried`); this.audio.play('pickup', { volume: 0.6, pitchVar: 0.05 }); this.emit('pickup', pk); });
@@ -568,7 +574,7 @@ export class Game {
         }
         if (this.interact && p.input.interact) { this._openCrate(this.interact.crate); this.interact = null; }
       }
-      if (op && this.state === 'playing') op.update(dt);
+      if (op && this.state === 'playing') op.update(rdt);
     } else if (this.state === 'menu' || this.state === 'base') {
       // slow drift across the meadow towards the village
       this.menuT += dt;
