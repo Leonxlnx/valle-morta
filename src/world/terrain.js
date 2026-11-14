@@ -384,6 +384,20 @@ export class Terrain {
     }
     geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
     geo.setIndex(new THREE.BufferAttribute(idx, 1));
+    // Levels 1+ only show a ring: the middle is always covered by the finer level inside (the inner
+    // level's square is half as wide and offset by at most one outer cell), so its quads are not built.
+    // Before, every ground pixel near the eye was rasterised by all six levels and discarded by five.
+    const hole = half / 2 - 2;
+    const ringIdx = [];
+    for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) {
+      const gx = i - half, gz = j - half;
+      if (gx >= -hole && gx + 1 <= hole && gz >= -hole && gz + 1 <= hole) continue;
+      const a = j * (N + 1) + i, b = a + 1, c = a + N + 1, d = c + 1;
+      ringIdx.push(a, c, b, b, c, d);
+    }
+    const ringGeo = new THREE.BufferGeometry();
+    ringGeo.setAttribute('position', geo.getAttribute('position'));
+    ringGeo.setIndex(new THREE.BufferAttribute(new Uint32Array(ringIdx), 1));
     t.group = new THREE.Group();
     t.levels = [];
     const LEVELS = 6;
@@ -400,14 +414,17 @@ export class Terrain {
         surface: LOCAL_SURFACE,
         ao: 'vmTerrainAO',
         patch: (shader) => {
-          shader.fragmentShader = shader.fragmentShader.replace('void main() {', `void main() {
-  if (vmWorldPos.x > uInner.x && vmWorldPos.x < uInner.z && vmWorldPos.z > uInner.y && vmWorldPos.z < uInner.w) discard;
-  if (max(abs(vmWorldPos.x), abs(vmWorldPos.z)) > 511.9) discard;`);
+          // No discard here: the ring geometry leaves out what the finer level covers, and the thin
+          // band where two levels still overlap is the same surface with the same shading (it only
+          // depends on the world position). Without a discard the ground keeps early depth rejection.
           shader.fragmentShader = shader.fragmentShader.replace('#include <lights_physical_fragment>', SPEC_CHUNK);
         },
       });
-      const mesh = new THREE.Mesh(geo, mat);
+      const mesh = new THREE.Mesh(l === 0 ? geo : ringGeo, mat);
       mesh.frustumCulled = false;
+      // after the other opaque geometry: the ground shader is the most expensive one on screen and
+      // most of what stands on it (houses, walls, grass, trees) can then reject it by depth
+      mesh.renderOrder = 10;
       mesh.receiveShadow = true;
       mesh.castShadow = false;
       mesh.matrixAutoUpdate = false;
@@ -421,7 +438,19 @@ export class Terrain {
     const vc = head[0], tc = head[1];
     const fgeo = new THREE.BufferGeometry();
     fgeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(buf, 8, vc * 3), 3));
-    fgeo.setIndex(new THREE.BufferAttribute(new Uint32Array(buf, 8 + vc * 12, tc * 3), 1));
+    {
+      // the far mesh lies under the local clipmap too (its inner part is discarded per pixel):
+      // drop the triangles that are entirely inside the local square
+      const P = new Float32Array(buf, 8, vc * 3), I = new Uint32Array(buf, 8 + vc * 12, tc * 3);
+      const keep = new Uint32Array(tc * 3);
+      let n = 0;
+      const inside = (v) => Math.max(Math.abs(P[v * 3]), Math.abs(P[v * 3 + 2])) < 506;
+      for (let k = 0; k < tc * 3; k += 3) {
+        if (inside(I[k]) && inside(I[k + 1]) && inside(I[k + 2])) continue;
+        keep[n++] = I[k]; keep[n++] = I[k + 1]; keep[n++] = I[k + 2];
+      }
+      fgeo.setIndex(new THREE.BufferAttribute(keep.slice(0, n), 1));
+    }
     fgeo.computeBoundingSphere();
     const fmat = enhance(new THREE.MeshStandardMaterial({ roughness: 1, metalness: 0, side: THREE.DoubleSide }), {
       key: 'terrain-far',
@@ -438,6 +467,7 @@ export class Terrain {
     });
     t.farMesh = new THREE.Mesh(fgeo, fmat);
     t.farMesh.frustumCulled = false;
+    t.farMesh.renderOrder = 10;
     t.farMesh.receiveShadow = false;
     t.farMesh.matrixAutoUpdate = false;
     t.farTris = tc;

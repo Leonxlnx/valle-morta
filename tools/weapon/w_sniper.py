@@ -4,12 +4,12 @@ from math import radians, sin, cos, pi
 from mathutils import Vector, Matrix
 import rig as RG, sniper_geo as SG
 
-ID = 'sniper'; PIVOT = (0, -0.12, 0.02); EYE = (-0.11, -0.44, 0.165)       # weapon rotations pivot between the wrists and the shoulder pocket
+ID = 'sniper'; PIVOT = (0, -0.12, 0.02); EYE = (-0.12, -0.30, 0.15)       # weapon rotations pivot between the wrists and the shoulder pocket
 GROUPS = ['SniperBody', 'Scope', 'BoltHandle', 'Striker', 'Magazine', 'MagRounds', 'Trigger', 'BipodL', 'BipodR', 'Casing']
 PARTS = ['BoltHandle', 'Striker', 'Magazine', 'Trigger', 'BipodL', 'BipodR']
 MOVERS = ['Magazine', 'BoltHandle', 'BipodL', 'BipodR']
 ONLY = {'BipodL': ['BipodDeploy'], 'BipodR': ['BipodDeploy']}
-SHOULDER = {'R': (0.13, -0.40, -0.10), 'L': (-0.20, -0.30, -0.08)}; POLE = {'R': (0.7, 0, -0.7), 'L': (-0.8, 0, -0.6)}
+SHOULDER = {'R': (0.10, -0.62, -0.12), 'L': (-0.17, -0.16, -0.10)}; POLE = {'R': (0.7, 0, -0.7), 'L': (-0.8, 0, -0.6)}
 VIEWS = [('first person', EYE, (EYE[0], 1.0, EYE[2]), 52), ('right', (0.92, 0.22, 0.06), (0.0, 0.22, 0.0), 40), ('left', (-0.92, 0.22, 0.10), (0.0, 0.22, 0.0), 40),
          ('behind', (-0.16, -0.62, 0.26), (0.0, 0.05, 0.04), 40), ('below front', (-0.35, 0.75, -0.40), (0.0, 0.15, -0.02), 40), ('top', (0.04, 0.22, 1.05), (0.0, 0.22, 0.0), 45)]
 MISC = [('Idle', 1), ('Fire', '0-1-2-4-8-14'), ('Draw', 4), ('Holster', 3), ('Sprint', 3)]
@@ -43,7 +43,7 @@ def setup(st):
     A['sup'] = st.grip('support', 'L', 'Weapon', F((0.55, 0.80, 0.22), (0.12, -0.2, -0.97)), (0.0, 0.262, -0.004), (0, 45, -14), (0, 0, 1), back=0.04, retreat=(-0.04, -0.03, -0.05))
     # bolt knob: palm over the knob, fingers round its front; the hand follows the knob but turns only 30 % with the handle
     kn = Vector(SG.KNOB) * mm
-    b = st.grip('bolt', 'R', 'BoltHandle', F((-0.25, 0.9, -0.35), (0.55, 0.1, 0.83)), tuple(kn + Vector((0.004, 0, 0.012))), (0, 45, -14), (-0.5, 0, -0.85), a0=RG.A_OPEN,
+    b = st.grip('bolt', 'R', 'BoltHandle', F((-0.25, 0.9, -0.35), (0.55, 0.1, 0.83)), tuple(kn + Vector((0.003, -0.004, 0.012))), (-5, 86, -12), (-0.5, 0, -0.85), a0=RG.A_OPEN, fingers=('Index', 'Middle', 'Ring'),
                 back=0.04, retreat=(0.02, -0.03, 0.04))
     A['bolt'] = Anchor('BoltHandle', b.M, b.pose, b.pre, b.retreat, b.a, pivot=kn - Vector(SG.ORIG['BoltHandle']) * mm, rotpar='Weapon', follow=0.3)
     # magazine: palm under the base plate, fingers over the front face, thumb up the back to the release paddle
@@ -77,7 +77,7 @@ def clips(st):
         c.hand['R'].clear().hold(0, t + 0.02, A['grip']).hold(t + 0.06, t + 0.07, A['safe'], mid=st.IDX)
 
     def back_to_grip(c, t, end):
-        c.hand['R'].hold(t, t + 0.04, A['safe'], lift=(0.02, -0.02, 0.0)).hold(end - 0.02, end, A['grip'], mid=st.IDX)
+        c.hand['R'].hold(t, t + 0.04, A['safe'], lift=(0.04, -0.02, 0.04)).hold(end - 0.02, end, A['grip'], mid=st.IDX)
     # ---- BoltCycle: lift, pull (case out), push, lock, back to the grip
     c = Clip(st, 'BoltCycle', 1.1); bh, bp_ = c.pr['BoltHandle'], c.pp['BoltHandle']
     bh.k(0.19, Z).k(0.29, up, ease='io').k(0.69, up).k(0.79, Z, ease='in')
@@ -88,7 +88,7 @@ def clips(st):
     c.wp.k(0.30, (0, -0.002, 0.006), 'c').k(0.46, (0, -0.006, 0.008), 'c').k(0.67, (0, 0.002, 0.006), 'c').k(1.1, Z)
     c.wp.add(spring(0.46, (0, -0.003, 0), 9, 14)).add(spring(0.67, (0, 0.004, 0.0), 9, 14))
     c.wr.add(spring(0.46, (0.8, 0, 0), 8, 13)).add(spring(0.67, (-0.6, 0.6, 0), 8, 13)).add(spring(0.79, (0.3, -0.8, 0), 9, 14))
-    c.sh['R'].k(0.30, Z, 'c').k(0.46, (0.0, -0.06, 0.03)).k(0.67, Z, 'c').k(1.1, Z)
+    c.sh['R'].k(0.02, Z, 'c').k(0.20, (0, 0.04, 0.05), 'c').k(0.46, (0, 0.0, 0.04), 'c').k(0.80, (0, 0.04, 0.05), 'c').k(1.1, Z)
     # ---- Draw / Holster: the rifle comes up from low right, the support hand joins late / leaves first
     low_p, low_r = (0.10, -0.10, -0.26), (-38, -20, -15)
     wait = Anchor('World', Matrix.Translation((-0.03, -0.12, -0.10)) @ A['sup'].M, rg.RELAX, rg.RELAX, (0, 0, 0))
@@ -124,11 +124,12 @@ def clips(st):
         mq.k(T(1.95), (0, 0, -0.07), ease='out').k(T(2.12), (0, 0, -0.012), ease='io').k(T(2.22), Z, ease='in')
         mr.k(T(0.75), Z).k(T(1.05), BR, ease='in').k(T(1.35), BR).k(T(1.80), (6, -4, 8), 'c').k(T(1.95), Z)
         c.wr.add(spring(T(0.55), (-0.8, 0.4, 0), 6, 11)).add(spring(T(2.22), (1.6, -0.7, 0.3), 7, 12)); c.wp.add(spring(T(2.22), (0, 0.002, 0.005), 7, 12))
+        c.sh['R'].k(T(0.40), (0, 0.05, 0.05), 'c').k(T(2.22), (0, 0.05, 0.05), 'c')
         if empty: c.ps['MagRounds'] = Tr(1, [0.001]).k(T(1.05), [0.001]).k(T(1.07), [1.0], ease='lin')
         c.hand['L'].clear().hold(0, T(0.04), A['sup'], open=0.04).hold(T(0.40), T(2.30), A['magh'], close=0.08, open=0.06, lift=(-0.03, -0.02, -0.06))
         c.ev(T(0.55), 'mag_out').ev(T(2.22), 'mag_in').ev(T(2.22), 'ammo')
     # ---- Reload (round in the chamber, bolt stays closed)
-    c = Clip(st, 'Reload', 3.2); swap(c, 0.0, False)
+    c = Clip(st, 'Reload', 3.2); c.sh['R'].k(0.02, Z, 'c'); swap(c, 0.0, False); c.sh['R'].k(2.62, (0, 0.025, 0.025), 'c').k(3.2, Z)
     c.wr.k(2.62, (RR[0] * 0.5, RR[1] * 0.5, RR[2] * 0.5), 'c').k(2.98, (-0.6, -0.8, 0), 'c').k(3.2, Z); c.wp.k(2.62, (RP[0] * 0.5, 0, RP[2] * 0.5), 'c').k(3.2, Z)
     c.hand['L'].hold(2.75, 3.2, A['sup'], close=0.1, lift=(-0.02, -0.02, -0.04))
     c.hand['R'].clear().hold(0, 0.02, A['grip']).hold(0.08, 2.95, A['safe'], mid=st.IDX).hold(3.15, 3.2, A['grip'], mid=st.IDX)
@@ -138,7 +139,7 @@ def clips(st):
     bp_.k(0.30, Z).k(0.46, bk, ease='in').k(2.76, bk).k(2.92, Z, ease='in')
     c.ev(0.44, 'shell').ev(0.46, 'bolt_back').ev(2.92, 'bolt_forward')
     c.wr.k(0.12, (-0.5, -2.5, 0.5), 'c').k(0.30, (-1.0, -5.0, 1.0), 'c'); c.wp.k(0.30, (0, -0.002, 0.006), 'c')
-    swap(c, t0, True)
+    c.sh['R'].k(0.02, Z, 'c').k(0.20, (0, 0.04, 0.05), 'c'); swap(c, t0, True); c.sh['R'].k(2.92, (0, 0.04, 0.05), 'c').k(3.7, Z)
     c.wr.k(2.92, (RR[0] * 0.4, RR[1] * 0.2, RR[2] * 0.4), 'c').k(3.3, (-0.5, -2.0, 0.3), 'c').k(3.7, Z); c.wp.k(2.92, (RP[0] * 0.4, 0, RP[2] * 0.4), 'c').k(3.7, Z)
     c.wr.add(spring(0.46, (0.8, 0, 0), 8, 13)).add(spring(2.92, (-0.6, 0.6, 0), 8, 13)).add(spring(3.04, (0.3, -0.8, 0), 9, 14))
     c.hand['L'].hold(3.22, 3.7, A['sup'], close=0.1, lift=(-0.02, -0.02, -0.04))

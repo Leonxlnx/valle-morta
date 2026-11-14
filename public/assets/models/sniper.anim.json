@@ -1,0 +1,117 @@
+{
+ "clips": {
+  "Idle": {
+   "duration": 4.0,
+   "loop": true,
+   "events": []
+  },
+  "Fire": {
+   "duration": 0.3,
+   "loop": false,
+   "events": []
+  },
+  "BoltCycle": {
+   "duration": 1.1,
+   "loop": false,
+   "events": [
+    {
+     "t": 0.44,
+     "name": "shell"
+    },
+    {
+     "t": 0.46,
+     "name": "bolt_back"
+    },
+    {
+     "t": 0.67,
+     "name": "bolt_forward"
+    }
+   ]
+  },
+  "Draw": {
+   "duration": 0.45,
+   "loop": false,
+   "events": []
+  },
+  "Holster": {
+   "duration": 0.3,
+   "loop": false,
+   "events": []
+  },
+  "Sprint": {
+   "duration": 0.8,
+   "loop": true,
+   "events": []
+  },
+  "BipodDeploy": {
+   "duration": 0.8,
+   "loop": false,
+   "events": []
+  },
+  "Reload": {
+   "duration": 3.2,
+   "loop": false,
+   "events": [
+    {
+     "t": 0.55,
+     "name": "mag_out"
+    },
+    {
+     "t": 2.22,
+     "name": "mag_in"
+    },
+    {
+     "t": 2.22,
+     "name": "ammo"
+    }
+   ]
+  },
+  "ReloadEmpty": {
+   "duration": 3.7,
+   "loop": false,
+   "events": [
+    {
+     "t": 0.44,
+     "name": "shell"
+    },
+    {
+     "t": 0.46,
+     "name": "bolt_back"
+    },
+    {
+     "t": 1.05,
+     "name": "mag_out"
+    },
+    {
+     "t": 2.72,
+     "name": "mag_in"
+    },
+    {
+     "t": 2.72,
+     "name": "ammo"
+    },
+    {
+     "t": 2.92,
+     "name": "bolt_forward"
+    }
+   ]
+  }
+ },
+ "meta": {
+  "eye": [
+   -0.12,
+   -0.3,
+   0.15
+  ],
+  "fov": 52,
+  "bolt_travel_m": 0.105,
+  "bolt_lift_deg": 62.0,
+  "striker_fall_m": 0.005,
+  "scope_eye": [
+   0,
+   -0.092,
+   0.108
+  ],
+  "note": "preview camera of the contact sheets: eye position relative to the model origin (Blender axes x right, y forward, z up). Rest pose = bolt closed and cocked (red indicator on the cocking piece visible), finger on the trigger. Bolt open = BoltHandle rotated bolt_lift_deg about the bore (handle up) and moved bolt_travel_m towards the shooter. Striker (child of BoltHandle) falls striker_fall_m in Fire and is quietly re-cocked in the last 3 frames so that Fire ends in the Idle pose. BipodL / BipodR are keyed only in BipodDeploy, which ends with the legs down and locked (play it clamped). ReloadEmpty opens the bolt, changes the magazine (MagRounds hidden until the fresh one) and chambers. The scope tube is open at the ocular (no eye lens) so the engine can render its own sight picture; the objective lens closes the front."
+ }
+}

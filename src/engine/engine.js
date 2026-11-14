@@ -64,6 +64,7 @@ export class Engine {
     this.sceneRT = null;
     this.outW = 0; this.outH = 0;
     this._v = new THREE.Vector3();
+    this._sb = { up: new THREE.Vector3(), right: new THREE.Vector3(), upL: new THREE.Vector3(), c: new THREE.Vector3() };
     this._applySun();
   }
 
@@ -128,10 +129,11 @@ export class Engine {
     const cy = this.camera.position.y;
     const texel = (2 * range) / this.q.shadow;
     // light basis
-    const up = Math.abs(this.sunDir.y) > 0.99 ? new THREE.Vector3(1, 0, 0) : new THREE.Vector3(0, 1, 0);
-    const right = new THREE.Vector3().crossVectors(up, this.sunDir).normalize();
-    const upL = new THREE.Vector3().crossVectors(this.sunDir, right).normalize();
-    const c = new THREE.Vector3(cx, cy, cz);
+    const { up, right, upL, c } = this._sb;   // no per-frame allocations
+    if (Math.abs(this.sunDir.y) > 0.99) up.set(1, 0, 0); else up.set(0, 1, 0);
+    right.crossVectors(up, this.sunDir).normalize();
+    upL.crossVectors(this.sunDir, right).normalize();
+    c.set(cx, cy, cz);
     const sx = Math.round(c.dot(right) / texel) * texel;
     const sy = Math.round(c.dot(upL) / texel) * texel;
     const sz = c.dot(this.sunDir);
@@ -156,6 +158,8 @@ export class Engine {
     this.weaponCamera.matrixWorld.copy(this.camera.matrixWorld);
     this.weaponCamera.matrixWorldInverse.copy(this.camera.matrixWorldInverse);
 
+    // compile every program in the scene once, before the first frame, rather than on first sight
+    if (!this._precompiled) { this._precompiled = true; try { r.compile(this.scene, this.camera); } catch (e) { /* compiled lazily */ } }
     r.shadowMap.needsUpdate = true;
     r.setRenderTarget(this.sceneRT);
     r.setClearColor(0x000000, 1);

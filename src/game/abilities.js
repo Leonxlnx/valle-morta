@@ -117,7 +117,7 @@ function buildResources() {
   // turret (origin on the turret ring)
   const turretPaint = [
     planProfile([[-0.55, -1.62], [0.55, -1.62], [1.15, -0.85], [1.2, 1.05], [0.95, 1.55], [-0.95, 1.55], [-1.2, 1.05], [-1.15, -0.85]], 0.6),
-    CY(0.36, 0.16, 0.5, 0.68, 0.45, 20), B(0.34, 0.24, 0.36, -0.58, 0.72, -0.88),                                         // cupola, gunner's sight
+    CY(0.36, 0.16, 0.5, 0.68, 0.45, 20), B(0.26, 0.2, 0.3, -0.58, 0.7, -0.9),                                         // cupola, gunner's sight
   ];
   for (const s of [-1, 1]) for (let k = 0; k < 4; k++) turretPaint.push(TB(s * 1.12, 0.36, -0.62 + k * 0.13, s * 1.34, 0.5, -0.66 + k * 0.13, 0.04, 8));   // smoke dischargers
   turretPaint.push(B(0.42, 0.28, 0.42, -0.6, 0.29, 1.82), B(0.5, 0.22, 0.38, 0.45, 0.25, 1.84));                          // boxes in the bustle basket
@@ -132,7 +132,7 @@ function buildResources() {
   G.turretSteel = merged(turretSteel, 0.5);
   const tg = [];
   for (let k = 0; k < 6; k++) { const a = (k / 6) * TAU; tg.push(B(0.11, 0.07, 0.03, 0.5 + Math.sin(a) * 0.33, 0.73, 0.45 - Math.cos(a) * 0.33, 0, a)); }
-  tg.push(B(0.26, 0.15, 0.02, -0.58, 0.74, -1.07));
+  tg.push(B(0.2, 0.12, 0.02, -0.58, 0.72, -1.06));
   G.turretGlass = merged(tg);
   G.tarp = merged([CX(0.18, 1.5, 0, 0.62, 1.95, 14)]);
   // gun: pivot at the trunnions, the tube slides back on recoil
@@ -174,7 +174,7 @@ function buildResources() {
 }
 
 // ---------------------------------------------------------------- tank
-const TK = { half: 1.5, track: 1.25, cy: 0.38, R: 0.36, ends: 2.97, eye: new THREE.Vector3(0.5, 1.28, 0.45), muzzle: 4.78, dropH: 70, beaconT: 0.6, fallT: 1.8 };
+const TK = { half: 1.5, track: 1.25, cy: 0.38, R: 0.36, ends: 2.97, eye: new THREE.Vector3(0.48, 1.52, 0.72), muzzle: 4.78, dropH: 70, beaconT: 0.6, fallT: 1.8 };
 const TRACK_D = TK.ends * 2, TRACK_L = 2 * TRACK_D + TAU * TK.R, SHOES = Math.round(TRACK_L / 0.153), SHOE_SP = TRACK_L / SHOES;
 
 class Tank {
@@ -231,6 +231,9 @@ class Tank {
     this.beacon = add(g.engine.scene, G.beacon, M.steel);
     this.bFrom = g.player.eye.clone().addScaledVector(g.player.forward(_a), 0.5); this.bFrom.y -= 0.35;
     this.beacon.position.copy(this.bFrom);
+    this.bPos = new THREE.Vector3(x - Math.cos(yaw) * 4.3, 0, z + Math.sin(yaw) * 4.3);
+    this.bPos.y = g.terrain.heightAt(this.bPos.x, this.bPos.z) + 0.04;
+    kit.litter.push(this.beacon); this.sigT = 0; this.aimT = 0; this.aimP = new THREE.Vector3();
     root.visible = false;
     this._hit = { point: new THREE.Vector3(), normal: new THREE.Vector3() };
     g.engine.scene.add(root);
@@ -245,12 +248,12 @@ class Tank {
     const g = this.g, T = g.terrain;
     if (this.t < TK.beaconT) {
       const u = this.t / TK.beaconT;
-      this.beacon.position.lerpVectors(this.bFrom, _a.set(this.pos.x, this.ground + 0.02, this.pos.z), u);
+      this.beacon.position.lerpVectors(this.bFrom, this.bPos, u);
       this.beacon.position.y += Math.sin(Math.PI * u) * 2.2;
       this.beacon.rotation.set(u * 9, u * 3, 0);
       return;
     }
-    if (!this.landed) { this.landed = true; this.beacon.rotation.set(0, 0, 1.45); this.beacon.position.y = this.ground + 0.04; g.audio.playAt('shell_drop', this.beacon.position, { volume: 0.8, rate: 0.6 }); }
+    if (!this.landed) { this.landed = true; this.beacon.rotation.set(0, 0, 1.45); this.beacon.position.copy(this.bPos); g.audio.playAt('shell_drop', this.beacon.position, { volume: 0.8, rate: 0.6 }); }
     this.root.visible = true;
     const u = clamp((this.t - TK.beaconT) / TK.fallT, 0, 1), o = 1 - u;
     this.pos.y = this.ground + 56.7 * o * o * o + 13.3 * o;
@@ -264,7 +267,6 @@ class Tank {
     const g = this.g, kit = this.kit;
     this.state = 'settle'; this.t2 = 0;
     this.pos.y = this.ground; this.yov = -2.6; this.pv = (Math.random() - 0.5) * 0.5; this.rv = (Math.random() - 0.5) * 0.6;
-    this.beacon.visible = false;
     kit.slam(this);
     // the chutes are cut away: they sag behind the hull and settle on the grass
     this.chutes.updateMatrixWorld(true);
@@ -358,11 +360,21 @@ class Tank {
     }
   }
 
-  aim(dt, yawW, pitchW) {
+  aim(dt, p, cam) {
+    this.aimT -= dt;
+    if (this.aimT <= 0) {
+      this.aimT = 0.1;
+      const d = p.forward(_d), h = this.g.collision.raycast(cam.position, d, 400, this._hit);
+      const zh = this.g.zombies.raycast(cam.position, d, h ? h.distance : 400);          // the sight lays on a body before the ground behind it
+      if (zh) this.aimP.copy(zh.point); else if (h) this.aimP.copy(h.point); else this.aimP.copy(cam.position).addScaledVector(d, 400);
+    }
+    const o = this.gun.getWorldPosition(_b), ax = this.aimP.x - o.x, ay = this.aimP.y - o.y, az = this.aimP.z - o.z;
+    const yawW = Math.atan2(-ax, -az), pitchW = Math.atan2(ay, Math.hypot(ax, az));
     const err = wrap(wrap(yawW - this.yaw) - this.tYaw);
     this.tYaw = wrap(this.tYaw + clamp(err, -1.4 * dt, 1.4 * dt));
     const gT = clamp(pitchW - this.pitch * Math.cos(this.tYaw), -0.12, 0.33);
     this.gPitch += clamp(gT - this.gPitch, -0.7 * dt, 0.7 * dt);
+    this.laid = Math.abs(wrap(wrap(yawW - this.yaw) - this.tYaw)) < 0.025 && Math.abs(gT - this.gPitch) < 0.025;
   }
 
   fire() {
@@ -402,9 +414,11 @@ class Tank {
     p.pitch = clamp(p.pitch, -0.42, 0.5);
     if (this.state === 'drive') {
       this.step(dt, clamp(i.fwd, -1, 1), clamp(i.strafe, -1, 1));
-      this.aim(dt, p.yaw, p.pitch);
+      this.aim(dt, p, cam);
       this.reload = Math.max(0, this.reload - dt);
-      if (i.fire && this.reload <= 0) this.fire();
+      // a pull of the trigger is held until the gun is laid on the crosshair
+      if (i.fire) this.wantFire = 0.8; else this.wantFire = (this.wantFire || 0) - dt;
+      if (this.wantFire > 0 && this.reload <= 0 && this.laid) { this.wantFire = 0; this.fire(); }
     } else this._fit(dt);
     i.fire = false; i.ads = false; i.reload = false; i.bandage = false; i.roll = false; i.jump = false;
     p.shake *= Math.exp(-dt * 5.5); this.bump *= Math.exp(-dt * 6);
@@ -501,9 +515,9 @@ class Tank {
     if (this.yOff < -0.13) { this.yOff = -0.13; this.yov = Math.max(0, this.yov); }
     this._chutes(dt);
     // signal smoke from the beacon until the hull covers it, exhaust smoke under load
-    if (this.state === 'drop' && this.landed) {
-      this.smokeT -= dt;
-      while (this.smokeT < 0) { this.smokeT += 0.05; const r = Math.random; g.fx.spawn({ x: this.pos.x, y: this.ground + 0.2, z: this.pos.z, vx: (r() - 0.5) * 0.6, vy: 1.4 + r() * 0.8, vz: (r() - 0.5) * 0.6, size: 0.25, grow: 1.3, life: 2.4 + r(), drag: 0.9, grav: -0.2, r: 0.9, g: 0.32, b: 0.12, a: 0.4 }); }
+    if (this.landed && this.t < TK.beaconT + TK.fallT + 4) {
+      this.sigT -= dt;
+      while (this.sigT < 0) { this.sigT += 0.05; const r = Math.random; g.fx.spawn({ x: this.bPos.x, y: this.bPos.y + 0.15, z: this.bPos.z, vx: (r() - 0.5) * 0.6, vy: 1.4 + r() * 0.8, vz: (r() - 0.5) * 0.6, size: 0.22, grow: 1.2, life: 2 + r(), drag: 0.9, grav: -0.2, r: 0.72, g: 0.3, b: 0.24, a: 0.28 }); }
     }
     if (this.state === 'drive' || this.state === 'leave' || this.state === 'park') {
       const load = this.state === 'park' ? 0.15 : 0.3 + Math.abs(this.accel) * 0.25 + Math.abs(this.v) * 0.04;
@@ -522,7 +536,7 @@ class Tank {
   dispose() {
     const g = this.g;
     this._unpark();
-    g.engine.scene.remove(this.root); g.engine.scene.remove(this.chutes); g.engine.scene.remove(this.beacon);
+    g.engine.scene.remove(this.root); g.engine.scene.remove(this.chutes);
     this.tracks.dispose(); this.lines.geometry.dispose();
   }
 }
@@ -661,7 +675,7 @@ export class Abilities {
   constructor(op) {
     this.op = op; const g = this.game = op.game;
     this._res = null;
-    this.tanks = []; this.sentries = []; this.shells = []; this.marks = []; this.jet = null; this.camBlend = null;
+    this.tanks = []; this.sentries = []; this.litter = []; this.shells = []; this.marks = []; this.jet = null; this.camBlend = null;
     this.ts = 1; this.tsTarget = 1; this.post0 = null; this.time = 0; this.lastWhistle = -9;
     this.camFrom = { pos: new THREE.Vector3(), quat: new THREE.Quaternion() };
     this.stats = { crushed: 0, blastKills: 0, blastHits: 0, lastBlast: null, jump: null };
@@ -873,7 +887,7 @@ export class Abilities {
 
   _blast(pos, R, dmg, playerK) {
     const g = this.game, Z = g.zombies, col = g.collision, p = g.player;
-    const o = _c.set(pos.x, pos.y + 0.5, pos.z), out = { hits: 0, kills: 0, player: 0 };
+    const o = _c.set(pos.x, pos.y + 0.5, pos.z), out = { hits: 0, kills: 0, player: 0, at: [+pos.x.toFixed(1), +pos.y.toFixed(1), +pos.z.toFixed(1)] };
     for (const z of Z.list) {
       if (!z.alive) continue;
       const dx = z.pos.x - pos.x, dy = z.pos.y + 0.9 - pos.y, dz = z.pos.z - pos.z, d = Math.hypot(dx, dy, dz);
@@ -1027,7 +1041,7 @@ export class Abilities {
       const mk = this.marks[i];
       mk.t += wdt; mk.puff -= wdt;
       if (mk.t > mk.life) { this.marks.splice(i, 1); continue; }
-      while (mk.puff < 0) { mk.puff += 0.06; const r = Math.random; g.fx.spawn({ x: mk.pos.x, y: mk.pos.y + 0.15, z: mk.pos.z, vx: (r() - 0.5) * 0.5, vy: 1.6 + r() * 0.9, vz: (r() - 0.5) * 0.5, size: 0.3, grow: 1.5, life: 2.6 + r(), drag: 0.9, grav: -0.2, r: 0.6, g: 0.22, b: 0.5, a: 0.42 }); }
+      while (mk.puff < 0) { mk.puff += 0.06; const r = Math.random; g.fx.spawn({ x: mk.pos.x, y: mk.pos.y + 0.15, z: mk.pos.z, vx: (r() - 0.5) * 0.5, vy: 1.6 + r() * 0.9, vz: (r() - 0.5) * 0.5, size: 0.3, grow: 1.5, life: 2.6 + r(), drag: 0.9, grav: -0.2, r: 0.46, g: 0.3, b: 0.44, a: 0.4 }); }
     }
     for (let i = this.shells.length - 1; i >= 0; i--) {
       const s = this.shells[i];
@@ -1069,7 +1083,8 @@ export class Abilities {
     if (g.player.vehicle) g.player.vehicle = null;
     for (const t of this.tanks) t.dispose();
     for (const s of this.sentries) s.dispose();
-    this.tanks.length = 0; this.sentries.length = 0; this.shells.length = 0; this.marks.length = 0;
+    for (const m of this.litter) g.engine.scene.remove(m);
+    this.litter.length = 0; this.tanks.length = 0; this.sentries.length = 0; this.shells.length = 0; this.marks.length = 0;
     this.lightI = 0; this.light.intensity = 0;
     for (const rg of this.rings) { rg.t = rg.life; rg.m.visible = false; }
     this.scorches.count = 0; this.scorchI = 0; this.treads.count = 0; this.treadI = 0;

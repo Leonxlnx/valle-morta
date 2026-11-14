@@ -254,8 +254,8 @@ def hook_pistol(c):
 def m_web(c, m):
     """synthetic stock: OD green with a tan / black marbled web (moulded-in colour), slightly worn on the edges"""
     p = c.p[m]; col, r, mt, h = m_poly(c, m, (0.20, 0.215, 0.15), 0.72, 1.6)
-    w1 = ss(0.52, 0.57, fbm(p, 1 / 18., 4, 71)); w2 = ss(0.6, 0.65, fbm(p, 1 / 11., 4, 72))
-    col = mixc(col, col * np.array([1.75, 1.55, 1.3], f4), w1 * 0.8); col = mixc(col, col * 0.4, w2 * 0.75)
+    v1 = 1 - ss(0.0, 0.035, np.abs(fbm(p, 1 / 26., 4, 71) - 0.5)); v2 = 1 - ss(0.0, 0.022, np.abs(fbm(p, 1 / 15., 4, 72) - 0.5)); cl = ss(0.55, 0.7, fbm(p, 1 / 40., 3, 73))
+    col = mixc(col, col * np.array([1.55, 1.42, 1.25], f4), np.clip(v1 * 0.75 + cl * 0.25, 0, 1)); col = mixc(col, col * 0.45, v2 * 0.6)
     return col, r, mt, h
 
 
@@ -269,7 +269,7 @@ def hook_sniper(c):
     bl = (tag == 2) & (pid == STEEL) & (n[:, 0] < -0.6) & (y < 320); c.stamp[bl] = T.stamp_text(-y[bl], z[bl], (-320, -212, 40, 56), [('.308 WIN  1:10  STAINLESS', -312, 46.0, 2.6)])
     tick = np.zeros(M, bool)                                                    # turret graduations (white fill): elevation on top, windage on the right
     for ax, band, u, v in ((z - SZ, (24.6, 31.0), x, y - YT), (x, (24.6, 26.2), z - SZ, y - YT)):
-        m = (tag == 7) & (ax > band[0]) & (ax < band[1]) & (np.hypot(u, v) > 14.4); i = np.nonzero(m)[0]
+        m = (tag == 7) & (ax > band[0]) & (ax < band[1]) & (np.hypot(u, v) > 14.4) & (np.hypot(u, v) < 17.0); i = np.nonzero(m)[0]
         ang = np.degrees(np.arctan2(u[i], v[i])); d = np.abs(((ang + 4.5) % 9) - 4.5); maj = np.abs(((ang + 22.5) % 45) - 22.5) < 1.6
         tick[i[(d < 1.1) & ((ax[i] > band[0] + 0.55 * (band[1] - band[0])) | maj)]] = True
     c.hadd[tick] -= 0.12

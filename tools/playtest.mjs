@@ -1420,7 +1420,7 @@ try {
     });
     await section(page, 'ab tank drop', () => {
       const vm = __vm, g = vm.game, op = g.operation, p = g.player, kit = op.kit, { r2 } = pt;
-      const ab = __ab('tank', 1); p.pitch = 0.04;
+      const ab = __ab('tank', 3); p.pitch = 0.04;
       const used = op.useAbility(0), t = kit.tanks[kit.tanks.length - 1];
       if (!used || !t) return { used, refused: true, pos: pt.arr(p.pos) };
       window.__tank = t; window.__tankAb = ab;
@@ -1454,16 +1454,28 @@ try {
       o.brake = r2(tb, 2);
       o.pivot = { turnedDeg: r2((y0 - t.yaw) * 57.3, 0), moved: r2(Math.hypot(t.pos.x - pp.x, t.pos.z - pp.z), 2), rateDegS: r2(-t.w * 57.3, 0) };
       p.script = (dt, pl) => { pl.input.strafe = 0; };
-      pt.sim(1.2);
+      pt.sim(0.6);
+      // a wall across the way: the hull stops at it
+      { const T = vm.THREE, col = g.collision, wx = t.pos.x + t.fwdX * 12, wz = t.pos.z + t.fwdZ * 12;
+        const wall = new T.Mesh(new T.BoxGeometry(12, 3, 0.6), new T.MeshStandardMaterial({ color: 0x8c8983 }));
+        wall.position.set(wx, vm.terrain.heightAt(wx, wz) + 1.2, wz); wall.rotation.y = t.yaw; wall.userData.surface = 'stone'; wall.updateMatrixWorld(true);
+        vm.engine.scene.add(wall); col.build([...vm.world.colliders, wall]);
+        p.script = (dt, pl) => { pl.input.fwd = 1; };
+        let vpk = 0; pt.sim(3.2, 1 / 60, () => { vpk = Math.max(vpk, t.v); });
+        o.wall = { frontGap: r2((wx - t.pos.x) * t.fwdX + (wz - t.pos.z) * t.fwdZ - 0.3 - 3.4, 2), speedAtWall: r2(t.v, 2), peak: r2(vpk, 1), stillDriving: t.state };
+        vm.engine.scene.remove(wall); col.build(vm.world.colliders); p.script = () => {}; }
       // the main gun at an infected 30 m ahead
-      const z = Z.spawn(t.pos.x + t.fwdX * 30, t.pos.z + t.fwdZ * 30, { type: 'brute' });
+      p.script = (dt, pl) => { pl.input.fwd = -1; }; pt.sim(1.5); p.script = () => {}; pt.sim(0.5);
+      const z = Z.spawn(t.pos.x + t.fwdX * 30, t.pos.z + t.fwdZ * 30, { type: 'walker' });
       if (z) pt.still(z);
-      p.yaw = t.yaw; const mY = t.pos.y + 1.95; p.pitch = Math.atan2(z.pos.y + 0.4 - mY, 25.5);
-      pt.sim(1.6);
+      const aimAt = z.pos.clone(); aimAt.y += 0.9;
+      p.script = (dt, pl) => pl.lookAt(aimAt, 999, dt);
+      const laidAfter = pt.sim(4, 1 / 60, (tt) => tt < 0.3 || !t.laid);
+      pt.sim(0.1);
       const k0 = g.operation.kit.stats.blastKills, sh0 = t.shots, pv0 = t.pv;
-      p.script = (dt, pl) => { pl.input.fire = true; };
+      p.script = (dt, pl) => { pl.lookAt(aimAt, 999, dt); pl.input.fire = true; };
       pt.sim(1 / 60); p.script = () => {};
-      o.gun = { fired: t.shots - sh0, recoil: r2(t.recoil, 2), hullKick: r2(t.pv - pv0, 2), reload: r2(t.reload, 1), target: z ? z.alive : null, blast: g.operation.kit.stats.lastBlast };
+      o.gun = { laidAfter: r2(laidAfter, 2), fired: t.shots - sh0, recoil: r2(t.recoil, 2), hullKick: r2(t.pv - pv0, 2), reload: r2(t.reload, 1), target: z ? z.alive : null, blast: g.operation.kit.stats.lastBlast, zAt: pt.arr(z.pos), aimP: pt.arr(t.aimP), tank: pt.arr(t.pos), tYaw: r2(t.tYaw, 3), gP: r2(t.gPitch, 3), pYaw: r2(p.yaw - t.yaw, 3), pPitch: r2(p.pitch, 3) };
       pt.sim(0.12);
       return o;
     });
@@ -1472,16 +1484,6 @@ try {
       const vm = __vm, g = vm.game, p = g.player, T = vm.THREE, col = g.collision, t = window.__tank, ab = window.__tankAb, kit = g.operation.kit, { r2 } = pt;
       if (!t) return 'no tank';
       const o = {};
-      // a wall across the way: the hull stops at it
-      const wx = t.pos.x + t.fwdX * 12, wz = t.pos.z + t.fwdZ * 12;
-      const wall = new T.Mesh(new T.BoxGeometry(12, 3, 0.6), new T.MeshStandardMaterial({ color: 0x8c8983 }));
-      wall.position.set(wx, vm.terrain.heightAt(wx, wz) + 1.2, wz); wall.rotation.y = t.yaw; wall.userData.surface = 'stone'; wall.updateMatrixWorld(true);
-      vm.engine.scene.add(wall); col.build([...vm.world.colliders, wall]);
-      p.script = (dt, pl) => { pl.input.fwd = 1; };
-      pt.sim(4);
-      o.wall = { frontGap: r2((wx - t.pos.x) * t.fwdX + (wz - t.pos.z) * t.fwdZ - 0.3 - 3.4, 2), speed: r2(t.v, 2) };
-      vm.engine.scene.remove(wall); col.build(vm.world.colliders);
-      p.script = () => {};
       const tEnd = pt.sim(16, 1 / 30, () => p.vehicle === t);
       o.dismount = { after: r2(tEnd, 1), state: t.state, gap: r2(Math.hypot(p.pos.x - t.pos.x, p.pos.z - t.pos.z), 2), solid: !!t.box, weapon: g.weapon.visible, onGround: p.onGround, abActive: ab.active };
       const pv = p.pos.clone();
@@ -1509,6 +1511,8 @@ try {
       return { used, markErr: mark ? r2(mark.pos.distanceTo(tgt), 2) : null, shells: window.__mortar.impacts.length, landedSoFar: window.__mortar.impacts.length - kit.shells.length };
     });
     await shotAb('mortar');
+    await section(page, 'ab mortar sky', () => { const vm = __vm, p = __vm.game.player, k = __vm.game.operation.kit; const m = k.marks[0] ? k.marks[0].pos.clone() : null; if (m) { m.y += 16; p.script = (dt, pl) => pl.lookAt(m, 999, dt); } pt.sim(0.9); p.script = () => {}; return { particles: __vm.game.fx.n }; });
+    await shotAb('mortar_sky');
     await section(page, 'ab mortar end', () => {
       const vm = __vm, g = vm.game, p = g.player, kit = g.operation.kit, m = window.__mortar, { r2 } = pt;
       pt.sim(5);
@@ -1529,6 +1533,7 @@ try {
       const fx = -Math.sin(p.yaw), fz = -Math.cos(p.yaw), rx = Math.cos(p.yaw), rz = -Math.sin(p.yaw);
       window.__sz = [[12, -5], [16, 3], [20, -1], [25, 6]].map(([d, l]) => { const z = Z.spawn(p.pos.x + fx * d + rx * l, p.pos.z + fz * d + rz * l, { type: 'walker' }); if (z) pt.still(z); return z; }).filter(Boolean);
       pt.sim(1.3);
+      p.yaw -= 0.42; p.pitch = -0.2;
       const st = s.state;
       const t = pt.sim(4, 1 / 60, () => s.shots < 4);
       return { used, stateAfter13: st, firstShotsAfter: r2(t + 1.3, 2), gap: r2(Math.hypot(s.pos.x - p.pos.x, s.pos.z - p.pos.z), 2) };
@@ -1584,8 +1589,8 @@ try {
       __ab('jump', 3);
       p.script = (dt, pl) => { pl.input.fwd = 1; }; pt.sim(0.5);
       const used = op.useAbility(0);
-      p.script = (dt, pl) => { pl.input.fwd = 1; pl.pitch = -0.8; };
-      pt.sim(0.2);
+      p.script = (dt, pl) => { pl.input.fwd = 1; pl.pitch = -1.0; };
+      pt.sim(0.22);
       return { used, vy: r2(p.vel.y, 1), vh: r2(Math.hypot(p.vel.x, p.vel.z), 1), above: r2(pt.above()) };
     });
     await shotAb('jump');

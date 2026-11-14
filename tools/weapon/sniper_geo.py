@@ -117,7 +117,7 @@ def action(G):
     finish(b, G, 0.0)
     b = B(BLUED, 6)                                                              # bolt release, safety, receiver screws
     prism(b, [(-26, BZ - 4), (-8, BZ - 4), (-5, BZ - 0.5), (-8, BZ + 3), (-26, BZ + 3)], -19.8, -16.4, 'yz')
-    prism(b, [(-48, 36.5), (-36, 36.5), (-35, 41), (-47, 41)], 13.8, 17.6, 'yz'); box(b, 15.6, 17.4, -45, -39, 41, 44.5)
+    prism(b, [(-48, 33.0), (-36, 33.0), (-35, 41), (-47, 41)], 13.8, 17.6, 'yz'); box(b, 15.6, 17.4, -45, -39, 41, 44.5)
     for yy in (-12, 186):
         for sx in (-1, 1): dome(b, (sx * 17.3, yy, BZ - 6), (sx, 0, -0.2), 2.4, 0.6, 10)
     finish(b, G, 0.3)
@@ -185,6 +185,7 @@ def scope(G):
     b = B(ALU, 7)                                                                # turret saddle, power-ring throw lever
     loft(b, [[V(x, y, z + SZ) for x, z in rrect(hw, hw, rr, 3)] for y, hw, rr in ((49, 15.5, 6), (51.5, 18.5, 7.5), (88.5, 18.5, 7.5), (91, 15.5, 6))])
     prism(b, [(-3, SZ + 17.6), (3, SZ + 17.6), (2.2, SZ + 27), (-2.2, SZ + 27)], -30.5, -22.5, 'xz')
+    c = B(DARK); cyl(c, (0, 45, SZ), (0, 95, SZ), 13.3, 30); boolean_diff(b, c)   # keep the erector bore open through the saddle
     finish(b, G, 0.5)
     b = B(ALU, 7)
     turret(b, (0, 0, 1), 41.5, 15.5, 28, 84); turret(b, (1, 0, 0), 36.0, 14.5, 26, 78)

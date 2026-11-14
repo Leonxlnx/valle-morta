@@ -423,7 +423,7 @@ export class Sky {
     this.envMap = null;
     // the panorama is refreshed a few pixel columns per frame and the cloud shadow map one band per
     // frame: an even load instead of a spike every few frames
-    this.goboBands = 6;
+    this.goboBands = 12;
     this.time = 0;
   }
 
@@ -594,10 +594,10 @@ export class Sky {
         if (have < want) this._renderSlot(k + 2, Math.min(want - have, W / 96));
       }
     }
-    // the cloud field drifts a few centimetres per frame: its shadow map is refreshed one band every
-    // other frame, a small even load instead of one larger job every few frames
+    // the cloud field drifts a few centimetres per frame: its shadow map is refreshed one thin band
+    // every frame (a full pass every 12 frames), the same small load in every frame
     this._goboTick = (this._goboTick || 0) + 1;
-    if (sync) this.renderGobo(time); else if (this._goboTick % 2 === 0) this.renderGobo(time, (this._goboTick >> 1) % this.goboBands);
+    if (sync) this.renderGobo(time); else this.renderGobo(time, this._goboTick % this.goboBands);
     this._bind(k, time);
   }
 }
