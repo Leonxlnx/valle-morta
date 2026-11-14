@@ -14,6 +14,7 @@ VIEWS = [('first person', EYE, (EYE[0], 1.0, EYE[2]), 52), ('right', (0.92, 0.22
          ('behind', (-0.16, -0.62, 0.26), (0.0, 0.05, 0.04), 40), ('below front', (-0.35, 0.75, -0.40), (0.0, 0.15, -0.02), 40), ('top', (0.04, 0.22, 1.05), (0.0, 0.22, 0.0), 45)]
 MISC = [('Idle', 1), ('Fire', '0-1-2-4-8-14'), ('Draw', 4), ('Holster', 3), ('Sprint', 3)]
 TRV = SG.TRAV * 0.001; LF = SG.LIFT; TP = Vector(SG.TPAD) * 0.001
+CLOSE = {'BoltCycle': ((0.36, 0.12, 0.14), (0.04, -0.07, 0.05), 34), 'Reload': ((-0.45, 0.10, -0.12), (0.0, 0.12, -0.03), 40), 'ReloadEmpty': ((0.22, -0.42, 0.26), (0.0, 0.06, 0.0), 50)}   # close-up review sheets (sheets=Clip:N@c)
 META = dict(eye=list(EYE), fov=52, bolt_travel_m=TRV, bolt_lift_deg=LF, striker_fall_m=0.005, scope_eye=[0, -0.092, 0.108],
             note='preview camera of the contact sheets: eye position relative to the model origin (Blender axes x right, y forward, z up). Rest pose = bolt closed and cocked '
                  '(red indicator on the cocking piece visible), finger on the trigger. Bolt open = BoltHandle rotated bolt_lift_deg about the bore (handle up) and moved '
@@ -43,9 +44,14 @@ def setup(st):
     A['sup'] = st.grip('support', 'L', 'Weapon', F((0.55, 0.80, 0.22), (0.12, -0.2, -0.97)), (0.0, 0.262, -0.004), (0, 45, -14), (0, 0, 1), back=0.04, retreat=(-0.04, -0.03, -0.05))
     # bolt knob: palm over the knob, fingers round its front; the hand follows the knob but turns only 30 % with the handle
     kn = Vector(SG.KNOB) * mm
-    b = st.grip('bolt', 'R', 'BoltHandle', F((-0.25, 0.9, -0.35), (0.55, 0.1, 0.83)), tuple(kn + Vector((0.003, -0.004, 0.012))), (-5, 86, -12), (-0.5, 0, -0.85), a0=RG.A_OPEN, fingers=('Index', 'Middle', 'Ring'),
-                back=0.04, retreat=(0.02, -0.03, 0.04))
-    A['bolt'] = Anchor('BoltHandle', b.M, b.pose, b.pre, b.retreat, b.a, pivot=kn - Vector(SG.ORIG['BoltHandle']) * mm, rotpar='Weapon', follow=0.3)
+    # bolt knob: the hand comes over the knob with the wrist straight (forearm, hand and fingers in one line, forward), the knob under the
+    # index / middle knuckles; index and middle hook down round its front face (they pull it back), ring and little finger fold under,
+    # the thumb lies behind and under the knob (it pushes it home). close() cannot curl fingers that start on the knob, so the hook is set
+    # explicitly. The wrist follows the knob along the lift arc and turns 45 % with the handle.
+    b = st.grip('bolt', 'R', 'BoltHandle', F((-0.12, 0.97, 0.05), (0.45, 0.02, 0.89)), tuple(kn), (-14, 90, -15), (-0.45, 0.0, -0.89), a0=RG.A_OPEN,
+                fingers=(), thumb=False, back=0.05, retreat=(0.03, -0.03, 0.05))
+    b = b.variant(rg, Index=[52, 78, 42, 2], Middle=[58, 82, 46, 0], Ring=[66, 84, 46, -4], Pinky=[70, 80, 44, -8], Thumb=[48, 34, -118, 30, 24])
+    A['bolt'] = Anchor('BoltHandle', b.M, b.pose, b.pre, b.retreat, b.a, pivot=kn - Vector(SG.ORIG['BoltHandle']) * mm, rotpar='Weapon', follow=0.45)
     # magazine: palm under the base plate, fingers over the front face, thumb up the back to the release paddle
     mb = RG.bvh_of([bpy.data.objects['Magazine'], bpy.data.objects['MagRounds']])
     A['magh'] = st.grip('mag', 'L', 'Magazine', F((0.1, 0.95, 0.3), (0, 0.3, -0.95)), (0.0, SG.MAGY * mm, (SG.MAGB - 7) * mm), (0, 45, -14), (0, 0, 1), bvh=mb, back=0.04,
@@ -83,7 +89,7 @@ def clips(st):
     bh.k(0.19, Z).k(0.29, up, ease='io').k(0.69, up).k(0.79, Z, ease='in')
     bp_.k(0.30, Z).k(0.46, bk, ease='in').k(0.52, bk).k(0.67, Z, ease='in')
     c.ev(0.44, 'shell').ev(0.46, 'bolt_back').ev(0.67, 'bolt_forward')
-    leave(c, 0.0); c.hand['R'].hold(0.17, 0.80, A['bolt'], close=0.04, open=0.04, lift=(0.02, -0.02, 0.03)); back_to_grip(c, 0.96, 1.1)
+    leave(c, 0.0); c.hand['R'].hold(0.15, 0.83, A['bolt'], close=0.035, open=0.04, lift=(0.02, -0.02, 0.03)); back_to_grip(c, 0.96, 1.1)
     c.wr.k(0.12, (-0.5, -2.5, 0.5), 'c').k(0.30, (-1.0, -5.0, 1.0), 'c').k(0.46, (-1.5, -4.0, 1.5), 'c').k(0.67, (-0.8, -4.5, 0.8), 'c').k(0.86, (0.0, -2.0, 0.3), 'c').k(1.1, Z)
     c.wp.k(0.30, (0, -0.002, 0.006), 'c').k(0.46, (0, -0.006, 0.008), 'c').k(0.67, (0, 0.002, 0.006), 'c').k(1.1, Z)
     c.wp.add(spring(0.46, (0, -0.003, 0), 9, 14)).add(spring(0.67, (0, 0.004, 0.0), 9, 14))
@@ -144,5 +150,5 @@ def clips(st):
     c.wr.k(2.92, (RR[0] * 0.4, RR[1] * 0.2, RR[2] * 0.4), 'c').k(3.3, (-0.5, -2.0, 0.3), 'c').k(3.7, Z); c.wp.k(2.92, (RP[0] * 0.4, 0, RP[2] * 0.4), 'c').k(3.7, Z)
     c.wr.add(spring(0.46, (0.8, 0, 0), 8, 13)).add(spring(2.92, (-0.6, 0.6, 0), 8, 13)).add(spring(3.04, (0.3, -0.8, 0), 9, 14))
     c.hand['L'].hold(3.22, 3.7, A['sup'], close=0.1, lift=(-0.02, -0.02, -0.04))
-    leave(c, 0.0); c.hand['R'].hold(0.17, 0.50, A['bolt'], close=0.04, open=0.04, lift=(0.02, -0.02, 0.03)).hold(0.68, 2.55, A['safe'], lift=(0.02, -0.02, 0.0))
+    leave(c, 0.0); c.hand['R'].hold(0.15, 0.50, A['bolt'], close=0.035, open=0.04, lift=(0.02, -0.02, 0.03)).hold(0.68, 2.55, A['safe'], lift=(0.02, -0.02, 0.0))
     c.hand['R'].hold(2.72, 3.06, A['bolt'], close=0.04, open=0.04, lift=(0.02, -0.02, 0.03)); back_to_grip(c, 3.24, 3.7)

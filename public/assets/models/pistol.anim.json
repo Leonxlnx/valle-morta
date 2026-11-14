@@ -81,6 +81,6 @@
   "slide_lock_m": 0.045,
   "hammer_over_deg": 12.0,
   "barrel_tilt_deg": 2.0,
-  "note": "preview camera of the contact sheets: eye position relative to the model origin (Blender axes x right, y forward, z up). Rest pose = hammer cocked, finger on the trigger. Slide locked back = node Slide moved slide_lock_m towards the shooter (glTF +Z), Hammer rotated hammer_over_deg further back, Barrel tilted barrel_tilt_deg and 3 mm back, SlideStop raised 3 deg; ReloadEmpty goes there within its first 2 frames. MagRounds (child of Magazine) is scaled away for the empty magazine in ReloadEmpty. Sprint is a seamless loop in a compressed high-ready pose (muzzle up, close to the chest) (cross-fade into it)."
+  "note": "preview camera of the contact sheets: eye position relative to the model origin (Blender axes x right, y forward, z up). Rest pose = hammer cocked, finger on the trigger. Slide locked back = node Slide moved slide_lock_m towards the shooter (glTF +Z), Hammer rotated hammer_over_deg further back, Barrel tilted barrel_tilt_deg and 3 mm back, SlideStop raised 3 deg; ReloadEmpty goes there within its first 2 frames. MagRounds (child of Magazine) is scaled away for the empty magazine in ReloadEmpty. Sprint is a seamless loop in a two-handed low ready across the body (cross-fade into it)."
  }
 }

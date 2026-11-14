@@ -37,7 +37,8 @@ export const WEAPONS = {
     },
     // view-model framing: grip position in camera space (m), base rotation [pitch up, yaw inward, cant] (rad),
     // weapon-camera field of view at the hip and aimed (deg), eye to rear sight when aimed (m), extra sprint offset [y, z, pitch]
-    pose: { rot: [0.05, 0.07, 0.05], fov: 54, adsFov: 46, eye: 0.25, sprint: [-0.03, 0.02, -0.12] },
+    // aimed: a long cheek weld and a wider weapon lens, so the receiver stays a thin band under the sight line
+    pose: { rot: [0.05, 0.07, 0.05], fov: 54, adsFov: 60, eye: 0.3, adsNear: 0.05, sprint: [-0.03, 0.02, -0.12] },
     hip: [0.115, -0.148, -0.235], zoom: 1.35, scopeFov: 0, adsRate: 11, sway: 0.0014,
     spread: { hip: 0.0115, ads: 0.0012, bloom: 0.0018, bloomMax: 0.012, recover: 6, move: 0.012, air: 0.03 },
     recoil: { v0: 0.0095, v1: 0.003, tau: 4.5, h0: 0.0006, h: 0.0026, hStart: 3, hPeriod: 8, jit: 0.1, hJit: 0.0006, ads: 0.7, hold: 0.16, recover: 7, max: 0.17 },
@@ -54,7 +55,7 @@ export const WEAPONS = {
       Reload: [[0.35, 'mag_out'], [1.1, 'mag_in'], [1.1, 'ammo']],
       ReloadEmpty: [[0.35, 'mag_out'], [1.1, 'mag_in'], [1.1, 'ammo'], [1.7, 'slide_release']],
     },
-    pose: { rot: [0.06, 0.12, 0.04], fov: 52, adsFov: 46, eye: 0.3, sprint: [0.04, 0.0, 0.08] },
+    pose: { rot: [0.06, 0.12, 0.04], fov: 52, adsFov: 46, eye: 0.3, sprint: [0.06, 0.0, 0.12], sprintClip: false },
     hip: [0.062, -0.122, -0.27], zoom: 1.2, scopeFov: 0, adsRate: 15, sway: 0.0018,
     spread: { hip: 0.009, ads: 0.0022, bloom: 0.0042, bloomMax: 0.016, recover: 7, move: 0.008, air: 0.03 },
     recoil: { v0: 0.016, v1: 0.02, tau: 3, h0: 0.001, h: 0, hStart: 0, hPeriod: 8, jit: 0.12, hJit: 0.003, ads: 0.75, hold: 0.2, recover: 9, max: 0.2 },
@@ -71,7 +72,7 @@ export const WEAPONS = {
       Reload: [[0.3, 'bolt_back'], [0.9, 'mag_out'], [2.0, 'mag_in'], [2.0, 'ammo'], [2.75, 'bolt_forward']],
       BoltCycle: [[0.28, 'bolt_back'], [0.36, 'shell'], [0.72, 'bolt_forward']],
     },
-    pose: { rot: [0.03, 0.06, 0.05], fov: 54, adsFov: 50, eye: 0.085, sprint: [0.075, -0.02, 0.2], sprintClip: false },
+    pose: { rot: [0.03, 0.06, 0.05], fov: 54, adsFov: 50, eye: 0.085, sprint: [0.045, -0.02, 0.14], sprintClip: false },
     hip: [0.122, -0.168, -0.2], zoom: 1.15, scopeFov: 10, adsRate: 7.5, sway: 0.0078, bipod: true,
     spread: { hip: 0.04, ads: 0.00012, bloom: 0, bloomMax: 0, recover: 6, move: 0.03, air: 0.06 },
     recoil: { v0: 0.06, v1: 0.06, tau: 1, h0: 0, h: 0, hStart: 0, hPeriod: 8, jit: 0.08, hJit: 0.012, ads: 0.8, hold: 0.12, recover: 3.2, max: 0.2 },
@@ -162,7 +163,7 @@ export class Weapon {
     this.fireT = 1; this.flashN = 0; this.shellAt = -1;
     this.swayX = 0; this.swayY = 0; this.lastYaw = 0; this.lastPitch = 0; this.swayA = 0;
     this.sprintT = 0; this.adsK = 0; this.deadT = 0; this.lowerT = 0; this.lowerB = 0; this.time = 0; this.shots = 0;
-    this.scopeT = 0; this.scoped = false; this.bipodT = 0; this.bipodHold = 0; this.bipod = false;
+    this.scopeT = 0; this.scoped = false; this.bipodT = 0; this.bipodHold = 0; this.bipod = false; this.bipodClipT = 1e9;
     this.onShoot = null;   // (origin, dir, def, state) => hit | null  (the game resolves zombies + world)
     this.eventLog = [];
     this.light = null; this.scope = null;
@@ -210,7 +211,7 @@ export class Weapon {
     this.shotIdx = 0; this.burst = 0; this.bloom = 0; this.heat = 0;
     this.kick = this.kickRot = this.kickYaw = this.kickRoll = 0;
     this.sprintT = 0; this.adsK = 0; this.deadT = 0; this.lowerT = 0; this.lowerB = 0; this.flashN = 0; this.fireT = 1; this.shellAt = -1;
-    this.scopeT = 0; this.scoped = false; this.bipodT = 0; this.bipodHold = 0; this.bipod = false;
+    this.scopeT = 0; this.scoped = false; this.bipodT = 0; this.bipodHold = 0; this.bipod = false; this.bipodClipT = 1e9;
   }
 
   // adds reserve ammunition, returns how many rounds fitted
@@ -676,7 +677,11 @@ export class Weapon {
     // the bipod goes down when the shooter lies still
     const still = !!def.bipod && p.prone > 0.95 && p.speed < 0.2 && !this.switching && p.alive;
     this.bipodHold = still ? this.bipodHold + dt : 0;
+    const bipod0 = this.bipodT;
     this.bipodT = clamp(this.bipodT + (still && this.bipodHold > 0.2 ? 1 : -1) * dt / 0.45, 0, 1);
+    // deployment starts: the support hand swings the legs down in view (BipodDeploy clip), not just a blend out of frame
+    if (bipod0 === 0 && this.bipodT > 0) this.bipodClipT = 0; else this.bipodClipT += dt;
+    if (this.bipodT === 0) this.bipodClipT = 1e9;
     this.bipod = this.bipodT > 0.99;
     // aim sway: strong standing, small crouched, close to nothing prone on the bipod; worse on the move
     const amp = def.sway * p.adsT * lerp(1, 0.36, p.crouch) * lerp(1, 0.36, p.prone) * lerp(1, 0.2, this.bipodT) * (1 + Math.min(1, p.speed / 2) * 1.5);
@@ -719,6 +724,7 @@ export class Weapon {
     if (view.mixer) {
       if (act && act.clip && A[act.clip]) { over = act.clip; overT = (act.t / act.dur) * view.clips[over].duration; }
       else if (A.Fire && this.fireT < view.fireDur && !(view.standIn && def.mode === 'bolt')) { over = 'Fire'; overT = this.fireT; }     // every shot starts it again
+      else if (A.BipodDeploy && this.bipodClipT < view.clips.BipodDeploy.duration) { over = 'BipodDeploy'; overT = this.bipodClipT; }
       if (over !== view.over) {
         if (view.over && A[view.over]) A[view.over].stop();
         view.over = over; view.overW = over === 'Fire' ? 1 : 0;
@@ -757,9 +763,16 @@ export class Weapon {
     pos.x -= 0.035 * sp; pos.y -= 0.045 * sp; pos.z += 0.04 * sp;
     rot.x -= 0.34 * sp; rot.y += 0.62 * sp; rot.z += 0.22 * sp;
     pos.y += P.sprint[0] * this.sprintT; pos.z += P.sprint[1] * this.sprintT; rot.x += P.sprint[2] * this.sprintT;
+    // bolt work from the hip: the rifle is lifted and rolled left so the hand on the knob and the open action stay in frame
+    if (act && (act.clip === 'BoltCycle' || act.clip === 'ReloadEmpty') && def.mode === 'bolt') {
+      const u = act.t / act.dur, bk = (act.clip === 'BoltCycle' ? Math.sin(Math.PI * Math.min(1, u * 1.1)) : ss(0, 0.12, u) * (1 - ss(0.86, 1, u))) * hipK;
+      pos.y += 0.03 * bk; pos.x -= 0.025 * bk; rot.z += 0.16 * bk; rot.x += 0.05 * bk;
+    }
     // weapon-camera field of view: each weapon framed on its own, a touch tighter when aimed
     const wc = this.engine.weaponCamera, fov = lerp(P.fov, P.adsFov, ads);
-    if (Math.abs(wc.fov - fov) > 1e-3) { wc.fov = fov; wc.updateProjectionMatrix(); }
+    // aimed with the cheek on the stock the eye sits just behind the rear sight: the near plane steps forward so the comb under the eye never shows
+    const near = lerp(0.02, P.adsNear || 0.02, ss(0.5, 1, ads));
+    if (Math.abs(wc.fov - fov) > 1e-3 || Math.abs(wc.near - near) > 1e-4) { wc.fov = fov; wc.near = near; wc.updateProjectionMatrix(); }
     if (this.fill) this._lightRig();
     // lying down the weapon rests lower and canted
     const pr = p.prone * hipK * (1 - this.bipodT);
@@ -786,7 +799,7 @@ export class Weapon {
       if (act.name.startsWith('Reload')) this._procReload(view, act, pos, rot); else if (act.name === 'BoltCycle') this._procBolt(view, act, pos, rot);
     }
     // bipod legs: held in the deployed pose of their clip
-    if (view.bipodPose && this.bipodT > 0) for (const b of view.bipodPose) { b.node.position.lerp(b.p, this.bipodT); b.node.quaternion.slerp(b.q, this.bipodT); }
+    if (view.bipodPose && this.bipodT > 0 && view.over !== 'BipodDeploy') for (const b of view.bipodPose) { b.node.position.lerp(b.p, this.bipodT); b.node.quaternion.slerp(b.q, this.bipodT); }
 
     this.rig.rotation.copy(rot);
     // scope: the mask replaces the model once the eye is behind the glass

@@ -9,7 +9,7 @@ from scipy.spatial.transform import Rotation as Rot
 HERE = os.path.dirname(os.path.abspath(__file__)); sys.path.insert(0, HERE)
 import variant
 BUILD = variant.BUILD; TEX = os.path.join(BUILD, 'tex')
-OUT_DIR = os.path.abspath(os.path.join(HERE, '..', '..', 'public', 'assets', 'models'))
+OUT_DIR = os.environ.get('ZSTAGE') or os.path.join(HERE, 'stage')     # staging; tools/zombie/install.mjs copies into public/ under the GPU lock
 OUT = os.path.join(OUT_DIR, variant.OUT + '.glb')
 REQ_BONES = ['Hips', 'Spine', 'Chest', 'Neck', 'Head', 'Jaw', 'Shoulder.L', 'UpperArm.L', 'LowerArm.L', 'Hand.L', 'Shoulder.R', 'UpperArm.R',
              'LowerArm.R', 'Hand.R', 'UpperLeg.L', 'LowerLeg.L', 'Foot.L', 'Toe.L', 'UpperLeg.R', 'LowerLeg.R', 'Foot.R', 'Toe.R']

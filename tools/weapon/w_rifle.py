@@ -13,6 +13,7 @@ VIEWS = [('first person', EYE, (EYE[0], 1.0, EYE[2]), 52), ('right', (0.55, 0.12
          ('firing grip', (0.30, -0.16, 0.02), (0.0, 0.0, -0.03), 30), ('grip from behind', (-0.16, -0.30, 0.10), (0.0, -0.02, -0.02), 30), ('support hand', (-0.22, 0.34, -0.24), (0, 0.22, 0.0), 34)]
 MISC = [('Idle', 1), ('Fire', 6), ('Draw', 5), ('Holster', 4), ('Sprint', 4)]
 CAMS = {'Fire': ((0.34, -0.02, 0.07), (0.0, 0.05, 0.012), 30)}
+CLOSE = {'Reload': ((-0.40, 0.30, 0.02), (-0.04, 0.10, -0.02), 42), 'ReloadEmpty': ((-0.30, -0.02, 0.22), (-0.02, 0.14, 0.0), 46), 'Fire': ((0.30, 0.06, 0.08), (0.0, 0.10, 0.03), 26)}
 META = dict(eye=list(EYE), fov=52, note='preview camera of the contact sheets: eye position relative to the model origin (Blender axes x right, y forward, z up); '
             'Sprint is a seamless loop in the sprint carry pose (cross-fade into it); MagRounds (child of Magazine) is scaled away for the empty magazine in ReloadEmpty')
 

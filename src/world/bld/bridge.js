@@ -11,6 +11,11 @@ function rbox(mb, x, y, z, sx, sy, sz, rng, tiltMax = 0.5) {
   const cr = Math.cos(roll), sr = Math.sin(roll);
   const V2 = [V[0] * cr + Wv[0] * sr, V[1] * cr + Wv[1] * sr, V[2] * cr + Wv[2] * sr], W2 = [Wv[0] * cr - V[0] * sr, Wv[1] * cr - V[1] * sr, Wv[2] * cr - V[2] * sr];
   mb.obox([x, y, z], [U[0] * sx, U[1] * sx, U[2] * sx], [V2[0] * sy, V2[1] * sy, V2[2] * sy], [W2[0] * sz, W2[1] * sz, W2[2] * sz], { tile: 4, uo: rng.f(), vo: rng.f(), aoB: 0.6 });
+  // collision hull of the block, a little inset so the player does not snag on its corners
+  return (cb, k = 0.85) => {
+    const p = (a, b, c2) => [x + k * (a * U[0] * sx + b * V2[0] * sy + c2 * W2[0] * sz), y + k * (a * U[1] * sx + b * V2[1] * sy + c2 * W2[1] * sz), z + k * (a * U[2] * sx + b * V2[2] * sy + c2 * W2[2] * sz)];
+    cb.hex([p(-1, -1, -1), p(1, -1, -1), p(1, -1, 1), p(-1, -1, 1)], [p(-1, 1, -1), p(1, 1, -1), p(1, 1, 1), p(-1, 1, 1)]);
+  };
 }
 
 export function buildBridge(B) {
@@ -150,7 +155,8 @@ export function buildBridge(B) {
     if (hh < 0.04) continue;
     const big = k < 5, sx = big ? rng.range(0.9, 1.4) : rng.range(0.22, 0.55), sy = big ? rng.range(0.2, 0.3) : rng.range(0.13, 0.28), sz = big ? rng.range(0.55, 0.9) : rng.range(0.16, 0.36);
     mb.set(rng.chance(0.55) ? LY.stone_blocks : LY.stone_masonry, [rng.range(0.95, 1.15), rng.range(0.95, 1.12), rng.range(0.92, 1.06)]);
-    rbox(mb, x, T(x, z) + hh + sy * 0.6, z, sx, sy, sz, rng, big ? 0.45 : 0.6);
+    const hull = rbox(mb, x, T(x, z) + hh + sy * 0.6, z, sx, sy, sz, rng, big ? 0.45 : 0.6);
+    if (sx > 0.3) hull(cb);
   }
   for (let k = 0; k < 170; k++) {
     const aa = rng.range(0, 6.283), rr = Math.sqrt(rng.f()) * 1.05, lx = Math.cos(aa) * rr * 7, lz = Math.sin(aa) * rr * 6;

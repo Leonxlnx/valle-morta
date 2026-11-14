@@ -90,6 +90,7 @@ float weatherAt(vec2 xz) {
   return a * 0.6 + b * 0.4;
 }
 uniform float uCloudEdge;
+uniform float uCloudFine;   // ultra: a second, finer erosion octave (billows)
 // x = cover of the layer above a point (weather field minus the openings), y = weather.
 // Both hardly change along a sun ray, so the light march reuses them.
 vec2 cloudCover(vec3 q, float py) {
@@ -118,7 +119,7 @@ float cloudShape(vec3 q, float h, vec2 cw) {
   // height so that the cells narrow into domes
   float topH = 0.45 + 0.55 * smoothstep(0.38, 0.72, cw.y);
   float hc = clamp(h, 0.0, 1.0);
-  base *= smoothstep(0.0, 0.07, hc) * (1.0 - smoothstep(topH * 0.5, topH, hc));
+  base *= smoothstep(0.0, 0.035, hc) * (1.0 - smoothstep(topH * 0.5, topH, hc));
   float cov = cw.x * (1.0 - 0.45 * hc);
   // 0 at the rim of a cell whatever the coverage, then quickly up to full density: defined edges
   float d = clamp((base - (1.0 - cov)) / max(cov, 1e-3), 0.0, 1.0);
@@ -193,6 +194,12 @@ vec4 marchClouds(float y0, vec3 rd, float jitter, int steps) {
       vec4 dn = texture(uNoiseB, vec3(q.x, q.y + uCloudOff.z * 0.4, q.z) / uCloudShape.y);
       float hf = dn.r * 0.625 + dn.g * 0.25 + dn.b * 0.125;
       d = max(remap(d, mix(hf, 1.0 - hf, clamp(h * 5.0, 0.0, 1.0)) * uCloudShape.z, 1.0, 0.0, 1.0), 0.0);
+      // billows: a finer octave eats the rims into cauliflower lobes (the base stays flat)
+      if (uCloudFine > 0.0 && d > 0.0 && d < 0.6) {
+        vec4 dm = texture(uNoiseB, vec3(q.x + 37.0, q.y - uCloudOff.z * 0.7, q.z) / (uCloudShape.y * 0.31));
+        float hm = dm.r * 0.6 + dm.g * 0.3 + dm.b * 0.1;
+        d = max(remap(d, hm * 0.42 * uCloudFine * smoothstep(0.02, 0.2, h), 1.0, 0.0, 1.0), 0.0);
+      }
     }
     if (d > 0.0005) {
       float od = sunOpticalDepth(q, alt, cw);
@@ -204,8 +211,12 @@ vec4 marchClouds(float y0, vec3 rd, float jitter, int steps) {
         E += a * exp(-od * b) * ph;
         a *= 0.56; b *= 0.42; c *= 0.55;
       }
+      // powder: the inside of a sun-facing billow is darker than its sunlit skin, which carves
+      // the internal relief (weaker when looking towards the sun, where the rims glow)
+      float powder = 1.0 - exp(-od * 1.6 - d * 1.5);
+      E *= mix(mix(0.45, 1.0, powder), 1.0, smoothstep(0.2, 0.85, mu)) * 1.12;
       // skylight entering from above, attenuated by the cloud between here and the top
-      vec3 amb = uAmbBot + uAmbTop * (0.3 * exp(-od * 0.07) + 0.7 * exp(-od * 0.42)) * mix(0.4, 1.0, clamp(h, 0.0, 1.0));
+      vec3 amb = uAmbBot + uAmbTop * (0.3 * exp(-od * 0.07) + 0.7 * exp(-od * 0.42)) * mix(0.26, 1.0, clamp(h * 1.3, 0.0, 1.0));
       vec3 S = uSunE * E + amb;
       float sigma = d * uCloud.w;
       float Ti = exp(-sigma * dt);
@@ -330,6 +341,7 @@ export class Sky {
     this.period = opts.period ?? 16;          // seconds between baked cloud states
     this.panoSize = opts.panoSize ?? [2048, 512];
     this.steps = opts.steps ?? 56;
+    this.fine = opts.fine ?? 0;
     this.goboSize = opts.goboSize ?? 768;
     this.wind = new THREE.Vector2(2.2, 1.2);  // m/s drift of the cloud field
     this.evolve = 0.9;                        // vertical scroll (m/s) = shape evolution
@@ -366,6 +378,7 @@ export class Sky {
       uCloudOff: { value: new THREE.Vector4() },
       uCloudShape: { value: new THREE.Vector4() },
       uCloudEdge: { value: 2.5 },
+      uCloudFine: { value: 0 },
       uCloudGap: { value: [new THREE.Vector4(), new THREE.Vector4(), new THREE.Vector4()] },
       uSunDirC: G.uSunDir,
       uSunE: { value: this.params.sunE },
@@ -383,7 +396,7 @@ export class Sky {
     });
     this.goboPass = new Pass(GOBO_FS, { ...cloudUniforms(), uRect: G.uCloudRect });
 
-    const mkPano = () => {
+    this._mkPano = () => {
       const rt = new THREE.WebGLRenderTarget(this.panoSize[0], this.panoSize[1], {
         type: THREE.HalfFloatType, format: THREE.RGBAFormat, depthBuffer: false,
         minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter, generateMipmaps: false,
@@ -392,7 +405,7 @@ export class Sky {
       rt.texture.wrapT = THREE.ClampToEdgeWrapping;
       return rt;
     };
-    this.panos = [mkPano(), mkPano(), mkPano()];
+    this.panos = [this._mkPano(), this._mkPano(), this._mkPano()];
     this.slots = new Map();   // state index k -> { rt, done, nextTile }
     this.gobo = new THREE.WebGLRenderTarget(this.goboSize, this.goboSize, {
       type: THREE.UnsignedByteType, format: THREE.RGBAFormat, depthBuffer: false,
@@ -425,6 +438,17 @@ export class Sky {
     // frame: an even load instead of a spike every few frames
     this.goboBands = 12;
     this.time = 0;
+  }
+
+  // Changes the panorama size at run time (quality change). The new panoramas are rendered over
+  // the next frames while the old ones stay on screen; then the old targets are dropped.
+  setPanoSize(size) {
+    if (size[0] === this.panoSize[0] && size[1] === this.panoSize[1]) return;
+    this._old = (this._old || []).concat(this.panos);
+    this.panoSize = [...size];
+    this.panoPass.uniforms.uPanoSize.value.set(...size);
+    this.panos = [this._mkPano(), this._mkPano(), this._mkPano()];
+    this.slots = new Map();
   }
 
   _makeNoise() {
@@ -479,6 +503,7 @@ export class Sky {
     this._setCloudUniforms(u, k * this.period);
     u.uCamAlt.value = this.camAlt;
     u.uSteps.value = this.steps;
+    u.uCloudFine.value = this.fine;
     const [W, H] = this.panoSize;
     const strip = Math.ceil(W / 16);
     const gl = this.renderer.getContext();
@@ -570,6 +595,12 @@ export class Sky {
 
   _bind(k, time) {
     const a = this.slots.get(k), b = this.slots.get(k + 1);
+    if (this._old) {
+      // a resized panorama is still being rendered: keep the old one on screen
+      if (!(a && a.done && b && b.done)) return;
+      for (const rt of this._old) rt.dispose();
+      this._old = null;
+    }
     if (a) this.domeUniforms.uPanoA.value = a.rt.texture;
     if (b && b.done) this.domeUniforms.uPanoB.value = b.rt.texture;
     this.domeUniforms.uBlend.value = b && b.done ? (time / this.period - k) : 0;
@@ -585,7 +616,7 @@ export class Sky {
     if (sync) {
       this._renderSlot(k, W); this._renderSlot(k + 1, W);
     } else {
-      if (!this._renderSlot(k, W / 16)) { /* catching up */ } else if (!this._renderSlot(k + 1, W / 32)) { /* catching up */ } else {
+      if (this._old) { if (this._renderSlot(k, W / 12)) this._renderSlot(k + 1, W / 12); } else if (!this._renderSlot(k, W / 16)) { /* catching up */ } else if (!this._renderSlot(k + 1, W / 32)) { /* catching up */ } else {
         // spread the next state evenly over the current period: a few pixel columns every frame
         const s = this.slots.get(k + 2);
         const phase = time / this.period - k;

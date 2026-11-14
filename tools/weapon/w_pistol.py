@@ -13,11 +13,12 @@ VIEWS = [('first person', EYE, (EYE[0], 1.0, EYE[2]), 52), ('right', (0.36, 0.03
 MISC = [('Idle', 1), ('Fire', '0-1-2-3-4-6-9'), ('Draw', 5), ('Holster', 4), ('Sprint', 3)]
 CAMS = {'Fire': ((0.30, 0.0, 0.06), (0.0, 0.0, 0.02), 30)}
 LOCK = PG.LOCK * 0.001; TP = Vector(PG.TPAD) * 0.001
+CLOSE = {'Reload': ((-0.30, 0.12, 0.05), (-0.01, 0.0, -0.03), 40), 'ReloadEmpty': ((-0.30, 0.12, 0.05), (-0.01, 0.0, -0.03), 40), 'Fire': ((0.28, 0.04, 0.07), (0.0, 0.03, 0.03), 28)}
 META = dict(eye=list(EYE), fov=52, slide_lock_m=LOCK, hammer_over_deg=PG.HOVER - PG.HCOCK, barrel_tilt_deg=2.0,
             note='preview camera of the contact sheets: eye position relative to the model origin (Blender axes x right, y forward, z up). Rest pose = hammer cocked, '
                  'finger on the trigger. Slide locked back = node Slide moved slide_lock_m towards the shooter (glTF +Z), Hammer rotated hammer_over_deg further back, '
                  'Barrel tilted barrel_tilt_deg and 3 mm back, SlideStop raised 3 deg; ReloadEmpty goes there within its first 2 frames. MagRounds (child of Magazine) '
-                 'is scaled away for the empty magazine in ReloadEmpty. Sprint is a seamless loop in a compressed high-ready pose (muzzle up, close to the chest) (cross-fade into it).')
+                 'is scaled away for the empty magazine in ReloadEmpty. Sprint is a seamless loop in a two-handed low ready across the body (cross-fade into it).')
 
 
 def geometry(): return PG.build(GROUPS)
@@ -82,10 +83,11 @@ def clips(st):
     c = Clip(st, 'Holster', 0.3); c.wp.k(0.05, (0, 0.003, 0.005), 'c').k(0.3, low_p, ease='in'); c.wr.k(0.05, (1.5, 0, 0), 'c').k(0.3, low_r, ease='in')
     c.hand['L'].clear().hold(0, 0.03, A['sup'], open=0.03).hold(0.22, 0.3, wait)
     c.hand['R'].clear().hold(0, 0.01, A['grip']).hold(0.12, 0.3, A['safe'], mid=st.IDX)
-    # ---- Sprint: compressed high ready (muzzle up, close to the chest), two-step bob
-    c = Clip(st, 'Sprint', 0.7, True); w2 = 2 * pi / 0.7; bp, br = (-0.03, -0.10, -0.075), (42, 0, 8)
-    c.wp.k(0, bp).k(0.7, bp).add(lambda t: v3(0.010 * sin(w2 * t), 0.004 * sin(2 * w2 * t + 1.0) - 0.004 * sin(1.0), 0.012 * sin(2 * w2 * t)))
-    c.wr.k(0, br).k(0.7, br).add(lambda t: v3(2.5 * sin(2 * w2 * t + 0.7) - 2.5 * sin(0.7), 2.5 * sin(w2 * t), 1.5 * sin(w2 * t + 0.5) - 1.5 * sin(0.5)))
+    # ---- Sprint: two-handed low ready angled across the body (muzzle down and to the left, in front of the chest), the pair of hands swings
+    # with the run (one sway per stride, a bob per step), both hands stay on the pistol and in view
+    c = Clip(st, 'Sprint', 0.7, True); w2 = 2 * pi / 0.7; bp, br = (-0.045, -0.06, -0.02), (-16, 6, 20)
+    c.wp.k(0, bp).k(0.7, bp).add(lambda t: v3(0.016 * sin(w2 * t), 0.008 * sin(w2 * t + 1.2) - 0.008 * sin(1.2), 0.012 * sin(2 * w2 * t)))
+    c.wr.k(0, br).k(0.7, br).add(lambda t: v3(3.0 * sin(2 * w2 * t + 0.7) - 3.0 * sin(0.7), 3.5 * sin(w2 * t), 4.0 * sin(w2 * t + 0.5) - 4.0 * sin(0.5)))
     c.hand['R'].clear().hold(0, 0.7, A['safe'])
     for sd in 'RL': c.sh[sd].add(lambda t: v3(0.0, 0.0, 0.006 * sin(2 * w2 * t)))
     RR, RP = (30, 35, 4), (-0.04, -0.03, 0.062)                    # reload workspace: muzzle up, magazine well rolled towards the support hand, pistol pulled in

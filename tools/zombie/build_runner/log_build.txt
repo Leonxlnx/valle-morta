@@ -1,28 +1,25 @@
-CPU 2% | RAM free 31,3/61,8 GB | GPU 3D 9% | GPU mem dedicated 1,57 GB shared 2,19 GB
-Could not find platform independent libraries <prefix>
-hi mesh: 361206 verts 722814 tris, bbox [-0.672 -0.194 -0.   ] [0.672 0.146 1.781], 457s
-CPU 74% | RAM free 28,9/61,8 GB | GPU 3D 3% | GPU mem dedicated 1,71 GB shared 2,59 GB
+CPU 0% | RAM free 31,4/61,8 GB | GPU 3D 5% | GPU mem dedicated 1,37 GB shared 2,77 GB
 
-decimate chosen factor 0.10 share 0.42
-game mesh: 7199 verts 14800 tris
-uv islands: 1428
-LOWPOLY_DONE 175.8s
-CPU 91% | RAM free 28,4/61,8 GB | GPU 3D 88% | GPU mem dedicated 1,59 GB shared 2,72 GB
-CPU 40% | RAM free 28,6/61,8 GB | GPU 3D 95% | GPU mem dedicated 1,61 GB shared 2,6 GB
+decimate chosen factor 0.03 share 0.40
+game mesh: 11549 verts 23500 tris
+uv islands: 1787
+LOWPOLY_DONE 47.5s
+CPU 3% | RAM free 31,4/61,8 GB | GPU 3D 4% | GPU mem dedicated 1,36 GB shared 2,76 GB
 Could not find platform independent libraries <prefix>
-[    7s] texels 2137801 coverage 0.51
-[  234s] projected; mean |offset| 0.71 mm
-[  419s] normals; fallback texels 0.49%
-[  634s] ao done
-[  636s] geo saved
-[  636s] BAKE_DONE
+[    7s] texels 2002714 coverage 0.48
+[  168s] projected; mean |offset| 0.50 mm
+[  343s] normals; fallback texels 0.39%
+[  621s] ao done
+[  623s] geo saved
+[  623s] BAKE_DONE
 Could not find platform independent libraries <prefix>
-[   72s] painted variant a
-[  128s] painted variant b
-[  128s] BAKE_DONE
+[   91s] painted variant a
+[  218s] painted variant b
+[  348s] painted variant c
+[  348s] BAKE_DONE
 Could not find platform independent libraries <prefix>
-weights: 7199 verts; per-bone vertex counts:
-Hips=518 Spine=403 Chest=493 Neck=242 Head=1278 Jaw=263 Shoulder.L=30 UpperArm.L=183 LowerArm.L=93 Hand.L=643 Shoulder.R=29 UpperArm.R=179 LowerArm.R=91 Hand.R=617 UpperLeg.L=376 LowerLeg.L=473 Foot.L=122 Toe.L=61 UpperLeg.R=339 LowerLeg.R=438 Foot.R=111 Toe.R=59
+weights: 11549 verts; per-bone vertex counts:
+Hips=822 Spine=661 Chest=802 Neck=385 Head=2022 Jaw=419 Shoulder.L=65 UpperArm.L=305 LowerArm.L=144 Hand.L=988 Shoulder.R=53 UpperArm.R=285 LowerArm.R=145 Hand.R=998 UpperLeg.L=643 LowerLeg.L=764 Foot.L=212 Toe.L=97 UpperLeg.R=572 LowerLeg.R=679 Foot.R=197 Toe.R=99
 Could not find platform independent libraries <prefix>
 runner: leg scale 1.045, clips: Idle 3.000s, Walk 0.933s, Run 0.567s, Attack 0.900s, HitBody 0.400s, HitHead 0.400s, DeathBack 2.070s, DeathFront 2.260s, Sprint 0.467s
   Walk   T 0.933s  stride 1.400 m -> ground speed 1.50 m/s (engine estimate 1.50, stance 0.52)  plant error 0.0 mm  max leg ext 0.990  pelvis -0.068 m  hips z 0.91..0.96
@@ -33,12 +30,12 @@ E:\fable\shootinggame\tools\zombie\bl_rig_export.py:44: DeprecationWarning: 'Mat
   mat = bpy.data.materials.new('Zombie'); mat.use_nodes = True
 RIG_EXPORT_DONE
 Could not find platform independent libraries <prefix>
-file: E:\fable\shootinggame\public\assets\models\runner.glb  8.14 MB
-meshes 1, primitives 1, triangles 14799, vertices 14456, attributes ['JOINTS_0', 'NORMAL', 'POSITION', 'TANGENT', 'TEXCOORD_0', 'WEIGHTS_0']
-bbox min [-0.691, 0.0, -0.129] max [0.691, 1.819, 0.17] (Y-up, metres)
+file: E:\fable\shootinggame\tools\zombie\stage\runner.glb  8.91 MB
+meshes 1, primitives 1, triangles 23499, vertices 21081, attributes ['JOINTS_0', 'NORMAL', 'POSITION', 'TANGENT', 'TEXCOORD_0', 'WEIGHTS_0']
+bbox min [-0.691, 0.0, -0.13] max [0.691, 1.819, 0.171] (Y-up, metres)
 bones (22): Hips, Spine, Chest, Neck, Head, Jaw, Shoulder.L, UpperArm.L, LowerArm.L, Hand.L, Shoulder.R, UpperArm.R, LowerArm.R, Hand.R, UpperLeg.L, LowerLeg.L, Foot.L, Toe.L, UpperLeg.R, LowerLeg.R, Foot.R, Toe.R
 missing bones: [] extra: []
-max influences per vertex: 4
+max influences per vertex: 3
 clip Idle       3.000 s  181 frames  23 channels
 clip Walk       0.933 s  57 frames  23 channels
 clip Run        0.567 s  35 frames  23 channels
@@ -48,7 +45,7 @@ clip HitHead    0.400 s  25 frames  23 channels
 clip DeathBack  2.067 s  125 frames  23 channels
 clip DeathFront 2.267 s  137 frames  23 channels
 clip Sprint     0.467 s  29 frames  23 channels
-images: [('zombie_albedo', 'image/jpeg', 1024), ('zombie_normal', 'image/jpeg', 3978), ('zombie_orm', 'image/jpeg', 1602)] kB
+images: [('zombie_albedo', 'image/jpeg', 1055), ('zombie_normal', 'image/jpeg', 3993), ('zombie_orm', 'image/jpeg', 1817)] kB
 material: {"name": "Zombie", "doubleSided": false, "pbrMetallicRoughness": {"baseColorTexture": {"index": 0}, "metallicRoughnessTexture": {"index": 2}, "metallicFactor": 1.0, "roughnessFactor": 1.0}, "normalTexture": {"index": 1, "scale": 1.0}, "occlusionTexture": {"index": 2, "strength": 1.0}}
 animation FK check: worst joint position error 0.00000 m
 VERIFY OK

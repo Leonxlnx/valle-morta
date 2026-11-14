@@ -19,7 +19,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 BUILD = os.path.join(HERE, 'build' if NAME == 'walker' else 'build_' + NAME)
 os.makedirs(BUILD, exist_ok=True)
 OUT = 'zombie' if NAME == 'walker' else NAME            # public/assets/models/<OUT>.glb
-TARGET_TRIS = 21000 if NAME == 'boss' else 14800
+TARGET_TRIS = {'walker': 23500, 'runner': 23500, 'brute': 33000, 'boss': 47000}[NAME]   # budgets 25k / 25k / 35k / 50k
 
 # bone -> s (uniform) | (sx, sy, sz) in character axes (x left, y back, z up) | ('ax', length, girth)
 # A name without side applies to both sides; an exact name wins.
@@ -49,11 +49,14 @@ SCALES = _SCALES[NAME]
 _COLORS = {
     'walker': None,                                        # bake.py's own three villager variants
     'runner': {'a': dict(seed=120, shirt=(152, 130, 76), trousers=(57, 62, 49), boots=(132, 122, 104)),
-               'b': dict(seed=160, shirt=(98, 114, 101), trousers=(76, 60, 47), boots=(94, 88, 80))},
+               'b': dict(seed=160, shirt=(98, 114, 101), trousers=(76, 60, 47), boots=(94, 88, 80)),
+               'c': dict(seed=180, shirt=(104, 56, 52), trousers=(48, 52, 60), boots=(70, 52, 38))},
     'brute': {'a': dict(seed=200, shirt=(74, 68, 61), trousers=(45, 45, 47), boots=(35, 29, 25), apron=(72, 51, 35)),
-              'b': dict(seed=240, shirt=(92, 84, 64), trousers=(58, 50, 41), boots=(40, 34, 30), apron=(54, 48, 44))},
+              'b': dict(seed=240, shirt=(92, 84, 64), trousers=(58, 50, 41), boots=(40, 34, 30), apron=(54, 48, 44)),
+              'c': dict(seed=260, shirt=(72, 84, 66), trousers=(66, 56, 44), boots=(46, 36, 28), apron=(96, 88, 74))},
     'boss': {'a': dict(seed=280, shirt=(120, 112, 99), trousers=(41, 39, 39), boots=(31, 27, 25), rope=(134, 114, 82)),
-             'b': dict(seed=320, shirt=(84, 80, 70), trousers=(52, 44, 38), boots=(36, 30, 26), rope=(112, 100, 78))},
+             'b': dict(seed=320, shirt=(84, 80, 70), trousers=(52, 44, 38), boots=(36, 30, 26), rope=(112, 100, 78)),
+             'c': dict(seed=340, shirt=(110, 70, 56), trousers=(44, 46, 50), boots=(34, 28, 24), rope=(126, 106, 74))},
 }
 COLORS = _COLORS[NAME]
 SKIN_TINT = {'walker': None, 'runner': (0.93, 0.98, 0.97), 'brute': (0.90, 0.90, 0.89), 'boss': (0.80, 0.75, 0.77)}[NAME]

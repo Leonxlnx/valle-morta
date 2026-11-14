@@ -3,6 +3,8 @@
 //   node tools/perf.mjs --views street,meadow --q high --w 1280 --h 720 [--only shadow,ao] [--pace] [--presets]
 //   --pace     records 300 synced frames in the street view while the camera turns and walks
 //   --presets  benches the street view on every quality preset (at --w/--h)
+//   --split    per-pass GPU time (timer queries): shadow, scene by module, weapon, each post pass;
+//              with --presets for all four presets, else for --q (comma list allowed)
 // Results go to tools/_preview/perf/perf.json and stdout (one line per toggle).
 import puppeteer from 'puppeteer-core';
 import fs from 'node:fs';
@@ -21,6 +23,8 @@ const q = arg('q', 'high');
 const only = arg('only', '') ? String(arg('only')).split(',') : null;
 const frames = Number(arg('n', 30));
 const out = arg('out', 'tools/_preview/perf');
+// extra URL parameters for every page load, e.g. --extra "&gcache=0"
+const extra = String(arg('extra', '') || '');
 fs.mkdirSync(out, { recursive: true });
 const { acquireGpuLock } = await import('./lib/gpulock.mjs');
 await acquireGpuLock();
@@ -67,7 +71,7 @@ const SETUP = () => {
   const bench = (n) => { vm.bench(4); const a = vm.bench(n), b = vm.bench(n); return Math.min(a, b); };
   const triCount = (o) => { let t = 0; o.traverse((c) => { if (c.isMesh && c.geometry && c.visible) { const g = c.geometry; const n = (g.index ? g.index.count : g.attributes.position?.count || 0) / 3; t += n * (c.isInstancedMesh ? c.count : g.isInstancedBufferGeometry ? g.instanceCount : 1); } }); return t; };
   window.__perfOther = () => (groups.other || []).map((o) => [o.name || o.type, Math.round(triCount(o) / 1000), o.visible]).filter((x) => x[1] > 5 && x[2]);
-  window.__perf = { T, groups: Object.fromEntries(Object.entries(groups).map(([k, v]) => [k, v.length])), info, bench, noShadow };
+  window.__perf = { T, groupsRaw: groups, groups:Object.fromEntries(Object.entries(groups).map(([k, v]) => [k, v.length])), info, bench, noShadow };
   return window.__perf.groups;
 };
 
@@ -76,7 +80,7 @@ const browser = await puppeteer.launch({
   headless: 'new',
   userDataDir: path.join(os.tmpdir(), 'vm-chrome-profile'),
   defaultViewport: { width: W, height: H, deviceScaleFactor: 1 },
-  args: ['--use-angle=d3d11', '--enable-gpu', '--ignore-gpu-blocklist', '--enable-unsafe-swiftshader=false', '--disable-background-timer-throttling', '--disable-renderer-backgrounding', '--disable-backgrounding-occluded-windows', `--window-size=${W},${H}`, '--hide-scrollbars', '--mute-audio'],
+  args: ['--use-angle=d3d11', '--enable-gpu', '--ignore-gpu-blocklist', '--enable-unsafe-swiftshader=false', '--disable-background-timer-throttling', '--disable-renderer-backgrounding', '--disable-backgrounding-occluded-windows', `--window-size=${W},${H}`, '--hide-scrollbars', '--mute-audio', '--enable-privileged-webgl-extensions', '--enable-webgl-draft-extensions'],
 });
 const result = { q, W, H, views: {} };
 const log = (s) => { console.log(s); fs.appendFileSync(path.join(out, 'perf.log'), s + '\n'); };
@@ -85,14 +89,16 @@ try {
   const errors = [];
   page.on('pageerror', (e) => errors.push(String(e).slice(0, 300)));
   page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text().slice(0, 300)); });
-  await page.goto(`http://127.0.0.1:5173/?q=${q}&auto=1`, { waitUntil: 'load', timeout: 120000 });
+  // no hot reload: other work saving files must not reload the page under a running test
+  await page.evaluateOnNewDocument(() => { const W = window.WebSocket; window.WebSocket = function (u, p) { if (String(p).includes('vite')) return { addEventListener() {}, removeEventListener() {}, send() {}, close() {}, readyState: 0 }; return new W(u, p); }; });
+  await page.goto(`http://127.0.0.1:5173/?q=${String(q).split(",")[0]}&auto=1${extra}`, { waitUntil: 'load', timeout: 120000 });
   await page.waitForFunction('window.__vm && window.__vm.ready', { timeout: 180000, polling: 250 });
   const groups = await page.evaluate(SETUP);
   const ev = async (...a) => { for (let k = 0; ; k++) { try { return await page.evaluate(...a); } catch (e) { if (k > 3 || !/context was destroyed|navigation|__perf/.test(String(e))) throw e; log('  (page reloaded, retrying)'); await page.waitForFunction('window.__vm && window.__vm.ready', { timeout: 180000, polling: 250 }); await page.evaluate(SETUP); } } };
   log(`--- ${new Date().toISOString()} q=${q} ${W}x${H} groups ${JSON.stringify(groups)}`);
   if (arg('other', false)) log('other (name, ktris): ' + JSON.stringify(await page.evaluate(() => window.__perfOther())));
   const toggles = only || ['shadow', 'ao', 'vol', 'bloom', 'final', 'sky', 'msaa0', 'scale75', 'hide_terrain', 'hide_buildings', 'hide_props', 'hide_water', 'hide_grass', 'hide_flowers', 'hide_trees', 'hide_impostors', 'hide_vegsmall', 'hide_other', 'hide_sky', 'sh_buildings', 'sh_props', 'sh_trees', 'sh_vegsmall', 'sh_other'];
-  if (!arg('pace', false) && !arg('presets', false)) for (const view of views) {
+  if (!arg('pace', false) && !arg('presets', false) && !arg('split', false)) for (const view of views) {
     const base = await ev(async (view, n) => {
       const vm = window.__vm, P = window.__perf;
       vm.setView(view);
@@ -119,34 +125,67 @@ try {
     result.views[view] = { base, again, rows };
   }
   if (arg('pace', false)) {
-    const pace = await page.evaluate(async () => {
-      const vm = window.__vm, e = vm.engine, gl = e.gl, px = new Uint8Array(4);
-      vm.setView('street');
-      for (let i = 0; i < 12; i++) await new Promise((r) => requestAnimationFrame(r));
-      vm.stop();
-      const c = e.camera, y0 = c.rotation.y;
-      const f = new vm.THREE.Vector3();
-      const ts = [], cpu = [];
-      gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px);
-      for (let i = 0; i < 300; i++) {
-        c.rotation.y = y0 + Math.sin(i / 300 * Math.PI * 2) * 1.6; // sweeps 90 deg either side
-        f.set(0, 0, -1).applyQuaternion(c.quaternion); f.y = 0; f.normalize();
-        c.position.addScaledVector(f, 0.07);
-        c.position.y = vm.terrain.heightAt(c.position.x, c.position.z) + 1.7;
-        const t0 = performance.now();
-        vm.step(1 / 60);
-        const t1 = performance.now();
+    // walk (4.2 m/s, slow sweep) and run (9.6 m/s, fast turns) through each view, then a jump
+    // (teleport into the view with no warm-up frames) to see the synchronous refill
+    // --ab N: N rounds alternating ground cache off / on (page reloaded with gcache=0 / 1), so both
+    // see the same outside load
+    result.pace = {};
+    const abN = Number(arg('ab', 0));
+    const confs = abN ? Array.from({ length: abN }, (_, r) => [['off', '&gcache=0'], ['on', '&gcache=1']].map((c) => [...c, r])).flat() : [['', '', 0]];
+    const abRows = [];
+    for (const [tag, gq] of confs) {
+    if (tag) {
+      await page.goto(`http://127.0.0.1:5173/?q=${String(q).split(",")[0]}&auto=1${extra}${gq}`, { waitUntil: 'load', timeout: 120000 });
+      await page.waitForFunction('window.__vm && window.__vm.ready', { timeout: 180000, polling: 250 });
+      await page.evaluate(SETUP);
+      for (let i = 0; i < 90; i++) await page.evaluate(() => new Promise((r) => requestAnimationFrame(r)));
+    }
+    for (const view of views) for (const mode of [['walk', 0.07, 1.6, 1], ['run', 0.16, 2.6, 3]]) {
+      const pace = await ev(async (view, mode) => {
+        const vm = window.__vm, e = vm.engine, gl = e.gl, px = new Uint8Array(4);
+        vm.setView(view);
+        for (let i = 0; i < 12; i++) await new Promise((r) => requestAnimationFrame(r));
+        vm.stop();
+        const c = e.camera, y0 = c.rotation.y;
+        const f = new vm.THREE.Vector3();
+        const ts = [], cpu = [], bks = [];
         gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px);
-        ts.push(performance.now() - t0); cpu.push(t1 - t0);
+        for (let i = 0; i < 300; i++) {
+          c.rotation.y = y0 + Math.sin(i / 300 * Math.PI * 2 * mode[3]) * mode[2];
+          f.set(0, 0, -1).applyQuaternion(c.quaternion); f.y = 0; f.normalize();
+          c.position.addScaledVector(f, mode[1]);
+          c.position.y = vm.terrain.heightAt(c.position.x, c.position.z) + 1.7;
+          const bk0 = vm.terrain.cache ? vm.terrain.cache.bakes : 0;
+          const t0 = performance.now();
+          vm.step(1 / 60);
+          const t1 = performance.now();
+          gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px);
+          ts.push(performance.now() - t0); cpu.push(t1 - t0); bks.push((vm.terrain.cache ? vm.terrain.cache.bakes : 0) - bk0);
+        }
+        // jump: from another view straight into this one, first 40 frames
+        vm.setView(view === 'street' ? 'meadow' : 'street'); vm.step(1 / 60); gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px);
+        vm.setView(view); vm.stop();
+        const js = [];
+        for (let i = 0; i < 40; i++) { const t0 = performance.now(); vm.step(1 / 60); gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px); js.push(performance.now() - t0); }
+        vm.start();
+        const s = [...ts].sort((a, b) => a - b);
+        const worst = ts.map((t, i) => [t, i]).sort((a, b) => b[0] - a[0]).slice(0, 4).map(([t, i]) => `${t.toFixed(1)}@${i}(cpu ${cpu[i].toFixed(1)} bk ${bks[i]})`);
+        const bkMed = (() => { const q = ts.filter((_, i) => bks[i] === 0).sort((a, b) => a - b); return q[q.length >> 1] || 0; })();
+        return { bkMed, median: s[150], p95: s[285], p99: s[297], worst: s[299], over2x: ts.filter((t) => t > 2 * s[150]).length, cache: !!vm.terrain.cache, top: worst, jump0: js[0], jumpRest: Math.max(...js.slice(1)) };
+      }, view, mode);
+      log(`pace${tag ? ' [' + tag + ']' : ''} ${view} ${mode[0]}: >2x ${pace.over2x} | median ${pace.median.toFixed(2)} p95 ${pace.p95.toFixed(2)} p99 ${pace.p99.toFixed(2)} (x${(pace.p99 / pace.median).toFixed(2)}) worst ${pace.worst.toFixed(2)} (x${(pace.worst / pace.median).toFixed(2)}) | jump first ${pace.jump0.toFixed(1)} then max ${pace.jumpRest.toFixed(1)} | no-bake median ${pace.bkMed.toFixed(1)} | top ${pace.top.join(' ')}`);
+      result.pace[view + '_' + mode[0] + (tag ? '_' + tag : '')] = pace;
+      if (tag) abRows.push({ tag, view, mode: mode[0], ...pace });
+    }
+    }
+    if (abRows.length) {
+      log(`A/B summary q=${q} ${W}x${H} (mean over rounds; worst = max)`);
+      log('view    mode cache  median   p95    p99   worst  >2x');
+      for (const view of views) for (const m of ['walk', 'run']) for (const tag of ['off', 'on']) {
+        const R = abRows.filter((r) => r.view === view && r.mode === m && r.tag === tag), mean = (k) => R.reduce((a, r) => a + r[k], 0) / R.length;
+        log(`${view.padEnd(7)} ${m.padEnd(4)} ${tag.padEnd(4)} ${mean('median').toFixed(2).padStart(7)} ${mean('p95').toFixed(2).padStart(6)} ${mean('p99').toFixed(2).padStart(6)} ${Math.max(...R.map((r) => r.worst)).toFixed(1).padStart(6)} ${mean('over2x').toFixed(1).padStart(5)}  (cache ${R.map((r) => r.cache ? 1 : 0).join('')})`);
       }
-      vm.start();
-      const s = [...ts].sort((a, b) => a - b);
-      const worst = ts.map((t, i) => [t, i]).sort((a, b) => b[0] - a[0]).slice(0, 6).map(([t, i]) => `${t.toFixed(1)}@${i}(cpu ${cpu[i].toFixed(1)})`);
-      const cs = [...cpu].sort((a, b) => a - b);
-      return { cpuMedian: cs[150], cpuWorst: cs[299], median: s[150], p95: s[285], p99: s[297], worst: s[299], mean: ts.reduce((a, b) => a + b) / 300, top: worst };
-    });
-    log(`pace street: median ${pace.median.toFixed(2)} p95 ${pace.p95.toFixed(2)} p99 ${pace.p99.toFixed(2)} worst ${pace.worst.toFixed(2)} mean ${pace.mean.toFixed(2)} | cpu median ${pace.cpuMedian.toFixed(2)} worst ${pace.cpuWorst.toFixed(2)} | top ${pace.top.join(' ')}`);
-    result.pace = pace;
+    }
   }
   if (arg('cpu', false)) {
     // CPU-side cost per frame (no GPU sync): world updaters, terrain, sky, shadow submit, main submit, post
@@ -164,10 +203,78 @@ try {
     });
     log('cpu ms/frame: ' + JSON.stringify(cpu));
   }
-  if (arg('presets', false)) {
+  if (arg('split', false)) {
+    // Per-pass GPU time with EXT_disjoint_timer_query_webgl2: one running query per "label";
+    // a label switch ends the running query and starts the next one, so nothing nests. Labels:
+    // shadow, scene:<module> (by top-level scene group, set per draw via onBeforeRender),
+    // weapon, post:<pass>, other (sky panorama, terrain updates, clears).
+    const presets = arg('presets', false) ? ['low', 'medium', 'high', 'ultra'] : String(q).split(',');
+    for (const p of presets) {
+      await page.goto(`http://127.0.0.1:5173/?q=${p}&auto=1${extra}`, { waitUntil: 'load', timeout: 120000 });
+      await page.waitForFunction('window.__vm && window.__vm.ready', { timeout: 180000, polling: 250 });
+      await page.evaluate(SETUP);
+      for (const view of views) {
+        const r = await page.evaluate(async (view, n) => {
+          const vm = window.__vm, e = vm.engine, r = e.renderer, gl = e.gl, sc = e.scene;
+          const ext = gl.getExtension('EXT_disjoint_timer_query_webgl2');
+          vm.setView(view);
+          for (let i = 0; i < 20; i++) await new Promise((res) => requestAnimationFrame(res));
+          const wall = window.__perf.bench(n);
+          if (!ext) return { wall, noext: true };
+          vm.stop();
+          const done = []; let cur = null, curQ = null;
+          const setLabel = (l) => {
+            if (l === cur) return;
+            if (curQ) { gl.endQuery(ext.TIME_ELAPSED_EXT); done.push([cur, curQ]); curQ = null; }
+            cur = l;
+            if (l) { curQ = gl.createQuery(); gl.beginQuery(ext.TIME_ELAPSED_EXT, curQ); }
+          };
+          const undo = [];
+          const wrap = (obj, key, fn) => { const f = obj[key]; obj[key] = function (...a) { return fn.call(this, f, a); }; undo.push(() => { obj[key] = f; }); };
+          let inMain = false;
+          wrap(r.shadowMap, 'render', function (f, a) { const prev = cur; setLabel('shadow'); const v = f.apply(this, a); setLabel(prev); return v; });
+          wrap(r, 'render', function (f, a) {
+            const main = a[1] === e.camera && !a[0].isMesh;
+            const weap = a[1] === e.weaponCamera;
+            inMain = main; if (weap) setLabel('weapon'); else if (main) setLabel('scene:other');
+            const v = f.apply(this, a); inMain = false; if (main || weap) setLabel('other'); return v;
+          });
+          for (const [k, name] of Object.entries({ ao: 'ao', aoBlur: 'ao', vol: 'shafts', composite: 'composite', down: 'bloom', up: 'bloom', tone: 'tone', final: 'final' })) {
+            const pass = e.post[k];
+            if (!pass) continue;
+            wrap(pass, 'render', function (f, a) { setLabel('post:' + name); const v = f.apply(this, a); setLabel('other'); return v; });
+          }
+          if (vm.terrain && vm.terrain._bake) wrap(vm.terrain, '_bake', function (f, a) { const prev = cur; setLabel('terrain:cache'); const v = f.apply(this, a); setLabel(prev); return v; });
+          const cat = (o) => { for (const [k, arr] of Object.entries(window.__perf.groupsRaw)) if (arr.includes(o)) return k; return 'other'; };
+          const hooked = [];
+          for (const top of sc.children) {
+            const c = 'scene:' + cat(top);
+            top.traverse((m) => { if (m.isMesh || m.isPoints || m.isLine) { const ob = m.onBeforeRender; hooked.push([m, ob]); m.onBeforeRender = function (...a) { if (inMain) setLabel(c); return ob.apply(this, a); }; } });
+          }
+          gl.getParameter(ext.GPU_DISJOINT_EXT);
+          for (let i = 0; i < n; i++) { setLabel('other'); vm.step(1 / 60); setLabel(null); }
+          const px = new Uint8Array(4); gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px);
+          const disjoint = gl.getParameter(ext.GPU_DISJOINT_EXT);
+          for (let k = 0; k < 200 && !gl.getQueryParameter(done[done.length - 1][1], gl.QUERY_RESULT_AVAILABLE); k++) await new Promise((res) => setTimeout(res, 10));
+          const acc = {};
+          for (const [l, qq] of done) { acc[l] = (acc[l] || 0) + gl.getQueryParameter(qq, gl.QUERY_RESULT) / 1e6; gl.deleteQuery(qq); }
+          undo.reverse().forEach((f) => f()); for (const [m, ob] of hooked) m.onBeforeRender = ob;
+          vm.start();
+          const ms = Object.fromEntries(Object.entries(acc).map(([k, v]) => [k, +(v / n).toFixed(2)]));
+          const gpu = Object.values(ms).reduce((a, b) => a + b, 0);
+          return { wall, gpu, disjoint, ms, calls: window.__perf.info().calls };
+        }, view, frames);
+        if (r.noext) { log(`split ${p} ${view}: wall ${r.wall.toFixed(2)} ms (no timer query extension)`); continue; }
+        const rows = Object.entries(r.ms).sort((a, b) => b[1] - a[1]).map(([k, v]) => `${k} ${v}`).join(' | ');
+        log(`split ${p.padEnd(6)} ${view.padEnd(7)} wall ${r.wall.toFixed(2)} gpu ${r.gpu.toFixed(2)}${r.disjoint ? ' DISJOINT' : ''} calls ${r.calls} :: ${rows}`);
+        (result.split ||= {})[`${p}/${view}`] = r;
+      }
+    }
+  }
+  if (arg('presets', false) && !arg('split', false)) {
     for (const p of ['low', 'medium', 'high', 'ultra']) {
       // grass density and texture sizes are fixed at build time: load the page on each preset
-      await page.goto(`http://127.0.0.1:5173/?q=${p}&auto=1`, { waitUntil: 'load', timeout: 120000 });
+      await page.goto(`http://127.0.0.1:5173/?q=${p}&auto=1${extra}`, { waitUntil: 'load', timeout: 120000 });
       await page.waitForFunction('window.__vm && window.__vm.ready', { timeout: 180000, polling: 250 });
       await page.evaluate(SETUP);
       const r = await page.evaluate(async (p, n) => {

@@ -48,6 +48,8 @@ async function open(query, tag) {
   page.on('console', (m) => { const t = m.type(); if (t === 'error' || t === 'warning' || t === 'warn') errors.push(`[${tag}:${t}] ${m.text()}`.slice(0, 500)); });
   page.on('pageerror', (e) => errors.push(`[${tag}:pageerror] ${String((e && e.stack) || e).slice(0, 700)}`));
   page.on('response', (r) => { if (r.status() >= 400) errors.push(`[${tag}:http ${r.status()}] ${r.url()}`.slice(0, 300)); });
+  // no hot reload: other work saving files must not reload the page under a running test
+  await page.evaluateOnNewDocument(() => { const W = window.WebSocket; window.WebSocket = function (u, p) { if (String(p).includes('vite')) return { addEventListener() {}, removeEventListener() {}, send() {}, close() {}, readyState: 0 }; return new W(u, p); }; });
   await page.goto(`${url}?${query}`, { waitUntil: 'domcontentloaded', timeout: 120000 });
   return page;
 }
@@ -999,6 +1001,37 @@ const S_SURVIVAL_A = () => {
   o.crate.bulletHits = h && h.surface;
   return o;
 };
+// a crate left alone for three cleared waves (the player wanders off) is still standing and opens
+const S_CRATE_SKIP = () => {
+  const vm = __vm, g = vm.game, p = g.player, w = g.weapon, Z = g.zombies, T = vm.THREE, terr = vm.terrain, col = g.collision, { r2 } = pt;
+  pt.reset(); g.start(); pt.god = true; p.script = () => {}; pt.sim(0.6);
+  Z.clear(); g.wave = 1; g.waveKind = 'mixed'; g.queue = 0; g.queueList = []; g.cleared = false; g.interT = 5;
+  pt.sim(0.2);
+  const first = g.supply.crates[0];
+  if (!first) return 'no crate after wave 1';
+  const born = { at: pt.arr(first.pos), restsOnGroundCm: r2((first.group.position.y - terr.heightAt(first.pos.x, first.pos.z)) * 100, 1), clearFromPlayer: col.lineOfSight(p.eye, first.pos.clone().setY(first.pos.y + 0.5)), flowReachable: Z.flow.reachable(first.pos.x, first.pos.z) };
+  // three more waves: the player walks a long way off, the infected are shot down where they stand
+  const s = g._startPoint(), cleared = [];
+  const kill = () => { for (const z of Z.list) if (z.alive) Z.damage(z, 1e6, 'head', null); };
+  let leg = 0;
+  p.script = (dt, pl) => { pl.input.fwd = (leg++ % 600) < 300 ? 1 : -1; };
+  g.on('waveCleared', (n, c) => cleared.push({ wave: n, crate: !!c, standing: g.supply.crates.length, unopened: g.supply.crates.filter((x) => !x.opened).length }));
+  pt.sim(400, 1 / 30, () => { if (g.wave > 1) kill(); return cleared.length < 3; });
+  const still = g.supply.crates.includes(first) && !first.opened && first.group.parent === vm.engine.scene && col.boxes.includes(first.box);
+  const unopened = g.supply.crates.filter((c) => !c.opened);
+  // every unopened crate stands on the ground with nothing over it
+  const placed = unopened.map((c) => ({ cm: r2((c.group.position.y - terr.heightAt(c.pos.x, c.pos.z)) * 100, 0), uncovered: g._uncovered(c.pos), reachable: [[1.3, 0], [-1.3, 0], [0, 1.3], [0, -1.3]].some(([a, b]) => Z.flow.reachable(c.pos.x + a, c.pos.z + b)) }));
+  // walk up to the first one and open it
+  p.spawn(first.pos.x + 1.6, first.pos.z, 0); p.script = () => {}; pt.sim(0.2);
+  const res0 = w.state.rifle.reserve; w.state.rifle.reserve = 0; p.bandages = 0;
+  let use = true; const tgt = first.pos.clone();
+  p.script = (dt, pl) => { tgt.y = pl.eye.y - 0.9; pl.lookAt(tgt, 999, dt); pl.input.interact = use; use = false; };
+  pt.sim(0.4);
+  const opened = { opened: first.opened, rifleReserve: w.state.rifle.reserve, bandages: p.bandages };
+  w.state.rifle.reserve = Math.max(res0, w.state.rifle.reserve);
+  pt.god = false; p.script = () => {};
+  return { born, cleared, survivedThreeWaves: still, unopened: unopened.length, standing: g.supply.crates.length, placed, opened, pass: still && opened.opened && opened.rifleReserve > 0 };
+};
 const S_SURVIVAL_B = () => {
   const vm = __vm, g = vm.game, p = g.player, w = g.weapon, Z = g.zombies, T = vm.THREE, { r2 } = pt; const o = {};
   const c = g.supply.crates[0];
@@ -1219,7 +1252,8 @@ try {
     if (run('feel')) await section(page, 'feel', S_FEEL);
     if (run('infected')) { await section(page, 'infected', S_INFECTED); await section(page, 'types', S_TYPES); await shotGame(page, 'types', 'new'); }
     if (run('blood')) { await section(page, 'blood', S_BLOOD); await shotGame(page, 'blood', 'new'); await section(page, 'blood-caps', S_BLOOD_END); await section(page, 'blood-village', S_BLOOD_VILLAGE); await shotGame(page, 'blood_village', 'new'); }
-    if (run('survival')) { await section(page, 'survival', S_SURVIVAL_A); await shotGame(page, 'crate', 'new'); await section(page, 'supplies', S_SURVIVAL_B); }
+    if (run('survival')) { await section(page, 'survival', S_SURVIVAL_A); await shotGame(page, 'crate', 'new'); await section(page, 'supplies', S_SURVIVAL_B); await section(page, 'crate-skip', S_CRATE_SKIP); }
+    if (run('crate') && !run('survival')) await section(page, 'crate-skip', S_CRATE_SKIP);
     if (run('core')) {
     await section(page, 'player', S_PLAYER);
     await shotGame(page, 'spawn', 'weapon');

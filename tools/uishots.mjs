@@ -31,6 +31,8 @@ const steps = (page, n = 3) => page.evaluate((n) => { for (let i = 0; i < n; i++
 
 try {
   const page = await browser.newPage();
+  // no hot reload: other work saving files must not reload the page under a running test
+  await page.evaluateOnNewDocument(() => { const W = window.WebSocket; window.WebSocket = function (u, p) { if (String(p).includes('vite')) return { addEventListener() {}, removeEventListener() {}, send() {}, close() {}, readyState: 0 }; return new W(u, p); }; });
   page.on('console', (m) => { if (m.type() === 'error' || m.type() === 'warning') errors.push(`[${m.type()}] ${m.text()}`.slice(0, 300)); });
   page.on('pageerror', (e) => errors.push(`[pageerror] ${String(e.stack || e).slice(0, 500)}`));
   await page.goto('http://127.0.0.1:5173/?q=high', { waitUntil: 'domcontentloaded', timeout: 120000 });

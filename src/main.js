@@ -50,6 +50,11 @@ async function boot() {
       engine.renderScale = engine.q.scale * settings.renderScale;
       engine.resize(engine.outW, engine.outH);
     }
+    if (k === 'dynamicRes' || k === 'all') {
+      // tools (AUTO) measure fixed presets: the governor is off there unless ?dynres=1
+      engine.dynamicRes = AUTO ? params.get('dynres') === '1' : settings.dynamicRes !== false;
+      if (!engine.dynamicRes) engine.resize(engine.outW, engine.outH);   // back to the full set scale
+    }
     if (k === 'grain' || k === 'all') engine.post.settings.grain = settings.grain ? 0.012 : 0;
     if (game && (k === 'master' || k === 'music' || k === 'sfx' || k === 'all')) game.audio.setVolumes({ master: settings.master, music: settings.music, sfx: settings.sfx });
   };
@@ -93,7 +98,7 @@ async function boot() {
   game.ui = AUTO ? null : ui;
   // the summary screen needs the cursor back
   game.onOver = () => { document.exitPointerLock?.(); };
-  applySetting('grain'); applySetting('master');
+  applySetting('grain'); applySetting('master'); applySetting('dynamicRes');
 
   const setView = (name) => {
     const v = VIEWS[name] || VIEWS.meadow;
@@ -121,12 +126,14 @@ async function boot() {
     const t = [];
     for (let i = 0; i < 3; i++) { t.push(run(8)); await nextFrame(); }
     t.sort((a, b) => a - b);
-    // scale to the high preset at full render scale (the bench runs on whatever was loaded)
-    const rel = { low: 0.4, medium: 0.62, high: 1, ultra: 1.9 }[engine.qualityName] || 1;
-    const ms = t[1] / rel / Math.max(0.5, settings.renderScale) ** 2;
+    // cost of each preset relative to medium at full render scale (measured on the 780M at
+    // 1920x1200, street + meadow); the bench runs on whatever preset was loaded
+    const REL = { low: 0.6, medium: 1, high: 1.55, ultra: 2.0 };
+    const ms = t[1] / (REL[engine.qualityName] || 1) / Math.max(0.5, (engine.dynScale ?? engine.renderScale) / engine.q.scale) ** 2;
     const unsure = t[2] > t[0] * 1.3;
     const m = unsure ? 0.9 : 1;   // margin: prefer the lower preset when the timing is unsteady
-    const pick = ms <= 14.5 * m ? 'high' : ms <= 23 * m ? 'medium' : 'low';
+    // the highest preset expected to hold about 55 fps (18 ms) at the display size; never ultra
+    const pick = ['high', 'medium'].find((p) => ms * REL[p] <= 18 * m) || 'low';
     cam.position.copy(p0); cam.rotation.copy(r0);
     settings.autoQuality = { pick, ms: +ms.toFixed(1), unsure };
     console.info(`[auto quality] ${ms.toFixed(1)} ms on high (batches ${t.map((x) => x.toFixed(1)).join(' ')}) -> ${pick}`);
@@ -192,6 +199,7 @@ async function boot() {
     if (!running) return;
     requestAnimationFrame(frame);
     const dt = Math.min(0.05, (now - last) / 1000);
+    engine.govern(now - last);   // dynamic resolution
     last = now;
     step(dt);
     stats.frames++;

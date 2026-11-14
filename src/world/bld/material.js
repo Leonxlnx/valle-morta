@@ -26,19 +26,21 @@ vmUv = uv; vmMat = aMat; vmTint = aTint;
 const FRAG_PARS = /* glsl */`
 uniform sampler2DArray uBCol;
 uniform sampler2DArray uBNrm;
-uniform sampler2DArray uBArh;
 uniform vec4 uBFb[${LAYERS.length}];
 varying vec2 vmUv;
 varying vec4 vmMat;
 varying vec4 vmTint;
 struct VmLayer { vec3 col; vec2 n; float ao; float rough; float h; };
+// packed at load (two fetches per layer instead of three): uBCol = albedo + ao,
+// uBNrm = normal xy, roughness, height
 VmLayer vmSample(float idx, vec2 uv, vec2 dx, vec2 dy) {
   VmLayer L;
-  L.col = textureGrad(uBCol, vec3(uv, idx), dx, dy).rgb;
-  L.n = textureGrad(uBNrm, vec3(uv, idx), dx, dy).xy * 2.0 - 1.0;
+  vec4 c = textureGrad(uBCol, vec3(uv, idx), dx, dy);
+  vec4 a = textureGrad(uBNrm, vec3(uv, idx), dx, dy);
+  L.col = c.rgb; L.ao = c.a;
+  L.n = a.xy * 2.0 - 1.0;
   L.n.y = -L.n.y; // array layers are stored top row first
-  vec3 a = textureGrad(uBArh, vec3(uv, idx), dx, dy).rgb;
-  L.ao = a.r; L.rough = a.g; L.h = a.b;
+  L.rough = a.z; L.h = a.w;
   vec4 fb = uBFb[int(idx + 0.5)];
   if (fb.a > 0.5) {
     float n = texture2D(uNoiseTex, uv * 2.3).r;
@@ -85,17 +87,19 @@ const SURFACE = /* glsl */`
   VmLayer L = vmSample(layer, uv, dx, dy);
   float aoV = vmMat.z;
   if (layer < 0.5) {
-    // plastered wall: weathered at the base and in patches, flaked to the
-    // rubble core around war damage (vertex mask)
+    // plastered wall: weathering follows causes. Flaked to the rubble core around war damage
+    // (vertex mask) and by rising damp at the foot; streaks under sills and eaves, the clean band
+    // under the overhang and moss on north faces are baked into the vertex colour by the
+    // generators; no free-floating noise patches
     float hAb = vmTint.a * 18.0 - 2.0;
     float wear = mix(1.0, 0.3, clean);
-    float base = smoothstep(1.5, 0.1, hAb + (nB - 0.5) * 1.8) * 0.66;
-    float patches = smoothstep(0.5, 0.78, nA * 0.7 + nB * 0.3) * 0.62 * wear;
+    float base = smoothstep(1.0, 0.05, hAb + (nB - 0.5) * 1.2) * 0.6;
+    float patches = smoothstep(0.62, 0.8, nA * 0.7 + nB * 0.3) * 0.25 * wear;
     float f = max(vmMat.y, max(base, patches));
     float m = f + (nB - 0.5) * 0.55 + (nC - 0.5) * 0.3;
     float w1 = smoothstep(0.22, 0.5, m);
     float w2 = smoothstep(0.58, 0.82, m);
-    L.col *= tint * (0.86 + 0.24 * nA);
+    L.col *= tint * (0.94 + 0.09 * nA);
     if (w1 > 0.004) { VmLayer D = vmSample(1.0, uv, dx, dy); D.col *= mix(vec3(1.0), tint, 0.5); vmBlend(L, D, w1, 0.25); }
     if (w2 > 0.004) { VmLayer M = vmSample(2.0, uv, dx, dy); vmBlend(L, M, w2, 0.18); }
     float damp = smoothstep(0.9, -0.1, hAb + (nB - 0.5) * 0.7);
@@ -127,13 +131,21 @@ export async function makeStructureMaterial(ctx) {
       .then((r) => !(r.ok && (r.headers.get('content-type') || '').startsWith('image')))
       .catch(() => true))),
   ]);
-  arr.nrm.anisotropy = Math.min(4, q.aniso); arr.arh.anisotropy = Math.min(2, q.aniso);
+  // pack the ao / roughness / height map into the free channels of the other two arrays
+  // (col.a = ao, nrm.b = roughness, nrm.a = height): one texture fetch less per layer
+  {
+    const c = arr.col.image.data, n = arr.nrm.image.data, a = arr.arh.image.data;
+    for (let i = 0; i < c.length; i += 4) { c[i + 3] = a[i]; n[i + 2] = a[i + 1]; n[i + 3] = a[i + 2]; }
+    arr.col.needsUpdate = true; arr.nrm.needsUpdate = true;
+    arr.arh.dispose(); arr.arh = null;
+  }
+  arr.nrm.anisotropy = Math.min(4, q.aniso);
   const fb = LAYERS.map((n, i) => new THREE.Vector4(...FALLBACK[n], missing[i] ? 1 : 0));
   const mat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 1, metalness: 0 });
   mat.shadowSide = THREE.DoubleSide;
   enhance(mat, {
     key: 'vm-structure',
-    uniforms: { uBCol: { value: arr.col }, uBNrm: { value: arr.nrm }, uBArh: { value: arr.arh }, uBFb: { value: fb } },
+    uniforms: { uBCol: { value: arr.col }, uBNrm: { value: arr.nrm }, uBFb: { value: fb } },
     vertexPars: VERT_PARS,
     vertexBegin: VERT_BEGIN,
     fragmentPars: FRAG_PARS,

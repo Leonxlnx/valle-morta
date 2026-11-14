@@ -49,7 +49,7 @@ try {
         }
         const groups = []; for (const u of run) { const gq = groups[groups.length - 1]; if (gq && u - gq[gq.length - 1] < 0.2) gq.push(u); else groups.push([u]); }
         for (const gq of groups) {
-          if (gq.length < 3) continue;        // narrower than ~0.45 m: not a doorway
+          if (gq.length < 5) continue;        // narrower than ~0.75 m: a crack in a ruin, not a doorway the player fits through
           const u = (gq[0] + gq[gq.length - 1]) / 2, a = W(nx ? nx * (off + 2.0) : u, nz ? nz * (off + 2.0) : u), e = W(nx ? -nx * (off - 2.2) : u, nz ? -nz * (off - 2.2) : u);
           place(a[0], a[1]); const tin = walk(e[0], y0, e[1], 6); const inn = inside();
           const e2 = W(nx ? nx * (off + 2.5) : u, nz ? nz * (off + 2.5) : u); const tout = walk(e2[0], y0, e2[1], 6);

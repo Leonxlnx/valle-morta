@@ -120,7 +120,7 @@ isl, inv = np.unique(root, return_inverse=True)
 for i in range(len(isl)):
     f = np.nonzero(inv == i)[0]
     li = (f[:, None] * 3 + np.arange(3)).ravel()
-    s = 1.0 + 0.95 * float(w[f].mean())                 # up to ~1.95x linear texel density
+    s = 1.0 + 1.6 * float(w[f].mean())                  # up to ~2.6x linear texel density on face and hands
     c = uv[li].mean(0)
     uv[li] = c + (uv[li] - c) * s
 me.uv_layers.active.data.foreach_set('uv', uv.ravel())

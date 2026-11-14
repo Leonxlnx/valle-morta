@@ -227,8 +227,8 @@ kbd { display: inline-grid; place-items: center; min-width: 22px; height: 22px; 
 .hud.low .hp-num { color: var(--danger); animation: breathe 1.6s ease-in-out infinite; }
 @keyframes breathe { 50% { opacity: 0.72; } }
 
-/* bottom right: the arsenal */
-.arsenal { position: absolute; right: var(--edge); bottom: var(--edge); display: grid; justify-items: end; gap: var(--s2); }
+/* bottom left, over the health: the arsenal (the right half of the screen belongs to the weapon) */
+.arsenal { display: grid; justify-items: start; gap: var(--s2); padding-bottom: var(--s4); margin-bottom: var(--s2); }
 .ammo { display: flex; align-items: baseline; gap: var(--s2); font-variant-numeric: tabular-nums; }
 .ammo .mag { font-size: var(--t-2xl); font-weight: var(--w-bold); letter-spacing: -0.04em; line-height: 0.9; transition: color var(--mid); }
 .ammo .mag.empty { color: var(--danger); }

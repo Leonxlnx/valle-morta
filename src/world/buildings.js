@@ -11,6 +11,10 @@ import { buildBridge } from './bld/bridge.js';
 import { buildStoneWalls, buildDebris } from './bld/extras.js';
 import { buildTown, specialCfg } from './bld/town.js';
 
+// dressing detail is grouped in cells of DCELL metres and hidden beyond DFAR (+ half the cell radius)
+// from the cell centre, where sills, frames and plates are below a pixel at 1920 px
+const DCELL = 40, DFAR = 62;
+
 // hand-tuned hero buildings
 function heroCfg(b, B) {
   const n = B.noise;
@@ -36,6 +40,8 @@ function heroCfg(b, B) {
     // enterable: rubble ramp to the first floor, big broken window towards the church (reference 7)
     return {
       burnt: true, roofBias: 1.0, noPartition: true,
+      // the +x door sits clear of the rubble ramp (it ran into the ramp's talus when generated)
+      doors: [{ wall: 2, u: 5.1 }],
       collapse: { x: 4.8, z: 3.4, depth: 0.8, sigma: 2.8 },
       blasts: [{ x: 5.25, y: 6.8, z: -1.5, r: 1.3 }, { x: -2.5, y: 7.6, z: 4, r: 1.5 }, { x: -5.25, y: 4.2, z: 1.0, r: 0.9 }, { x: 2.6, y: 2.0, z: -4, r: 0.6 }],
       keep: [{ x: 0, y: 4.2, z: -4, r: 3.0 }],
@@ -58,26 +64,37 @@ function heroCfg(b, B) {
 
 export async function build(ctx) {
   const t0 = performance.now();
+  // ?nodress builds the houses without dressing (A/B timing of the houses pass)
+  if (typeof location !== 'undefined' && new URLSearchParams(location.search).has('nodress')) globalThis.__noDress = true;
   const material = ctx.testMaterial || await makeStructureMaterial(ctx);
   const chunks = new Map();
   const chunk = (key) => { let m = chunks.get(key); if (!m) { m = new MB(); chunks.set(key, m); } return m; };
+  // small dressings (sills, shutters, pipes, plates...): no shadows, one unsplit mesh per chunk
+  const details = new Map();
+  const detail = (key) => { let m = details.get(key); if (!m) { m = new MB(); m.noShadow = true; details.set(key, m); } return m; };
   const B = {
     ctx, layout: ctx.layout, noise: new Noise(90211), ground: (x, z) => ctx.terrain.heightAt(x, z), mb: null, cb: null, baseY: 0, stones: [], tiles: [], stat: {},
-    stone(x, y, z, s, rng) { this.stones.push([x, y + s * 0.25, z, s, rng.range(0, 6.283), rng.range(-0.5, 0.5), rng.range(-0.5, 0.5), rng.range(0.6, 1)]); },
-    tile(x, y, z, rng) { this.tiles.push([x, y + 0.02, z, rng.range(0, 6.283), rng.range(-0.22, 0.22), rng.chance(0.3) ? Math.PI + rng.range(-0.2, 0.2) : rng.range(-0.25, 0.25), rng.chance(0.4) ? rng.range(0.4, 0.7) : 1]); },
+    stone(x, y, z, s, rng) { this.stones.push([x, y + s * 0.18, z, s, rng.range(0, 6.283), rng.range(-0.5, 0.5), rng.range(-0.5, 0.5), rng.range(0.6, 1)]); },
+    tile(x, y, z, rng) { this.tiles.push([x, y - 0.03, z, rng.range(0, 6.283), rng.range(-0.22, 0.22), rng.chance(0.3) ? Math.PI + rng.range(-0.2, 0.2) : rng.range(-0.25, 0.25), rng.chance(0.4) ? rng.range(0.4, 0.7) : 1]); },
   };
   let colTris = 0, colMeshes = 0;
   const pushCol = (name) => { const m = B.cb.mesh(name); if (m) { ctx.colliders.push(m); colTris += B.cb.tris; colMeshes++; } };
   for (const b of ctx.layout.buildings) {
     B.mb = chunk(b.kind === 'church' ? 'church' : b.x < -60 ? 'west' : b.x < 30 ? 'v0' : b.x < 80 ? 'v1' : 'v2');
     B.cb = new CB();
+    const i0 = B.mb.idx.length, key = b.kind === 'church' ? 'church' : b.x < -60 ? 'west' : b.x < 30 ? 'v0' : b.x < 80 ? 'v1' : 'v2';
     try {
       if (b.kind === 'church') buildChurch(B, b); else buildHouse(B, b, heroCfg(b, B));
+      // nothing of a ruin may hang in the air: drop parts with no contact chain to the ground
+      const dropped = B.mb.prune(i0, B.ground);
+      if (dropped.length) { B.stat.pruned = (B.stat.pruned || 0) + dropped.length; (B.stat.prunedAt ||= []).push(`${b.id}:${dropped.length}`); }
+      B.mb.extract(i0, detail(`${key}#${Math.floor(b.x / DCELL)},${Math.floor(b.z / DCELL)}`));
     } catch (e) { console.error(`[buildings] ${b.id} failed:`, e); }
     pushCol(b.id);
   }
   B.mb = chunk('west'); B.cb = new CB();
-  try { buildBridge(B); } catch (e) { console.error('[buildings] bridge failed:', e); }
+  const ib = B.mb.idx.length;
+  try { buildBridge(B); B.mb.extract(ib, detail('west#bridge')); } catch (e) { console.error('[buildings] bridge failed:', e); }
   pushCol('bridge');
   B.mb = chunk('walls'); B.cb = new CB();
   try { buildStoneWalls(B); } catch (e) { console.error('[buildings] stone walls failed:', e); }
@@ -98,6 +115,19 @@ export async function build(ctx) {
   for (const [key, mb] of chunks) {
     const m = mb.toMesh(material, `bld:${key}`);
     if (m) { group.add(m); tris += mb.tris; verts += mb.n; parts.push(`${key}:${Math.round(mb.tris / 1000)}k`); }
+  }
+  // detail cells: an LOD with an empty far level hides the sub-pixel dressing of far cells (the
+  // renderer switches it per frame from the camera distance to the cell centre); no shadows
+  for (const [key, mb] of details) {
+    const m = mb.toMesh(material, `bldx:${key.split('#')[0]}`);
+    if (!m) continue;
+    m.geometry.computeBoundingSphere(); m.renderOrder = 1;   // after the walls, so early-z rejects hidden detail pixels
+    const c = m.geometry.boundingSphere.center, lod = new THREE.LOD();
+    lod.name = `bldx-lod:${key}`; lod.position.set(c.x, c.y, c.z);
+    m.position.set(-c.x, -c.y, -c.z); m.updateMatrix(); m.updateMatrixWorld(true);
+    lod.addLevel(m, 0, 0.04); lod.addLevel(new THREE.Object3D(), DFAR + Math.min(40, m.geometry.boundingSphere.radius * 0.4), 0.06);
+    lod.updateMatrixWorld(true);
+    group.add(lod); tris += mb.tris; verts += mb.n; parts.push(`x${key}:${Math.round(mb.tris / 1000)}k`);
   }
   for (const im of buildDebris(B, material)) { group.add(im); tris += im.count * im.geometry.index.count / 3; }
   ctx.scene.add(group);

@@ -14,6 +14,8 @@ const b = await puppeteer.launch({ executablePath: 'C:/Program Files/Google/Chro
 const msgs = [];
 try {
   const page = await b.newPage(); await page.setViewport({ width: 1280, height: 720 });
+  // no hot reload: other work saving files must not reload the page under a running test
+  await page.evaluateOnNewDocument(() => { const W = window.WebSocket; window.WebSocket = function (u, p) { if (String(p).includes('vite')) return { addEventListener() {}, removeEventListener() {}, send() {}, close() {}, readyState: 0 }; return new W(u, p); }; });
   page.on('pageerror', (e) => msgs.push('pageerror ' + String(e).slice(0, 240)));
   page.on('console', (m) => { if (m.type() === 'error' || m.type() === 'warning' || m.type() === 'warn') msgs.push(`${m.type()} ${m.text().slice(0, 240)}`); });
   page.on('requestfailed', (r) => msgs.push('requestfailed ' + r.url().slice(-60)));

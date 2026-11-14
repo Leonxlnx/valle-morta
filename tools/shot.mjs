@@ -38,6 +38,8 @@ try {
   const errors = [];
   page.on('console', (m) => { if (m.type() === 'error' || m.type() === 'warning') errors.push(`[${m.type()}] ${m.text()}`.slice(0, 600)); });
   page.on('pageerror', (e) => errors.push(`[pageerror] ${String(e).slice(0, 600)}`));
+  // no hot reload: other work saving files must not reload the page under a running shot
+  await page.evaluateOnNewDocument(() => { const W = window.WebSocket; window.WebSocket = function (u, p) { if (String(p).includes('vite')) return { addEventListener() {}, removeEventListener() {}, send() {}, close() {}, readyState: 0 }; return new W(u, p); }; });
   await page.goto(`${url}?q=${q}&auto=1${query ? '&' + query : ''}`, { waitUntil: 'load', timeout: 120000 });
   await page.waitForFunction('window.__vm && window.__vm.ready', { timeout: 180000, polling: 250 });
   const gpu = await page.evaluate(() => {

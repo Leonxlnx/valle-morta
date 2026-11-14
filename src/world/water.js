@@ -177,8 +177,11 @@ attribute float aHw;
 varying vec3 vWorld;
 varying vec4 vFlow;
 varying float vHw;
+uniform mat4 uReflMat;
+varying vec4 vRefl;
 void main() {
   vWorld = position;
+  vRefl = uReflMat * vec4(position, 1.0);
   vFlow = aFlow;
   vHw = aHw;
   gl_Position = projectionMatrix * viewMatrix * vec4(position, 1.0);
@@ -193,6 +196,9 @@ uniform sampler2D uPanoA;
 uniform sampler2D uPanoB;
 uniform float uBlend;
 uniform vec3 uBodyCol;
+uniform sampler2D uRefl;     // planar reflection (high / ultra), uReflOn = 1 when valid this frame
+uniform float uReflOn;
+varying vec4 vRefl;
 varying vec3 vWorld;
 varying vec4 vFlow;
 varying float vHw;
@@ -263,17 +269,31 @@ void main() {
   float hk = smoothstep(0.06, 0.3, R.y + (pn - 0.5) * 0.1);
   float bank = smoothstep(0.6, 1.1, lat);
   vec3 refl = mix(hill, sky, hk * (1.0 - 0.65 * bank)) * (1.0 - 0.3 * turb);
+  if (uReflOn > 0.5) {
+    // the mirror image of sky, banks, trees and the bridge, broken up by the ripples
+    vec2 ruv = vRefl.xy / vRefl.w + gw * (0.05 / (1.0 + dist * 0.03));
+    vec3 mir = texture2D(uRefl, clamp(ruv, vec2(0.001), vec2(0.999))).rgb;
+    refl = mir * (1.0 - 0.25 * turb);
+  }
 
   vec3 Hh = normalize(V + uSunDir);
   float nh = max(dot(N, Hh), 0.0);
   float Fh = 0.02 + 0.98 * pow(1.0 - max(dot(V, Hh), 0.0), 5.0);
   vec3 glint = uSunColor * sunVis * Fh * (22.0 * pow(nh, 520.0) + 1.2 * pow(nh, 64.0)) * max(dot(N, uSunDir), 0.0);
+  {
+    // glitter: tiny facets flash where the broad highlight lies
+    vec2 gq = q1 * vec2(3.1, 1.9) * w1 + q2 * vec2(3.1, 1.9) * w2;
+    float sp = texture2D(uNoiseTex, gq * 0.37 + uTime * 0.07).r * texture2D(uNoiseTex, gq * 0.61 - uTime * 0.05).g;
+    float lobe = pow(nh, 40.0) * smoothstep(0.32, 0.5, sp);
+    glint += uSunColor * sunVis * lobe * 9.0 / (1.0 + dist * 0.02);
+  }
 
   // water body: clear, slightly green; the bed shows through in the shallows
   float path = depth / max(NdV * 0.7 + 0.3, 0.3);
   float tr = exp(-path * 0.58);
   vec3 lightIn = amb + uSunColor * sunVis * max(uSunDir.y, 0.0) / WPI;
-  vec3 body = uBodyCol * lightIn * (1.0 - tr);
+  vec3 deepCol = mix(uBodyCol * vec3(1.25, 1.12, 0.95), uBodyCol * vec3(0.5, 0.8, 1.05), smoothstep(0.25, 1.4, depth));
+  vec3 body = deepCol * lightIn * (1.0 - tr);
 
   // white water
   float stand = texture2D(uNoiseTex, base * vec2(0.11, 0.07) + 0.3).b;
@@ -284,6 +304,9 @@ void main() {
   float f2 = texture2D(uNoiseTex, q1 * vec2(0.83, 0.27) + 0.5).g * w1 + texture2D(uNoiseTex, q2 * vec2(0.83, 0.27) + 0.5).g * w2;
   float f3 = texture2D(uNoiseTex, q1 * vec2(2.3, 0.71) + 0.2).b * w1 + texture2D(uNoiseTex, q2 * vec2(2.3, 0.71) + 0.2).b * w2;
   float fn = f1 * 0.3 + f2 * 0.36 + f3 * 0.34;
+  // soft lace where the water meets the bank and the stones (very shallow water)
+  float lace = smoothstep(0.12, 0.02, depth) * smoothstep(0.0, 0.015, depth);
+  fAmt += lace * (0.55 + 0.45 * texture2D(uNoiseTex, xz * 0.21 + uTime * 0.03).r);
   fAmt = min(fAmt, 0.92);
   float foam = smoothstep(0.80 - fAmt * 0.47, 0.95 - fAmt * 0.42, fn) * clamp(fAmt * 3.0, 0.0, 1.0);
   vec3 foamCol = vec3(0.80, 0.83, 0.84) * lightIn * (0.7 + 0.6 * f2);
@@ -342,6 +365,7 @@ export async function build(ctx) {
     uFoamMap: { value: makeFoamMap(ctx, rocks) },
     uPanoA: dome.uPanoA, uPanoB: dome.uPanoB, uBlend: dome.uBlend,
     uBodyCol: { value: new THREE.Vector3(0.055, 0.13, 0.115) },   // clear mountain water: grey-green, not turquoise
+    uRefl: { value: null }, uReflOn: { value: 0 }, uReflMat: { value: new THREE.Matrix4() },
   });
   const mat = new THREE.ShaderMaterial({
     vertexShader: WATER_VS, fragmentShader: WATER_FS, uniforms,
@@ -353,5 +377,18 @@ export async function build(ctx) {
   mesh.renderOrder = -5;
   mesh.name = 'river-water';
   scene.add(mesh);
+  // the engine renders a planar reflection at the water level nearest the camera (high / ultra)
+  const rq = {};
+  // centre line samples (x, y, z, radius) for the engine's visibility test of the reflection
+  const pts = [];
+  for (let s = s0; s <= s1; s += 8) { const c = river.at(s); pts.push(c[0], layout.waterLevel(s), c[1], layout.riverHalfWidth(s) + 6); }
+  engine.water = {
+    mesh, uniforms, pts,
+    probe: (x, z) => {
+      river.query(x, z, rq);
+      if (!(rq.s >= s0 && rq.s <= s1)) return null;
+      return { d: rq.d - layout.riverHalfWidth(rq.s), y: layout.waterLevel(rq.s) };
+    },
+  };
   return { mesh, uniforms, rocks };
 }

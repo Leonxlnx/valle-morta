@@ -2,6 +2,7 @@
 // roofs with exposed rafters, partial timber floors, rubble.
 import { RNG, saturate, smoothstep, clamp } from '../../core/noise.js';
 import { LY, emitSlab, slabBoxes } from './mb.js';
+import { houseStyle, dressOpening, dressWall } from './dress.js';
 
 const MAS_T = [1.06, 1.03, 0.98], LINTEL_T = [1.12, 1.1, 1.05], TRIM_T = [1.15, 1.13, 1.08];
 const WOOD_T = [1.05, 1.0, 0.95], CHAR_T = [0.8, 0.8, 0.8], UNDER_T = [0.72, 0.68, 0.62], RUB_T = [1.04, 1.02, 0.98];
@@ -191,19 +192,25 @@ export function buildWall(B, fr, sp) {
     outer: { layer: lay0, tint: tO, ao: sp.aoO === undefined ? 1 : sp.aoO }, inner: { layer: 0, tint: tI, ao: sp.aoI === undefined ? 0.5 : sp.aoI },
     edge: (c) => (c === 1 ? mRev : c === 6 ? mEnd : mBrk), border: [sp.ends ? sp.ends[0] : 2, sp.ends ? sp.ends[1] : 2, 0, 2],
   };
+  if (sp.dress) mb.tintFn = weatherFn(fr, sp, ops);
   emitSlab(mb, g);
+  mb.tintFn = null;
   if (B.cb && !sp.noCollide) slabBoxes(B.cb, g);
 
   // ---- dressings
   const solidAt = (u, y) => {
-    if (u <= 0 || u >= L || y >= sp.eave) return false;
-    let i = 0, j = 0;
+    if (u <= 0 || u >= L) return false;
+    let i = 0;
     while (i < nu - 1 && us[i + 1] <= u) i++;
-    while (j < jE - 1 && vs[j + 1] <= y) j++;
-    return st[j * nu + i] === 0;
+    for (let j = 0; j < nv; j++) {
+      const a = j * nu1 + i;
+      if (y >= Math.min(vy[a], vy[a + 1]) && y < Math.max(vy[a + nu1], vy[a + nu1 + 1])) return st[j * nu + i] === 0;
+    }
+    return false;
   };
   for (const o of ops) {
     if (o.arch) { archFill(B, fr, o, tO, tI, uvo); continue; }
+    if (sp.dress) { dressOpening(B, fr, o, sp.dress, solidAt, sp); continue; }
     const uc = (o.u0 + o.u1) / 2, vc = (o.v0 + o.v1) / 2;
     const okTop = solidAt(uc, o.v1 + 0.15) && solidAt(o.u0 - 0.15, o.v1 - 0.25) && solidAt(o.u1 + 0.15, o.v1 - 0.25);
     const okBot = o.door ? true : solidAt(uc, o.v0 - 0.15) && solidAt(o.u0 - 0.15, o.v0 + 0.25) && solidAt(o.u1 + 0.15, o.v0 + 0.25);
@@ -229,7 +236,35 @@ export function buildWall(B, fr, sp) {
       if ((o.shutter & 2) && solidAt(o.u1 + sw * 0.6, vc)) wbox(mb, fr, o.u1 + 0.03, o.u1 + sw + 0.03, o.v0 - 0.03, o.v1 - 0.03, -0.075, -0.04, { rot: rng.range(-0.03, 0.14), tile: 2, uo: rng.f() });
     }
   }
+  if (sp.dress) dressWall(B, fr, sp, solidAt, ops);
   return { st, us, vs, nu, nv, jE, solidAt, grid: g };
+}
+
+// Weathering with a cause, baked into the vertex colour of the outer wall face: dirt streaks
+// washed down from under the sills and from the eaves, a cleaner band in the lee of the overhang,
+// moss and green stain at the base of north-facing walls (rising damp is in the shader).
+const hash1 = (n) => { const x = Math.sin(n * 127.1 + 311.7) * 43758.5453; return x - Math.floor(x); };
+function weatherFn(fr, sp, ops) {
+  const eave = sp.eave, long = !sp.top, sills = ops.filter((o) => !o.door && !o.balc && o.v0 > 0.4), seed = (sp.uvo || 0) * 3.1;
+  const out = [1, 1, 1];
+  return (x, y, z, nx, nz, wnx, wnz) => {
+    out[0] = out[1] = out[2] = 1;
+    if (nx * fr.nx + nz * fr.nz < 0.5) return out;
+    const u = (x - fr.ox) * fr.ux + (z - fr.oz) * fr.uz;
+    let f = 1;
+    if (long) {
+      const e = eave - y;
+      if (e >= 0 && e < 0.75) f *= 1.07;
+      else if (e >= 0.75 && e < 3.4) { const h = hash1(Math.floor(u * 2.2) + seed); if (h > 0.5) f *= 1 - 0.16 * (h - 0.5) * 2 * (1 - (e - 0.75) / 2.65); }
+    }
+    for (const o of sills) {
+      const dy = o.v0 - 0.08 - y;
+      if (dy > 0 && dy < 2.0 && u > o.u0 - 0.05 && u < o.u1 + 0.05) f *= 1 - 0.2 * (1 - dy / 2.0) * (u > o.u0 + 0.1 && u < o.u1 - 0.1 ? 1 : 0.55);
+    }
+    out[0] = out[1] = out[2] = f;
+    if (wnz < -0.45 && y < 1.1) { const m = (1 - Math.max(0, y) / 1.1) * Math.min(1, (-wnz - 0.45) * 2.5) * (0.6 + 0.4 * hash1(Math.floor(u * 1.7) + seed)); out[0] *= 1 - 0.3 * m; out[1] *= 1 - 0.12 * m; out[2] *= 1 - 0.4 * m; }
+    return out;
+  };
 }
 
 // flood fill helper: keeps solid cells connected to a seed
@@ -294,7 +329,8 @@ export function buildRoof(B, R) {
   const yU = (z) => eave + (d / 2 - Math.abs(z)) * tanp;
   const vd = new Float32Array(nv + 1);
   for (let j = 0; j <= nv; j++) vd[j] = Math.min(j * 0.4, Ls);
-  const top = [null, null];
+  const top = [null, null], sg = R.sag;
+  const sagAt = (x, dist, si) => (sg && si === sg.si ? sg.a * Math.exp(-((x - sg.x) ** 2 + (dist - sg.dist) ** 2) / (2 * sg.s * sg.s)) : 0);
   const mEdge = { layer: LY.roof_tiles, tint: [R.tint[0] * 0.8, R.tint[1] * 0.78, R.tint[2] * 0.78], ao: 0.8 };
   for (let si = 0; si < 2; si++) {
     const s = si ? -1 : 1;
@@ -314,7 +350,7 @@ export function buildRoof(B, R) {
     const po = new Float32Array(nvt * 3), pi = new Float32Array(nvt * 3), uv = new Float32Array(nvt * 2);
     for (let k = 0; k < nvt; k++) {
       const i = k % nu1, j = (k / nu1) | 0;
-      let x = us[i], dist = vd[j], drop = 0.035 * B.noise.n2(x * 0.45 + R.uvo, dist * 0.45 + si * 7);
+      let x = us[i], dist = vd[j], drop = 0.035 * B.noise.n2(x * 0.45 + R.uvo, dist * 0.45 + si * 7) - sagAt(x, dist, si);
       if (jit[k]) { x += rng.range(-0.15, 0.15); dist += rng.range(-0.14, 0.14); drop -= rng.range(0, 0.24); }
       const z = zAt(dist), y = yU(z) + drop;
       po[k * 3] = x; po[k * 3 + 1] = y + th / cosp; po[k * 3 + 2] = z;
@@ -355,7 +391,7 @@ export function buildRoof(B, R) {
     const x = -w / 2 + 0.4 + (w - 0.8) * r / nR;
     for (const s of [1, -1]) {
       const zAt = (dist) => s * (d / 2 + oe - dist * cosp);
-      const pt = (k) => { const z = zAt(Math.max(0.06, Ls * k / K)); return [x, yU(z) - 0.075, z]; };
+      const pt = (k) => { const ds = Math.max(0.06, Ls * k / K), z = zAt(ds); return [x, yU(z) - 0.075 - sagAt(x, ds, s > 0 ? 0 : 1), z]; };
       beamRuns(mb, K, (k) => { const z = zAt(Ls * (k + 0.5) / K); return roofF(x, yU(z), z) < 0.55; }, pt, 0.1, 0.13,
         (km) => { const z = zAt(Ls * km / K); return charAt(x, yU(z), z); });
     }
@@ -366,6 +402,7 @@ export function buildRoof(B, R) {
     beamRuns(mb, nP, (k) => roofF(-w / 2 + 0.3 + (w - 0.6) * (k + 0.5) / nP, y, pz) < 0.8, (k) => [-w / 2 + 0.3 + (w - 0.6) * k / nP, y, pz], 0.14, 0.18,
       (km) => charAt(-w / 2 + 0.3 + (w - 0.6) * km / nP, y, pz));
   }
+  if (R.dress) roofDress(B, R, { og, oe, th, tanp, cosp, Ls, yU, sagAt });
   const nT = Math.max(1, Math.round(w / 2.8) - 1);
   for (let k = 1; k <= nT; k++) {
     const x = -w / 2 + w * k / (nT + 1) + rng.range(-0.25, 0.25);
@@ -375,6 +412,76 @@ export function buildRoof(B, R) {
       mb.beam([x, eave - 0.12, -d / 2 + 0.15], [x, eave - 0.12, d / 2 - 0.15], 0.17, 0.2, { uo: x });
     }
   }
+}
+
+// battens (seen through holes and under the eaves), barge boards and verge tiles, gutters
+// (sagging or torn where the roof is broken) and downpipes, all in detail mode
+const ZINC_T = [1.3, 1.3, 1.36];
+function roofDress(B, R, g) {
+  const mb = B.mb, { w, d, roofF, field } = R, { og, oe, th, cosp, Ls, yU, sagAt } = g, rng = R.dress.rng;
+  mb.det = 1;
+  const runsX = (x0, x1, n, ok, emit) => {
+    let a = -1;
+    for (let k = 0; k <= n; k++) {
+      const good = k < n && ok(x0 + (x1 - x0) * (k + 0.5) / n);
+      if (good && a < 0) a = k;
+      if (!good && a >= 0) { emit(x0 + (x1 - x0) * a / n, x0 + (x1 - x0) * k / n, a === 0, k === n); a = -1; }
+    }
+  };
+  const nx = Math.max(2, Math.round((w + 2 * og) / 0.5));
+  for (let si = 0; si < 2; si++) {
+    const s = si ? -1 : 1, zAt = (dist) => s * (d / 2 + oe - dist * cosp);
+    mb.set(LY.wood_beam, R.burnt ? [0.5, 0.48, 0.46] : [1.0, 0.94, 0.86]);
+    for (let dist = 0.22; dist < Ls - 0.15; dist += 0.36) {
+      const z = zAt(dist);
+      runsX(-w / 2 - og + 0.05, w / 2 + og - 0.05, nx, (x) => roofF(x, yU(z), z) < 0.45, (xa, xb) => {
+        const y = yU(z) - 0.026 - sagAt((xa + xb) / 2, dist, si);
+        mb.beam([xa, y, z], [xb, y, z], 0.05, 0.03, { skip: 48 });
+      });
+    }
+    // gutter along the eave, downpipe at an end that reaches the corner
+    const zE = s * (d / 2 + oe), yE = yU(zE), zI = s * (d / 2 + oe - 0.3);
+    runsX(-w / 2 - og + 0.08, w / 2 + og - 0.08, nx, (x) => roofF(x, yU(zI), zI) < -0.05, (xa, xb, a0, b1) => {
+      if (xb - xa < 0.8) return;
+      mb.set(LY.slate_dark, ZINC_T);
+      const yg = yE - 0.05, zg = zE + s * 0.06, L = xb - xa, f = Math.min(1, 1.6 / L);
+      let pa = [xa, yg, zg], pb = [xb, yg, zg];
+      if (!b1 && rng.chance(0.6)) pb = [xb - L * f * 0.25, yg - rng.range(0.4, 1.0) * f, zg + s * 0.15];
+      else if (!a0 && rng.chance(0.6)) pa = [xa + L * f * 0.25, yg - rng.range(0.4, 1.0) * f, zg + s * 0.15];
+      mb.beam(pa, pb, 0.13, 0.1);
+      const e = a0 && rng.chance(0.6) ? -1 : b1 && rng.chance(0.6) ? 1 : 0;
+      if (!e || !R.gl) return;
+      const x = e * (w / 2 - 0.22), zw = s * (d / 2 + 0.07);
+      for (let y = 0.4; y < R.eave - 0.4; y += 0.9) if (field(x, y, s * (d / 2 - 0.27)) > -0.05) return;
+      const g0 = R.gl(x, zw), bent = rng.chance(0.3);
+      mb.beam([x, yg, zg], [x, yg - 0.35, zw], 0.08, 0.08);
+      const yb = bent ? Math.max(g0 + 1.0, 1.0) : g0 - 0.05;
+      mb.beam([x, yg - 0.35, zw], [x, yb, zw], 0.085, 0.085);
+      if (bent) mb.beam([x, yb, zw], [x - e * 0.25, g0 + 0.03, zw + s * 0.55], 0.085, 0.085);
+      for (const y of [1.2, R.eave - 1.2]) if (y > yb + 0.1) mb.abox(x - 0.02, y - 0.03, Math.min(zw, s * d / 2), x + 0.02, y + 0.03, Math.max(zw, s * d / 2));
+    });
+  }
+  // barge boards and verge tiles along both gable edges
+  for (const e of [-1, 1]) {
+    const x = e * (w / 2 + og - 0.03), xi = e * (w / 2 + og - 0.3);
+    for (const s of [1, -1]) {
+      const K = Math.max(2, Math.round(Ls / 0.5)), zAt = (k) => s * (d / 2 + oe - Ls * k / K * cosp);
+      let a = -1;
+      for (let k = 0; k <= K; k++) {
+        const good = k < K && roofF(xi, yU(zAt(k + 0.5)), zAt(k + 0.5)) < -0.05;
+        if (good && a < 0) a = k;
+        if (!good && a >= 0) {
+          const za = zAt(a), zb = zAt(k);
+          mb.set(R.burnt ? LY.wood_charred : LY.wood_planks, R.burnt ? [0.8, 0.8, 0.8] : [0.82, 0.72, 0.62]);
+          mb.beam([x, yU(za) - 0.05, za], [x, yU(zb) - 0.05, zb], 0.035, 0.2);
+          mb.set(LY.roof_tiles, [R.tint[0] * 0.88, R.tint[1] * 0.86, R.tint[2] * 0.86]);
+          mb.beam([x - e * 0.07, yU(za) + th / cosp + 0.03, za], [x - e * 0.07, yU(zb) + th / cosp + 0.03, zb], 0.2, 0.06);
+          a = -1;
+        }
+      }
+    }
+  }
+  mb.det = 0;
 }
 
 // ---------------------------------------------------------------- floor
@@ -449,6 +556,15 @@ export function houseRubble(B, b, cfg, field, W, rng, H, hasRoof) {
     const rx = clamp(col.sigma * 1.0, 2.2, 5);
     heap(clamp(col.x, -w / 2 + 0.6, w / 2 - 0.6), clamp(col.z, -dd / 2 + 0.6, dd / 2 - 0.6), rx, rx * rng.range(0.65, 0.9), 0.3 + 1.1 * saturate((d - 0.3) / 0.6), rng.range(0, 3));
   }
+  // a cone of rubble below every shell hole that went through a wall
+  for (const bl of cfg.blasts || []) {
+    const onZ = Math.abs(Math.abs(bl.z) - dd / 2) < 0.6, onX = Math.abs(Math.abs(bl.x) - w / 2) < 0.6;
+    if (!onZ && !onX) continue;
+    const nx = onZ ? 0 : Math.sign(bl.x), nz = onZ ? Math.sign(bl.z) : 0, xw = onZ ? bl.x : nx * (w / 2 - 0.27), zw = onZ ? nz * (dd / 2 - 0.27) : bl.z;
+    if (Math.abs(xw) > w / 2 + 0.3 || Math.abs(zw) > dd / 2 + 0.3 || bl.y > H + 0.5 || field(xw, bl.y, zw) <= 0) continue;
+    const r = Math.min(bl.r, 2.2), hh = Math.min(b.enterable ? 0.5 : 0.7, 0.18 + 0.2 * r);
+    heap(xw + nx * (0.55 + 0.25 * r), zw + nz * (0.55 + 0.25 * r), 0.7 + 0.55 * r, 0.5 + 0.35 * r, hh, Math.atan2(nx, nz) + 1.57);
+  }
   // heaps at the foot of broken stretches of wall
   const per = 2 * (w + dd), step = 2.3;
   for (let s = rng.range(0, step); s < per; s += step) {
@@ -475,7 +591,11 @@ export function houseRubble(B, b, cfg, field, W, rng, H, hasRoof) {
   for (let k = 0; k < nB; k++) {
     const p = around(1.6), a = rng.range(0, 6.283), len = rng.range(0.6, 1.6), y = T(p[0], p[1]) + 0.07, lay = cfg.burnt && rng.chance(0.7) ? LY.wood_charred : LY.wood_beam;
     mb.set(lay, lay === LY.wood_charred ? CHAR_T : WOOD_T);
-    mb.beam([p[0] - Math.cos(a) * len, y + rng.range(0, 0.1), p[1] - Math.sin(a) * len], [p[0] + Math.cos(a) * len, y + rng.range(0, 0.45), p[1] + Math.sin(a) * len], 0.13, 0.12, { uo: k * 0.7 });
+    // each end rests on the ground under it (on a slope a level beam would hang in the air)
+    const xa = p[0] - Math.cos(a) * len, za = p[1] - Math.sin(a) * len, xb = p[0] + Math.cos(a) * len, zb = p[1] + Math.sin(a) * len;
+    const ya = T(xa, za) + 0.03 + rng.range(0, 0.03), yb = T(xb, zb) + 0.03 + rng.range(0, 0.07);
+    mb.beam([xa, ya, za], [xb, yb, zb], 0.13, 0.12, { uo: k * 0.7 });
+    void y;
   }
   mb.xf(b.x, b.baseY, b.z, b.rot);
 }
@@ -499,10 +619,12 @@ function buildRamp(B, r, W, rng) {
     const tb = (p) => p[2] + sgn * (0.35 + p[1] * 0.95 + 0.3 * B.noise.n2(p[0] * 0.9, 7.7));
     const a2 = [a[0], -0.15, tb(a)], b2 = [b[0], -0.15, tb(b)];
     mb.quad(a, b, b2, a2, [0, 0.5, sgn], uvOf(a), uvOf(b), [b2[0] / 4, b2[2] / 4 + sgn * b[1] / 4], [a2[0] / 4, a2[2] / 4 + sgn * a[1] / 4], 0.75, 0, 0, true);
+    // closed rubble face on the wall side, so the ramp never shows a hollow underside
+    const c1 = P(i, m), d1 = P(i + 1, m);
+    mb.quad(d1, c1, [c1[0], -0.15, c1[2]], [d1[0], -0.15, d1[2]], [0, 0, -sgn], uvOf(d1), uvOf(c1), [c1[0] / 4, c1[2] / 4 - sgn * c1[1] / 4], [d1[0] / 4, d1[2] / 4 - sgn * d1[1] / 4], 0.6, 0, 0, true);
     for (let q = 0; q < 3; q++) {
       const fx = rng.f(), fz = rng.f(), x = a[0] + (b[0] - a[0]) * fx, z = r.z0 + (r.z1 - r.z0) * fz, y = a[1] + (b[1] - a[1]) * fx;
-      const p = W(x, z);
-      B.stone(p[0], B.baseY + y, p[1], rng.range(0.07, 0.2), rng);
+      void x; void z; void y;
     }
   }
   for (let q = 0; q < 10; q++) {
@@ -595,7 +717,7 @@ export function buildHouse(B, b, cfg = {}) {
   const field = makeField({ noise: B.noise, H, seed: b.seed, blasts, collapse, keep: cfg.keep, hbFn: cfg.hbFn, rag: 0.3 + d });
   const sx = (b.seed % 613) * 0.71, rb = (d - 0.72) * 2.2 + (cfg.roofBias || 0);
   const roofF = (x, y, z) => Math.max(field(x, y - 0.8, z) + 0.35, 1.6 * B.noise.fbm2(x * 0.22 + sx, z * 0.22, 3) + rb);
-  const cfgCopy = { ...cfg, collapse, burnt };
+  const cfgCopy = { ...cfg, collapse, burnt, blasts };
 
   let tm = mb.tris;
   const mark = (k) => { B.stat[k] = (B.stat[k] || 0) + mb.tris - tm; tm = mb.tris; };
@@ -603,6 +725,9 @@ export function buildHouse(B, b, cfg = {}) {
   const tO = PLASTER[rng.int(0, PLASTER.length - 1)].map((v) => v * rng.range(0.94, 1.04));
   if (cfg.tint) for (let k = 0; k < 3; k++) tO[k] = cfg.tint[k];
   const tI = [tO[0] * 0.9, tO[1] * 0.9, tO[2] * 0.9];
+  const gl = (lx, lz) => { const p = W(lx, lz); return B.ground(p[0], p[1]) - b.baseY; };
+  const S = houseStyle(b, burnt, tO, { H, fH, floors, blasts, gl });
+  const R2 = S.rng;
   // which wall faces the nearest street -> door
   let best = 1e9, dxs = 0, dzs = 1;
   const q = {};
@@ -623,6 +748,11 @@ export function buildHouse(B, b, cfg = {}) {
       const hh = f === 2 ? 1.0 : 1.3;
       ops.push({ u0: cc.uc - cc.wd / 2, u1: cc.uc + cc.wd / 2, v0: fy + 0.95, v1: fy + 0.95 + hh, frame: rng.chance(0.4) ? rng.int(1, 2) : 0, shutter: rng.chance(0.3) ? rng.int(1, 15) : 0, soot: burnt && rng.chance(0.55) });
     }
+    if (!gable && wi === S.balcWall) {
+      let bo = null;
+      for (const o of ops) if (!o.door && Math.abs(o.v0 - (fH + 0.95)) < 0.05 && (!bo || Math.abs(o.u0 + o.u1 - L) < Math.abs(bo.u0 + bo.u1 - L))) bo = o;
+      if (bo) { bo.v0 = fH + 0.02; bo.v1 = fH + 2.15; bo.balc = true; }
+    }
     if (cfg.doors) for (const dr of cfg.doors) if (dr.wall === wi) {
       const hw = dr.w ? dr.w / 2 : 0.53;
       for (let k = ops.length - 1; k >= 0; k--) if (ops[k].v0 < 2.4 && ops[k].u1 > dr.u - hw - 0.45 && ops[k].u0 < dr.u + hw + 0.45) ops.splice(k, 1);
@@ -633,7 +763,11 @@ export function buildHouse(B, b, cfg = {}) {
   // ground-floor doorways in world space, for the infected's navigation grid
   b.doors = [];
   const doorsOf = (ops, fr) => {
-    for (const o of ops) if (o.door && o.v0 < 0.3) {
+    for (const o of ops) if (o.door && o.v0 < 0.3 && !o.arch && !o.leaf) {
+      const r = R2.f();
+      o.leaf = b.enterable ? (r < 0.45 ? 'ajar' : r < 0.75 ? 'off' : 'none') : r < 0.25 ? 'shut' : r < 0.6 ? 'ajar' : r < 0.8 ? 'off' : 'none';
+    }
+    for (const o of ops) if (o.door && o.v0 < 0.3 && o.leaf !== 'shut') {
       const u = (o.u0 + o.u1) / 2, p = W(fr.ox + fr.ux * u, fr.oz + fr.uz * u);
       b.doors.push({ x: p[0], z: p[1], nx: fr.nx * c - fr.nz * s, nz: fr.nx * s + fr.nz * c, w: o.u1 - o.u0 });
     }
@@ -645,11 +779,13 @@ export function buildHouse(B, b, cfg = {}) {
     mkFrame(w / 2, dd / 2 - t, w / 2, -dd / 2 + t, 1, 0, t), mkFrame(-w / 2, -dd / 2 + t, -w / 2, dd / 2 - t, -1, 0, t),
   ];
   const base = { y0: -1.2, eave: H, field, bare: cfg.bare || 0, tO, tI, sootI: burnt ? 0.45 : 0, rng };
+  if (!b.enterable && floors >= 2 && d < 0.6 && !burnt && !cfg.openings && R2.chance(0.32)) S.balcWall = doorWall < 2 && R2.chance(0.6) ? doorWall : doorWall === 0 ? 1 : 0;
   for (let wi = 0; wi < 4; wi++) {
-    const fr = frames[wi], gable = wi >= 2;
+    const fr = frames[wi], gable = wi >= 2, ops = doorsOf(mkOps(fr.L, gable, wi), fr);
     buildWall(B, fr, {
-      ...base, openings: doorsOf(mkOps(fr.L, gable, wi), fr), uvo: rng.range(0, 40), ends: gable ? [2, 2] : [6, 6],
+      ...base, openings: ops, uvo: rng.range(0, 40), ends: gable ? [2, 2] : [6, 6],
       top: gable ? (u) => yRoof(fr.oz + fr.uz * u) : null,
+      dress: globalThis.__noDress ? null : S, dw: { gable, doorWall: ops.some((o) => o.door && o.v0 < 0.3), D: Math.min(2.0, ((gable ? w : dd) - 2 * t) * 0.42) },
     });
   }
   // interior partition
@@ -678,12 +814,29 @@ export function buildHouse(B, b, cfg = {}) {
       buildFloor(B, { x0, x1, z0, z1, y, solid, wallOk: wallOk(y), joist: (x, z) => solid(x, z) || field(x, y, z) < (cfg.floorFn ? 0.5 : -0.1), burnt, rng, collide: !!b.enterable });
     }
   }
+  if (!cfg.noFloors && (burnt || d > 0.35)) {
+    mb.det = 1;
+    for (let k = 1; k < floors; k++) {
+      const y = k * fH - 0.135;
+      for (const sz of [1, -1]) for (let x = -w / 2 + t + 0.4; x < w / 2 - t - 0.2; x += 0.85) {
+        const zw = sz * (dd / 2 - 0.27);
+        if (field(x, y + 0.25, zw) > 0 && field(x, y - 0.5, zw) < -0.1 && field(x, y, sz * (dd / 2 - t - 0.6)) < 0.5) {
+          const ch = burnt || R2.chance(0.3);
+          mb.set(ch ? LY.wood_charred : LY.wood_beam, ch ? CHAR_T : WOOD_T);
+          mb.beam([x, y - 0.06, sz * (dd / 2 - t - 0.7)], [x + R2.range(-0.05, 0.05), y - 0.08 - R2.range(0, 0.08), sz * (dd / 2 + R2.range(-0.15, 0.3))], 0.09, 0.17);
+        }
+      }
+    }
+    mb.det = 0;
+  }
   mark('floors');
   // --- roof
   const hasRoof = !cfg.noRoof && d < 0.86;
   if (hasRoof) {
     const rt = rng.range(0.86, 1.08);
-    buildRoof(B, { w, d: dd, eave: H, pitch, field, roofF, rng, burnt, uvo: rng.range(0, 40), chimTint: tO, og: cfg.og, oe: cfg.oe,
+    const sag = d > 0.3 && R2.chance(0.55) ? { si: R2.int(0, 1), x: R2.range(-0.3, 0.3) * w, dist: R2.range(0.9, 1.6), s: R2.range(0.5, 0.8), a: R2.range(0.1, 0.17) } : null;
+    buildRoof(B, { w, d: dd, eave: H, pitch, field, roofF, rng, burnt, uvo: rng.range(0, 40), chimTint: tO, og: cfg.og === undefined ? R2.range(0.42, 0.62) : cfg.og, oe: cfg.oe === undefined ? R2.range(0.62, 0.8) : cfg.oe,
+      dress: globalThis.__noDress ? null : S, sag: globalThis.__noDress ? null : sag, gl,
       chimney: rng.chance(0.75) ? [rng.range(-0.3, 0.3) * w, (rng.chance(0.5) ? 1 : -1) * dd * rng.range(0.12, 0.3)] : null, tint: [rt * rng.range(0.96, 1.06), rt, rt * rng.range(0.94, 1.02)] });
   }
   mark('roof');

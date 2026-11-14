@@ -5,7 +5,7 @@ import { BaseScreen } from './base.js';
 import { Minimap } from './minimap.js';
 
 const DEFAULTS = {
-  quality: 'high', renderScale: 1, fov: 72, sensitivity: 1, invertY: false,
+  quality: 'high', renderScale: 1, dynamicRes: true, fov: 72, sensitivity: 1, invertY: false,
   master: 0.8, music: 0.55, sfx: 0.9, grain: true, showFps: false,
 };
 
@@ -119,6 +119,7 @@ export class UI {
               <button type="button" data-v="low">Low</button><button type="button" data-v="medium">Medium</button><button type="button" data-v="high">High</button><button type="button" data-v="ultra">Ultra</button>
             </span></div>
           <label class="row"><span>Render scale</span><input type="range" min="0.5" max="1" step="0.05" data-key="renderScale"><output></output></label>
+          <label class="row" title="Lowers the render scale for a moment when the frame rate drops, so it stays above 40 fps"><span>Dynamic resolution</span><input type="checkbox" data-key="dynamicRes"></label>
           <label class="row"><span>Field of view</span><input type="range" min="60" max="110" step="1" data-key="fov"><output></output></label>
           <label class="row"><span>Film grain</span><input type="checkbox" data-key="grain"></label>
           <label class="row"><span>Show frame rate</span><input type="checkbox" data-key="showFps"></label>
@@ -155,14 +156,14 @@ export class UI {
         <span>${kbd('W A S D')} move</span><span><kbd>Shift</kbd> sprint</span><span><kbd>C</kbd><kbd>Z</kbd> stance</span><span><kbd>V</kbd> roll</span><span><kbd>H</kbd> bandage</span><span><kbd>F</kbd> use</span>
       </div>
       <div class="vitals zk t">
+        <div class="arsenal">
+          <div class="ammo"><span class="mag">30</span><span class="res">120</span></div>
+          <div class="cur">${gun('rifle')}<span class="wname"></span></div>
+          <div class="slots-row"></div>
+        </div>
         <div class="hp-row"><span class="hp-num">100</span><span class="hp-max">/ 100</span></div>
         <div class="hp"></div>
         <div class="vit-line"><span class="band"></span><span class="stance"></span></div>
-      </div>
-      <div class="arsenal zk t">
-        <div class="ammo"><span class="mag">30</span><span class="res">120</span></div>
-        <div class="cur"><span class="wname"></span>${gun('rifle')}</div>
-        <div class="slots-row"></div>
       </div>
       <div class="prompt zk t"></div>
       <div class="abil zk t"></div>
@@ -377,7 +378,9 @@ export class UI {
     set('boss', boss ? boss.name : '', (v) => { this.bossEl.classList.toggle('on', !!v); this.bossName.textContent = v; });
     if (boss) set('bossHp', Math.round(boss.frac * 200), (v) => { this.bossBar.style.transform = this.bossGhost.style.transform = `scaleX(${v / 200})`; this.bossPct.textContent = `${Math.ceil(v / 2)}%`; });
     // the supply crate, pinned to where it is (or to the screen edge on that side)
-    const crate = game.supply.crates.find((c) => !c.opened);
+    // the nearest one nobody has opened yet (all of them are on the minimap)
+    let crate = null, cd = 1e9;
+    for (const c of game.supply.crates) { if (c.opened) continue; const d = Math.hypot(c.pos.x - p.pos.x, c.pos.z - p.pos.z); if (d < cd) { cd = d; crate = c; } }
     set('crate', !!crate, (v) => { this.marker.classList.toggle('on', v); });
     if (crate) {
       this._pin(this.marker, crate.pos, 0.9, cam);

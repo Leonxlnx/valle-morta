@@ -5,7 +5,7 @@
   python bake.py         -> both
 """
 import sys, os, time
-os.environ.setdefault('OMP_NUM_THREADS', '6')
+os.environ.setdefault('OMP_NUM_THREADS', '4')
 HERE = os.path.dirname(os.path.abspath(__file__)); sys.path.insert(0, HERE)
 import numpy as np
 from PIL import Image
@@ -144,10 +144,36 @@ def lerp(a, b, t):
 
 BLOOD = srgb(74, 18, 13); BLOOD_D = srgb(34, 8, 7); DIRT = srgb(78, 66, 48); MUD = srgb(112, 97, 72); SOOT = srgb(30, 29, 27)
 VARIANTS = {
-    'a': dict(seed=0, shirt=srgb(96, 116, 138), trousers=srgb(60, 56, 53), boots=srgb(50, 37, 28)),
-    'b': dict(seed=40, shirt=srgb(104, 98, 90), trousers=srgb(72, 62, 44), boots=srgb(38, 34, 31)),
-    'c': dict(seed=80, shirt=srgb(172, 163, 140), trousers=srgb(47, 52, 62), boots=srgb(62, 42, 26)),
+    'a': dict(seed=0, shirt=srgb(92, 106, 120), trousers=srgb(62, 58, 52), boots=srgb(50, 37, 28)),
+    'b': dict(seed=40, shirt=srgb(122, 66, 50), trousers=srgb(76, 66, 46), boots=srgb(38, 34, 31)),
+    'c': dict(seed=80, shirt=srgb(168, 160, 136), trousers=srgb(50, 55, 64), boots=srgb(62, 42, 26)),
 }
+
+
+# skin families per colour variant: grey-waxy, livid (strong pooling, blue lips), jaundiced and older
+SKINS = {
+    'a': dict(base=srgb(128, 128, 114), wax=srgb(156, 150, 126), livor=srgb(108, 82, 104), vein=srgb(54, 58, 78), liv=0.8, veins=0.8, pattern='plain'),
+    'b': dict(base=srgb(118, 120, 116), wax=srgb(146, 144, 132), livor=srgb(96, 70, 102), vein=srgb(46, 50, 80), liv=1.15, veins=1.0, pattern='plaid'),
+    'c': dict(base=srgb(132, 122, 98), wax=srgb(156, 144, 108), livor=srgb(112, 84, 90), vein=srgb(62, 58, 66), liv=0.7, veins=0.65, pattern='stripe'),
+}
+SK = SKINS['a']
+
+
+def cloth_pattern(c, P, kind, sd):
+    """Woven patterns in canonical space: checked flannel or a thin pin-stripe; slightly wobbly like real cloth."""
+    if kind == 'plain':
+        return c
+    x, z = P[:, 0], P[:, 2]
+    u = np.arctan2(P[:, 0], -P[:, 1] + 0.02) * 0.16 + 0.004 * gnoise(P, 40.0, 211 + sd)
+    zz = z + 0.004 * gnoise(P, 37.0, 212 + sd)
+    if kind == 'plaid':
+        a = 0.5 + 0.5 * np.cos(u * 2 * np.pi / 0.055); b = 0.5 + 0.5 * np.cos(zz * 2 * np.pi / 0.055)
+        band = sstep(0.55, 0.85, a) + sstep(0.55, 0.85, b)
+        thin = sstep(0.97, 0.995, 0.5 + 0.5 * np.cos(u * 2 * np.pi / 0.055 + 2.2)) + sstep(0.97, 0.995, 0.5 + 0.5 * np.cos(zz * 2 * np.pi / 0.055 + 2.2))
+        c = c * (1.0 - 0.28 * np.clip(band, 0, 2))[:, None]
+        return lerp(c, srgb(150, 140, 110), np.clip(thin, 0, 1) * 0.35)
+    st = sstep(0.93, 0.985, 0.5 + 0.5 * np.cos(u * 2 * np.pi / 0.016))
+    return lerp(c, srgb(62, 70, 84), st * 0.55)
 
 
 if variant.COLORS:
@@ -167,21 +193,45 @@ def blood_layer(c, r, P, amount, seed, thick=0.5):
 
 def paint_skin(P, no, ao, cav, sd):
     n = len(P)
-    base = srgb(152, 150, 128); livor = srgb(104, 88, 100); pale = srgb(178, 170, 138)
-    c = np.broadcast_to(base, (n, 3)).copy()
-    c = lerp(c, livor, sstep(0.0, 0.5, fbm(P, 13.0, 3, seed=101 + sd)) * 0.8)
-    c = lerp(c, pale, sstep(0.05, 0.5, fbm(P, 8.0, 2, seed=102 + sd)) * 0.45)
-    c = lerp(c, srgb(118, 122, 96), sstep(0.1, 0.5, fbm(P, 22.0, 2, seed=103)) * 0.35)            # greenish decay
-    c *= (1.0 + 0.10 * gnoise(P, 170.0, 104) + 0.07 * gnoise(P, 520.0, 105))[:, None]
-    v = sstep(0.075, 0.0, np.abs(gnoise(P, 36.0, 66))) * sstep(-0.1, 0.25, gnoise(P, 9.0, 67))
-    v2 = sstep(0.05, 0.0, np.abs(gnoise(P, 60.0, 106))) * sstep(0.0, 0.3, gnoise(P, 11.0, 107)) * 0.6
-    c = lerp(c, srgb(52, 66, 72), np.maximum(v, v2) * 0.6)
+    K = SK                                                    # this variant's skin family (see SKINS)
     q = (P - HEAD_O.astype(F)) / F(mm); x, y, z = q[:, 0], q[:, 1], q[:, 2]
-    r = 0.62 + 0.08 * gnoise(P, 90.0, 108)
     head = z > -110
+    Z = P[:, 2]; ax = np.abs(P[:, 0])
+    c = np.broadcast_to(K['base'], (n, 3)).copy()
+    # waxy, yellow-grey where the skin is stretched over bone: forehead, nose bridge, cheekbones, knuckles, shoulders
+    wax = head * sstep(-60.0, -95.0, y) * (sstep(-20.0, 30.0, z) + sstep(30.0, 52.0, np.abs(x)) * sstep(-45.0, -10.0, z) * 0.7)
+    wax = np.clip(wax + sstep(0.62, 0.70, ax) * 0.6 + sstep(0.08, 0.5, fbm(P, 8.0, 2, seed=102 + sd)) * 0.35, 0, 1)
+    c = lerp(c, K['wax'], wax * 0.5)
+    # livor mortis: blood settled where gravity pulled it -- hanging hands and forearms, back of neck and trunk, lower legs
+    grav = np.clip(sstep(0.45, 0.62, ax) * 0.8 + sstep(0.0, 0.08, P[:, 1]) * sstep(1.0, 1.55, Z) * 0.6 + sstep(0.55, 0.25, Z) * 0.8, 0, 1)
+    mott = sstep(-0.15, 0.45, fbm(P, 15.0, 3, seed=101 + sd))
+    c = lerp(c, K['livor'], np.clip(grav * (0.35 + 0.65 * mott) * K['liv'] + mott * 0.22 * K['liv'], 0, 1))
+    c = lerp(c, srgb(118, 122, 96), sstep(0.15, 0.55, fbm(P, 22.0, 2, seed=103 + sd)) * 0.3)          # greenish decay
+    c *= (1.0 + 0.09 * gnoise(P, 170.0, 104) + 0.06 * gnoise(P, 520.0, 105))[:, None]
+    # veins: faint everywhere, dark and branching on neck, temples, inner forearms, chest
+    vreg = np.clip(head * sstep(42.0, 60.0, np.abs(x)) * sstep(-30.0, 10.0, z)
+                   + sstep(1.43, 1.50, Z) * sstep(1.60, 1.53, Z)
+                   + sstep(0.30, 0.42, ax) * sstep(0.62, 0.50, ax) * sstep(0.95, 1.15, Z)
+                   + sstep(0.03, -0.06, P[:, 1]) * sstep(1.18, 1.30, Z) * sstep(1.45, 1.38, Z) * 0.6, 0, 1)
+    v = sstep(0.075, 0.0, np.abs(gnoise(P, 36.0, 66 + sd))) * sstep(-0.1, 0.25, gnoise(P, 9.0, 67))
+    v2 = sstep(0.05, 0.0, np.abs(gnoise(P, 70.0, 106 + sd))) * sstep(0.0, 0.3, gnoise(P, 13.0, 107))
+    vv = np.maximum(v, v2 * 0.8)
+    c = lerp(c, K['vein'], vv * (0.22 + 0.68 * vreg) * K['veins'])
+    # bruises: purple cores with yellow-green rims
+    b1, _ = worley(P, 9.0, 108 + sd)
+    br = sstep(0.42, 0.22, b1) * sstep(0.1, 0.5, fbm(P, 30.0, 2, seed=118 + sd))
+    c = lerp(c, srgb(132, 128, 70), sstep(0.0, 0.35, br) * 0.35); c = lerp(c, srgb(74, 46, 70), sstep(0.3, 0.8, br) * 0.7)
+    r = 0.66 + 0.08 * gnoise(P, 90.0, 108) - 0.12 * sstep(-0.1, 0.4, fbm(P, 28.0, 2, seed=119 + sd))      # waxy sheen in patches
+    # sunken sockets and hollow cheeks: the bone shows through as shadowed, bluish-brown skin
+    for s_ in (1, -1):
+        de = np.linalg.norm((P - EYE_C[s_].astype(F)) * np.array([1.0, 1.0, 1.25], F), axis=1)
+        c = lerp(c, srgb(70, 50, 62), sstep(0.040, 0.016, de) * 0.6 * head)
+        ch = np.linalg.norm((P - hp(s_ * 44, -82, -32).astype(F)) * np.array([1.4, 1.0, 0.8], F), axis=1)
+        c = lerp(c, srgb(92, 78, 80), sstep(0.03, 0.008, ch) * 0.45 * head)
+    c = lerp(c, srgb(82, 60, 66), head * sstep(-38.0, -58.0, z) * sstep(-80.0, -96.0, y) * sstep(20.0, 6.0, np.abs(np.abs(x) - 22.0)) * 0.3)   # naso-labial folds
     for s in (1, -1):
         de = np.linalg.norm(P - EYE_C[s].astype(F), axis=1)
-        c = lerp(c, srgb(66, 44, 52), sstep(0.031, 0.0135, de) * 0.85 * head)
+        c = lerp(c, srgb(58, 36, 44), sstep(0.031, 0.0135, de) * 0.85 * head)
         c = lerp(c, srgb(120, 60, 60), sstep(0.0155, 0.0132, de) * 0.6 * head)                  # raw lid rims
     # lips, nose tip, ears: dark, necrotic
     lipd = Ellipsoid(hp(0, -96, -50), (0.027, 0.013, 0.009))(P)
@@ -232,7 +282,10 @@ def paint_skin(P, no, ao, cav, sd):
     for w, rad, amt in ((body.W_CHEEK, 0.016, 1.1), (body.W_NECK, 0.03, 1.0), (body.W_ARM, 0.03, 1.0), (body.W_RIB, 0.04, 1.0), (body.W_HEAD, 0.014, 1.0)):
         m = ((P >= w.lo - rad) & (P <= w.hi + rad)).all(1)
         if m.any():
-            bl[m] = np.maximum(bl[m], sstep(rad, 0.0, w(P[m])) * amt)
+            wd = w(P[m])
+            bl[m] = np.maximum(bl[m], sstep(rad, 0.0, wd) * amt)
+            rim = sstep(0.012, 0.002, wd)                                                             # swollen, inflamed edge
+            c[m] = lerp(c[m], srgb(118, 50, 56), rim * 0.7); r[m] = r[m] * (1 - rim) + 0.38 * rim
     hl = np.zeros(n, F)
     for s in (1, -1):
         th = (P - mx(WR, s).astype(F)) @ mx(ARM_DIR, s).astype(F)
@@ -258,7 +311,7 @@ def paint_flesh(P, no, ao, cav, sd):
     tong = Ellipsoid(hp(0, -70, -61), (0.017, 0.023, 0.0065))(P) < 0.0005
     c[tong] = lerp(c[tong], srgb(92, 48, 52), np.full(int(tong.sum()), 0.8, F))
     c *= (0.35 + 0.65 * cav)[:, None] * (0.6 + 0.4 * ao)[:, None]
-    r = 0.30 + 0.25 * sstep(-0.2, 0.5, fbm(P, 70.0, 2, seed=124)) + 0.25 * bone
+    r = 0.16 + 0.22 * sstep(-0.2, 0.5, fbm(P, 70.0, 2, seed=124)) + 0.3 * bone                   # wet tissue, drier bone
     return c, r
 
 
@@ -336,6 +389,7 @@ def cloth_common(c, r, P, cav, ao, fray_c, sd, dirt_amt):
 def paint_shirt(P, no, ao, cav, sd, V, cs):
     n = len(P); x, y, z = P[:, 0], P[:, 1], P[:, 2]
     c = np.broadcast_to(V['shirt'], (n, 3)).copy(); r = np.full(n, 0.86, F)
+    c = cloth_pattern(c, P, SK['pattern'], sd)
     dirt = sstep(1.15, 0.90, z) * 0.75
     for s in (1, -1):
         t = (P - mx(EL, s).astype(F)) @ mx(ARM_DIR, s).astype(F)
@@ -433,6 +487,13 @@ def paint_pass(only=None):
     cs, ct = g['cs'], g['ct']
     n = len(P)
     if only is None:
+        # skin grain: fine pores and creases on skin texels only (cloth keeps the field's own weave/folds)
+        tn = tn.copy(); skm = mat == MAT['skin']
+        if skm.any():
+            Ps = P[skm]
+            gx = 0.05 * gnoise(Ps, 380.0, 221) + 0.04 * gnoise(Ps, 130.0, 222)
+            gy = 0.05 * gnoise(Ps, 380.0, 223) + 0.04 * gnoise(Ps, 130.0, 224)
+            tn[skm, 0] += gx; tn[skm, 1] += gy; tn = nrm(tn).astype(F)
         write_image(iy, ix, (np.clip(tn * 0.5 + 0.5, 0, 1) * 255 + 0.5).astype(np.uint8), os.path.join(TEX, 'normal.png'), optimize=True)
         Image.open(os.path.join(TEX, 'normal.png')).save(os.path.join(TEX, 'normal.jpg'), quality=94, subsampling=0)
     aoc = np.clip(ao * (0.55 + 0.45 * cav), 0, 1)
@@ -440,6 +501,8 @@ def paint_pass(only=None):
         if only and vn not in only:
             continue
         sd = V['seed']
+        global SK
+        SK = SKINS.get(vn, SKINS['a'])
         c = np.zeros((n, 3), F); r = np.full(n, 0.7, F); me = np.zeros(n, F)
         for name, fn in (('skin', paint_skin), ('flesh', paint_flesh), ('eye', paint_eye), ('teeth', paint_teeth)):
             m = mat == MAT[name]
@@ -459,7 +522,9 @@ def paint_pass(only=None):
         c *= (0.72 + 0.28 * ao)[:, None]                       # a little baked occlusion keeps crevices grounded
         write_image(iy, ix, to_srgb8(c), os.path.join(TEX, 'albedo_%s.jpg' % vn), quality=90, subsampling=0)
         if vn == 'a':
-            orm = np.stack([aoc, np.clip(r, 0.08, 1.0), me], 1)
+            # blue = skin light-transport mask for the game shader (the infected never use metalness)
+            sk = np.select([mat == MAT['skin'], mat == MAT['flesh'], mat == MAT['hair']], [1.0, 0.7, 0.3], 0.0).astype(F)
+            orm = np.stack([aoc, np.clip(r, 0.08, 1.0), sk], 1)
             write_image(iy, ix, (orm * 255 + 0.5).astype(np.uint8), os.path.join(TEX, 'orm.jpg'), quality=90, subsampling=0)
         log('painted variant', vn)
 

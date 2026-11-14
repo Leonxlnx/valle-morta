@@ -3,6 +3,7 @@
 import { RNG } from '../../core/noise.js';
 import { LY } from './mb.js';
 import { makeField, mkFrame, buildWall, buildRoof, houseRubble } from './house.js';
+import { houseStyle } from './dress.js';
 
 export function buildChurch(B, b) {
   const rng = new RNG(b.seed), mb = B.mb, w = b.w, d = b.d, t = 0.8, eave = 8.6, pitch = 0.5, tanp = Math.tan(pitch);
@@ -19,7 +20,10 @@ export function buildChurch(B, b) {
   const field = makeField({ noise: B.noise, H: eave + 3.5, seed: b.seed, blasts, collapse: null, rag: 0.25, amp: 0.45 });
   const roofF = (x, y, z) => Math.max(field(x, y - 0.5, z) + 0.25, 1.6 * B.noise.fbm2(x * 0.2 + 3.3, z * 0.2, 3) - 0.66);
   const yRoof = (z) => eave + (d / 2 - Math.abs(z)) * tanp;
-  const base = { layer: 11, y0: -1.5, eave, field, tO, tI, rng, cell: 0.45, noLintel: true, aoI: 0.45 };
+  const gl = (lx, lz) => { const p = W(lx, lz); return B.ground(p[0], p[1]) - b.baseY; };
+  const quiet = { lamp: false, bench: false, wood: false, sign: false, interior: false, number: false, shut: false, string: false, quoins: true, plinth: 1 };
+  const SC = houseStyle(b, false, tO, { ...quiet, H: eave, fH: eave, floors: 1, blasts, gl, plinthH: 0.85, cornice: 1 });
+  const base = { layer: 11, y0: -1.5, eave, field, tO, tI, rng, cell: 0.45, noLintel: true, aoI: 0.45, dress: globalThis.__noDress ? null : SC, dw: { gable: false } };
   const side = (L) => {
     const ops = [];
     for (let k = 0; k < 4; k++) { const uc = L * (k + 0.5) / 4; ops.push({ u0: uc - 0.65, u1: uc + 0.65, v0: 3.6, v1: 6.9, arch: 1, trim: 0.2 }); }
@@ -31,11 +35,11 @@ export function buildChurch(B, b) {
   const frW = mkFrame(-w / 2, -d / 2 + t, -w / 2, d / 2 - t, -1, 0, t), frE = mkFrame(w / 2, d / 2 - t, w / 2, -d / 2 + t, 1, 0, t);
   const du = 2.9;
   buildWall(B, frW, {
-    ...base, uvo: 31, ends: [2, 2], top: (u) => yRoof(frW.oz + frW.uz * u),
+    ...base, dw: { gable: true }, uvo: 31, ends: [2, 2], top: (u) => yRoof(frW.oz + frW.uz * u),
     openings: [{ u0: du - 1.05, u1: du + 1.05, v0: 0, v1: 3.7, arch: 1, trim: 0.26 }, { u0: du - 0.85, u1: du + 0.85, v0: 6.1, v1: 7.8, arch: 2, trim: 0.22 }],
   });
   buildWall(B, frE, {
-    ...base, uvo: 44, ends: [2, 2], top: (u) => yRoof(frE.oz + frE.uz * u),
+    ...base, dw: { gable: true }, uvo: 44, ends: [2, 2], top: (u) => yRoof(frE.oz + frE.uz * u),
     openings: [{ u0: frE.L / 2 - 0.6, u1: frE.L / 2 + 0.6, v0: 6.9, v1: 8.1, arch: 2, trim: 0.2 }],
   });
   buildRoof(B, { w, d, eave, pitch, field, roofF, rng, burnt: false, uvo: 5, tint: [0.98, 0.95, 0.95], og: 0.4, oe: 0.55 });
@@ -45,14 +49,15 @@ export function buildChurch(B, b) {
   const tb = [{ x: tx - 0.5, y: 14, z: tz + hs, r: 0.6 }, { x: tx + 1.2, y: 19, z: tz + hs, r: 0.45 }, { x: tx - hs, y: 9.5, z: tz + 0.6, r: 0.6 },
     { x: tx - hs, y: 17.5, z: tz - 1, r: 0.4 }, { x: tx + 1.5, y: 6.5, z: tz + hs, r: 0.5 }, { x: tx - hs, y: 23.6, z: tz + 1.9, r: 0.5 }];
   const tf = makeField({ noise: B.noise, H: Ht + 12, seed: 99, blasts: tb, collapse: null, rag: 0, amp: 0.35 });
-  const tbase = { layer: 11, y0: -2.5, eave: Ht, field: tf, tO: [1.2, 1.19, 1.16], tI: [0.8, 0.8, 0.78], rng, cell: 0.5, noLintel: true, aoI: 0.4 };
+  const ST = houseStyle(b, false, [1.2, 1.19, 1.16], { ...quiet, H: Ht, fH: Ht, floors: 1, blasts: tb, gl, plinthH: 1.1, cornice: 0 });
+  const tbase = { layer: 11, y0: -2.5, eave: Ht, field: tf, tO: [1.2, 1.19, 1.16], tI: [0.8, 0.8, 0.78], rng, cell: 0.5, noLintel: true, aoI: 0.4, dress: globalThis.__noDress ? null : ST };
   const belfry = (L) => { const m = L / 2; return [{ u0: m - 1.25, u1: m - 0.3, v0: 21.7, v1: 24.9, arch: 1, trim: 0.16 }, { u0: m + 0.3, u1: m + 1.25, v0: 21.7, v1: 24.9, arch: 1, trim: 0.16 }]; };
   const slits = (L) => [6.2, 12.2, 17.4].map((y) => ({ u0: L / 2 - 0.22, u1: L / 2 + 0.22, v0: y, v1: y + 1.15 }));
   const tfr = [
     mkFrame(tx - hs, tz + hs, tx + hs, tz + hs, 0, 1, tt), mkFrame(tx + hs, tz - hs, tx - hs, tz - hs, 0, -1, tt),
     mkFrame(tx + hs, tz + hs - tt, tx + hs, tz - hs + tt, 1, 0, tt), mkFrame(tx - hs, tz - hs + tt, tx - hs, tz + hs - tt, -1, 0, tt),
   ];
-  tfr.forEach((fr, i) => buildWall(B, fr, { ...tbase, openings: [...belfry(fr.L), ...(i === 0 || i === 3 ? slits(fr.L) : [])], uvo: 50 + i * 9, ends: i < 2 ? [6, 6] : [2, 2] }));
+  tfr.forEach((fr, i) => buildWall(B, fr, { ...tbase, openings: [...belfry(fr.L), ...(i === 0 || i === 3 ? slits(fr.L) : [])], uvo: 50 + i * 9, ends: i < 2 ? [6, 6] : [2, 2], dw: { gable: i >= 2 } }));
   // string courses, cornice
   mb.set(LY.stone_blocks, [1.2, 1.18, 1.14]);
   const ring = (y0, y1, out) => {

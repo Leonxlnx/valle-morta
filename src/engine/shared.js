@@ -12,7 +12,7 @@ export const G = {
   uFogSunColor: { value: new THREE.Color(1.0, 0.9, 0.74) },
   // haze: x = density at y0, y = 1/scaleHeight, z = y0 ; mist: same
   // the haze is the blue distance on the mountains; the mist is thin and hugs the river hollow
-  uHaze: { value: new THREE.Vector3(0.0001, 1 / 1200, 0) },
+  uHaze: { value: new THREE.Vector3(0.000125, 1 / 1200, 0) },
   uMist: { value: new THREE.Vector3(0.0012, 1 / 5, -2) },
   // cloud gobo: xy = centre (world xz), z = world size, w = cloud base height
   uCloudMap: { value: null },
@@ -66,10 +66,13 @@ float vmFogTransmittance(vec3 camPos, vec3 worldPos) {
 }
 vec3 vmFogColor(vec3 viewDir) {
   float s = max(dot(viewDir, uSunDir), 0.0);
-  float fwd = 0.55 * pow(s, 6.0) + 0.45 * pow(s, 48.0);
-  // slightly darker / bluer towards the ground, brighter towards the zenith
+  float fwd = 0.5 * pow(s, 3.0) + 0.3 * pow(s, 12.0) + 0.2 * pow(s, 48.0);
+  // slightly darker / bluer towards the ground, brighter towards the zenith; away from the sun the
+  // haze turns cool and dim, towards it a warm glow (separates the ridges against the light)
   float up = clamp(viewDir.y * 2.0 + 0.5, 0.0, 1.0);
-  return mix(uFogColor * (0.82 + 0.18 * up), uFogSunColor, fwd * 0.25);
+  float away = clamp(-dot(viewDir.xz, normalize(uSunDir.xz + 1e-4)), 0.0, 1.0);
+  vec3 cool = uFogColor * (0.82 + 0.18 * up) * mix(vec3(1.0), vec3(0.9, 0.96, 1.08), away);
+  return mix(cool, uFogSunColor * 1.15, fwd * 0.5);
 }
 vec3 vmApplyFog(vec3 color, vec3 camPos, vec3 worldPos) {
   float T = vmFogTransmittance(camPos, worldPos);

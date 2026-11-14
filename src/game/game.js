@@ -15,7 +15,7 @@ const DOWN = new THREE.Vector3(0, -1, 0), UP = new THREE.Vector3(0, 1, 0);
 const clamp = THREE.MathUtils.clamp, lerp = THREE.MathUtils.lerp;
 // street positions inside the village to start from (first one that is free), looking at the church tower
 const START = [[15, -55], [11.5, -50.5], [18.5, -59.5], [25, -68], [4, -42]];
-export const CRATE = { rifle: 90, sniper: 10, bandages: 2, reach: 2.3, size: [0.95, 0.52, 0.6] };
+export const CRATE = { rifle: 90, sniper: 10, bandages: 2, reach: 2.3, size: [0.95, 0.52, 0.6], keep: 4 };
 
 // ---------------------------------------------------------------- supplies
 // Crates and dropped bandage rolls. Built from boxes here; a crate is a solid obstacle.
@@ -49,6 +49,9 @@ class Supply {
       tins: boxes([[0.3, 0.16, 0.2, 0.22, t + 0.08, -0.02], [0.3, 0.16, 0.2, -0.2, t + 0.08, 0.04]]),
       rolls: boxes([[0.14, 0.06, 0.1, 0, t + 0.03, 0.16]]),
       roll: new THREE.CylinderGeometry(0.036, 0.036, 0.075, 12).rotateZ(Math.PI / 2),
+      // a pale strip of cloth on a thin rod at one corner: something to spot over long grass, gone once opened
+      rod: boxes([[0.018, H + 0.9, 0.018, W / 2 + 0.012, (H + 0.9) / 2, D / 2 - 0.06]]),
+      flag: boxes([[0.006, 0.12, 0.26, W / 2 + 0.012, H + 0.82, D / 2 - 0.06 - 0.13]]),
     };
   }
 
@@ -58,7 +61,7 @@ class Supply {
     const group = new THREE.Group(), lid = new THREE.Group();
     const add = (geo, mat, parent = group) => { const m = new THREE.Mesh(geo, mat); m.castShadow = true; m.receiveShadow = true; parent.add(m); return m; };
     add(this.geo.body, this.mat.wood); add(this.geo.bands, this.mat.steel);
-    const cargo = [add(this.geo.tins, this.mat.tin), add(this.geo.rolls, this.mat.cloth)];
+    const cargo = [add(this.geo.tins, this.mat.tin), add(this.geo.rolls, this.mat.cloth), add(this.geo.rod, this.mat.steel), add(this.geo.flag, this.mat.cloth)];
     add(this.geo.lid, this.mat.wood, lid); add(this.geo.lidBands, this.mat.steel, lid);
     lid.position.set(0, CRATE.size[1], -CRATE.size[2] / 2);
     group.add(lid);
@@ -434,31 +437,78 @@ export class Game {
     return true;
   }
 
+  // An infected that has neither closed in on the player by 1.5 m nor walked 4 m from where it last did for
+  // 20 s (pinned against a wall, walking on the spot, circling an island it cannot leave) gets a fresh spawn
+  // point once it is out of sight; one that still cannot be moved after 45 s is taken out of the world
+  // unseen, so a wave never hangs on one infected nobody can reach. The boss is only ever moved.
+  _progress(step) {
+    const p = this.player, Z = this.zombies;
+    for (let i = Z.list.length - 1; i >= 0; i--) {
+      const z = Z.list[i];
+      if (!z.alive || !z.aware || z.progT === undefined) continue;
+      const d = Math.hypot(z.pos.x - p.pos.x, z.pos.z - p.pos.z);
+      if (d < 4 || d < z.progD - 1.5 || Math.hypot(z.pos.x - z.progX, z.pos.z - z.progZ) > 4) { z.progD = d; z.progT = 0; z.progX = z.pos.x; z.progZ = z.pos.z; continue; }
+      z.progT += step;
+      if (z.progT < 20) continue;
+      if (this._relocate(z)) { this.unstuck = (this.unstuck || 0) + 1; continue; }        // place() resets the check
+      if (z.progT >= 45 && !z.def.boss && !this._visible(z.pos.x, z.pos.y + 1.2, z.pos.z)) { Z.discard(z); this.discarded = (this.discarded || 0) + 1; }
+    }
+  }
+
   // open, level, dry ground a short walk from the player, out of sight if possible
+  // Open, level, dry ground a short walk from the player that the infected (and so the player) can reach,
+  // with nothing standing between it and the player and nothing over it: no wall, roof, bridge or water.
+  // Out of the view cone if possible, so it does not pop up in front of the player.
   _cratePoint() {
-    const p = this.player, f = this.zombies.flow, T = this.terrain, col = this.collision;
-    let best = null, bs = -1e9;
-    for (let i = 0; i < 80; i++) {
-      const a = Math.random() * 6.283, r = 9 + Math.random() * 15;
+    const p = this.player, f = this.zombies.flow, T = this.terrain, col = this.collision, L = this.layout;
+    const cands = [], eye = p.eye, q = this._q || (this._q = {});
+    for (let i = 0; i < 140; i++) {
+      const wide = i >= 80, a = Math.random() * 6.283, r = wide ? 4 + Math.random() * 32 : 8 + Math.random() * 14;
       const x = p.pos.x + Math.cos(a) * r, z = p.pos.z + Math.sin(a) * r;
+      if (wide && cands.length) break;                       // the wider ring only when the near one found nothing
       const c = f.cellOf(x, z);
       if (c < 0 || f.walk[c] !== 1 || !f.reachable(x, z)) continue;
       let open = true;
       for (let k = 0; k < 8 && open; k++) open = f.walkable(x + Math.round(Math.cos(k * 0.7854)) * f.cell, z + Math.round(Math.sin(k * 0.7854)) * f.cell);
       if (!open || T.normalAt(x, z, _n).y < 0.985 || col.waterDepth(x, z) > 0) continue;
+      const rq = L.river.query(x, z, q);
+      if (rq.d < L.riverHalfWidth(rq.s) + 10) continue;     // the water surface reaches further than the wading depth says
       const y = T.heightAt(x, z);
       if (col.floorAt(x, y + 6, z, 7) > y + 0.05) continue;                                   // under a roof or on a floor
-      if (col.resolveCapsule(_v.set(x, y + 0.05, z), 0.8, 1.7).lengthSq() > 1e-8) continue;   // too close to a wall or prop
+      if (col.raycastMesh(_v.set(x, y + 30, z), DOWN, 29.6, this._ch || (this._ch = {}))) continue;   // anything overhead
+      if (col.resolveCapsule(_v.set(x, y + 0.05, z), 0.9, 1.7).lengthSq() > 1e-8) continue;   // too close to a wall or prop
       if (this.supply.crates.some((o) => Math.hypot(o.pos.x - x, o.pos.z - z) < 4)) continue;
-      const score = (this._visible(x, y + 0.4, z) ? 0 : 10) - Math.abs(r - 14) * 0.2;
-      if (score > bs) { bs = score; best = [x, z]; }
+      // in the open: a wall between it and the player hides it behind a house
+      const clear = col.lineOfSight(eye, _v.set(x, y + 0.5, z));
+      const score = (clear ? 8 : 0) + (this._visible(x, y + 0.4, z) ? 0 : 4) - Math.abs(r - 13) * 0.2;
+      cands.push({ x, y, z, score });
     }
-    return best;
+    cands.sort((a, b) => b.score - a.score);
+    // the final word goes to what is drawn: nothing visible (water, a balcony, a tree crown) may cover it
+    for (let i = 0; i < Math.min(6, cands.length); i++) if (this._uncovered(cands[i])) return [cands[i].x, cands[i].z];
+    return cands.length ? [cands[0].x, cands[0].z] : null;
+  }
+
+  _uncovered(c) {
+    const T = THREE, ray = this._ray || (this._ray = new T.Raycaster());
+    ray.set(_v.set(c.x, c.y + 25, c.z), DOWN); ray.far = 25;
+    const sc = this.engine.scene, list = this._rayList || (this._rayList = []);
+    list.length = 0;
+    for (const o of sc.children) if (o.visible && !o.isLight && !o.isCamera) list.push(o);
+    const hits = ray.intersectObjects(list, true);
+    for (const h of hits) {
+      if (!h.object.visible || h.object.isSprite || h.object.isPoints) continue;
+      return h.point.y < c.y + 0.15;
+    }
+    return true;
   }
 
   _dropCrate() {
-    // crates already emptied are cleared away once nobody is looking (never more than three stand around)
-    for (const c of [...this.supply.crates]) if (c.opened && (this.supply.crates.length >= 3 || !this._visible(c.pos.x, c.pos.y + 0.3, c.pos.z))) this.supply.remove(c);
+    // emptied crates are cleared away once nobody is looking, the oldest emptied first when too many stand
+    // around; a crate nobody has opened stays until it is opened, however many waves pass
+    const sup = this.supply;
+    for (const c of [...sup.crates]) if (c.opened && !this._visible(c.pos.x, c.pos.y + 0.3, c.pos.z)) sup.remove(c);
+    for (const c of [...sup.crates]) if (c.opened && sup.crates.length >= CRATE.keep) sup.remove(c);
     const s = this._cratePoint();
     if (!s) return null;
     const crate = this.supply.place(s[0], s[1], Math.random() * 6.283, { rifle: CRATE.rifle, sniper: CRATE.sniper, bandages: CRATE.bandages });
@@ -545,6 +595,9 @@ export class Game {
             }
           }
         }
+        // long-term progress: one that has neither closed in nor got anywhere for a long time is moved, out of sight
+        this.progT = (this.progT || 0) - dt;
+        if (this.wave > 0 && this.progT <= 0) { this.progT = 2; this._progress(2); }
         // river loudness by proximity, combat music by threat, the world goes dull when badly hurt
         const rd = this.layout.river.query(p.pos.x, p.pos.z, this._q || (this._q = {})).d;
         this.audio.setLoopVolume('amb_river', THREE.MathUtils.clamp(1 - rd / 70, 0, 1) * 0.9, 0.6);

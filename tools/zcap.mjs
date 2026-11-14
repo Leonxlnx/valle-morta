@@ -26,6 +26,17 @@ try {
   const page = await browser.newPage();
   page.on('console', (m) => { if (m.type() === 'error' || m.type() === 'warning') errors.push(`[${m.type()}] ${m.text()}`.slice(0, 300)); });
   page.on('pageerror', (e) => errors.push(`[pageerror] ${String(e).slice(0, 300)}`));
+  // --models <dir>: serve infected GLBs / colour maps from a staging folder instead of public/ (nothing in public/ changes)
+  const mdir = arg('models', '');
+  if (mdir) {
+    await page.setCacheEnabled(false); await page.setRequestInterception(true);
+    page.on('request', (rq) => {
+      const m = /\/assets\/models\/((?:zombie|runner|brute|boss)(?:_col_\w)?\.(?:glb|jpg))(?:\?|$)/.exec(rq.url());
+      const f = m && path.join(mdir, m[1]);
+      if (f && fs.existsSync(f)) rq.respond({ status: 200, contentType: f.endsWith('.glb') ? 'model/gltf-binary' : 'image/jpeg', body: fs.readFileSync(f) });
+      else rq.continue();
+    });
+  }
   const boot = async () => {
   await page.goto(`http://127.0.0.1:5173/?q=${q}&auto=1`, { waitUntil: 'load', timeout: 120000 });
   await page.waitForFunction('window.__vm && window.__vm.ready', { timeout: 240000, polling: 250 });
@@ -65,6 +76,61 @@ try {
   // --oneshots: every one-shot clip on every type started from a walk, the lowest total
   // animation weight any animated bone gets during it (below 1 the bind pose shows through),
   // and the proof frames (boss mid-roar, boss slam impact, walker mid-attack, brute falling)
+  // --look: close-up portraits at 1.5 m (front and three-quarter) of every type and colour variant,
+  // a mixed group in the street in sun and in shade, and an attack frame from the player's eye.
+  //   node tools/zcap.mjs --look --tag v1 --out tools/_preview/zlook [--models <staging dir>]
+  if (process.argv.includes('--look')) {
+    const F = (nm) => path.join(out, `look_${nm}_${tag}.jpg`);
+    const solo = (type, v, at) => page.evaluate((type, v, at) => {
+      const Z = __vm.game.zombies; zc.reset();
+      const x = zc.C.x + zc.d.x * at, z0 = zc.C.z + zc.d.z * at;
+      const z = Z.spawn(x, z0, { type, yaw: Math.atan2(-zc.d.x, -zc.d.z), variant: v }); window.__z = z;
+      zc.sim(1.3); return (z.set.materials || []).length;
+    }, type, v, at);
+    const portrait = (side) => page.evaluate((side) => {
+      const T = __vm.THREE, z = __z, h = z.bones.Head.getWorldPosition(new T.Vector3());
+      const f = z.root.getWorldDirection(new T.Vector3()).setY(0).normalize().applyAxisAngle(new T.Vector3(0, 1, 0), side * 0.6);
+      const c = __vm.engine.camera; if (window.__fov == null) window.__fov = c.fov; c.fov = 34; c.updateProjectionMatrix();
+      __vm.cam(h.x + f.x * 1.5, h.y + 0.03, h.z + f.z * 1.5, h.x, h.y - 0.1, h.z);
+    }, side);
+    const pclip = { x: 340, y: 0, width: 600, height: 720 };
+    const tiles = [];
+    for (const type of types) {
+      const nv = await solo(type, 0, 4);
+      for (let v = 0; v < Math.max(1, nv); v++) {
+        await solo(type, v, 4);
+        await portrait(0); tiles.push(await snap(F(`${type}_${v}_front`), pclip));
+        await portrait(1); tiles.push(await snap(F(`${type}_${v}_q3`), pclip));
+      }
+    }
+    execFileSync('node', ['tools/sheet.mjs', path.join(out, `portraits_${tag}.jpg`), '300', '6', ...tiles]);
+    const wide = [];
+    const group = (shade) => page.evaluate((types, shade) => {
+      const Z = __vm.game.zombies, e = __vm.engine; zc.reset();
+      const spots = [[3.2, -0.7], [4.6, 0.9], [6.5, -1.6], [7.5, 1.8], [9.5, 0.1], [11, -2.2], [13, 2.4], [15, -0.6]];
+      spots.forEach(([r, s], i) => { const type = types[i % types.length]; Z.spawn(zc.C.x + zc.d.x * r + zc.n.x * s, zc.C.z + zc.d.z * r + zc.n.z * s, { type, yaw: Math.atan2(-zc.d.x, -zc.d.z) + (i % 3 - 1) * 0.3, variant: i }); });
+      if (window.__fov != null) { e.camera.fov = window.__fov; e.camera.updateProjectionMatrix(); }
+      if (window.__sunI == null) window.__sunI = e.sun.intensity;
+      e.sun.intensity = shade ? 0 : window.__sunI;
+      zc.sim(1.0); zc.camMain();
+    }, types, shade);
+    await group(false); wide.push(await snap(F('group_sun'), { x: 0, y: 0, width: 1280, height: 720 }));
+    await group(true); wide.push(await snap(F('group_shade'), { x: 0, y: 0, width: 1280, height: 720 }));
+    await page.evaluate(() => { __vm.engine.sun.intensity = window.__sunI; });
+    for (const type of types) {
+      await solo(type, 1, 1.25);
+      await page.evaluate(() => {
+        const Z = __vm.game.zombies, z = __z, T = __vm.THREE, H = (x, y) => __vm.terrain.heightAt(x, y);
+        z.state = 'attack'; z.stateT = 0; z.attackHit = true; Z._play(z, 'Attack', 0.12, z.def.attackRate, true); zc.sim(0.38);
+        const h = z.bones.Head.getWorldPosition(new T.Vector3());
+        const f = z.root.getWorldDirection(new T.Vector3()).setY(0).normalize(), e = z.pos.clone().addScaledVector(f, 1.25);
+        __vm.cam(e.x, H(e.x, e.z) + 1.65, e.z, h.x, h.y - 0.25, h.z);
+      });
+      wide.push(await snap(F(`attack_${type}`), { x: 0, y: 0, width: 1280, height: 720 }));
+    }
+    execFileSync('node', ['tools/sheet.mjs', path.join(out, `scenes_${tag}.jpg`), '640', '2', ...wide]);
+    console.log('look sheets in', out);
+  }
   if (process.argv.includes('--oneshots')) {
     const res = await page.evaluate((types) => {
       const vm = __vm, Z = vm.game.zombies, out = {};
@@ -106,7 +172,7 @@ try {
     execFileSync('node', ['tools/sheet.mjs', sheet, '640', '3', ...shots]);
     console.log('sheet', sheet);
   }
-  for (let ti = 0, tries = 0; ti < (process.argv.includes('--oneshots') ? 0 : types.length); ti++) {
+  for (let ti = 0, tries = 0; ti < (process.argv.includes('--oneshots') || process.argv.includes('--look') ? 0 : types.length); ti++) {
     const type = types[ti];
     try {
     const tiles = [], strip = [];

@@ -220,24 +220,24 @@ export const INFECTED = {
     clips: {}, corpse: 22, pool: 0.5, drop: 0.04,
   },
   runner: {
-    name: 'Runner', model: 'runner', tall: 0, bulk: 0.9, size: [0.95, 1.03], tint: [1.0, 0.84, 0.78], voice: 1.15, albedo: ['b'],
+    name: 'Runner', model: 'runner', tall: 0, bulk: 0.9, size: [0.95, 1.03], tint: [1.0, 0.84, 0.78], voice: 1.15, albedo: ['b', 'c'],
     gaits: { Walk: 1.5, Run: 3.4, Sprint: 5.2 },
     speed: [4.5, 5.5], accel: 7, brake: 10, turn: 5, health: 60, bodyMult: 1, mass: 0.8, radius: 0.28,
     reach: 1.5, damage: [8, 12], knock: 0, attackRate: 1.25, flinch: 'any', slowOnHit: true, flank: true,
     clips: {}, corpse: 18, pool: 0.42, drop: 0.04,
   },
   brute: {
-    name: 'Brute', model: 'brute', tall: 2.1, bulk: 1.28, size: [0.98, 1.02], tint: [0.6, 0.58, 0.56], voice: 0.75, albedo: ['b'],
+    name: 'Brute', model: 'brute', tall: 2.1, bulk: 1.28, size: [0.98, 1.02], grow: 1.04, tint: [0.6, 0.58, 0.56], voice: 0.75, albedo: ['b', 'c'],
     gaits: { Walk: 1.6, Run: 3.2, Sprint: 4.4 }, shove: true,
-    speed: [1.5, 1.7], accel: 2.2, brake: 5, turn: 2.3, health: 450, bodyMult: 0.5, mass: 4, radius: 0.46,
-    reach: 2.0, damage: [26, 32], knock: 7.5, attackRate: 0.8, flinch: 'head', slowOnHit: false,
+    speed: [1.5, 1.7], accel: 2.2, brake: 5, turn: 2.3, health: 450, bodyMult: 0.5, mass: 4, radius: 0.47,
+    reach: 2.08, damage: [26, 32], knock: 7.5, attackRate: 0.8, flinch: 'head', slowOnHit: false,
     clips: {}, corpse: 26, pool: 0.75, drop: 0.3,
   },
   boss: {
-    name: 'Abomination', model: 'boss', tall: 2.5, bulk: 1.3, size: [1, 1], tint: [0.5, 0.36, 0.34], voice: 0.55, boss: true, albedo: ['b'],
+    name: 'Abomination', model: 'boss', tall: 2.5, bulk: 1.3, size: [1, 1], grow: 1.092, tint: [0.5, 0.36, 0.34], voice: 0.55, boss: true, albedo: ['b', 'c'],
     gaits: { Walk: 2.2, Run: 6.6, Sprint: 7.6 },
-    speed: [2.4, 2.6], accel: 4, brake: 6, turn: 2.6, health: 2600, bodyMult: 1, mass: 12, radius: 0.6,
-    reach: 2.6, damage: [30, 36], knock: 8, attackRate: 0.8, flinch: 'none', slowOnHit: false,
+    speed: [2.4, 2.6], accel: 4, brake: 6, turn: 2.6, health: 2600, bodyMult: 1, mass: 12, radius: 0.62,
+    reach: 2.84, damage: [30, 36], knock: 8, attackRate: 0.8, flinch: 'none', slowOnHit: false,
     charge: { min: 9, max: 34, windup: 0.9, speed: 7, accel: 9, turn: 0.9, time: 3.2, damage: 38, knock: 10, cooldown: 8, recover: 1.3 },
     slam: { range: 4.6, radius: 6.5, windup: 0.8, damage: 34, knock: 7, cooldown: 6.5, recover: 1.0 },
     clips: { roar: 'Roar', slam: 'Slam' }, corpse: 40, pool: 1.1, drop: 1,
@@ -247,6 +247,21 @@ const LOCO = ['Walk', 'Run', 'Sprint'], LOCO_ALL = ['Idle', 'Walk', 'Run', 'Spri
 const POOL_SIZE = { zombie: 26, runner: 12, brute: 5, boss: 2 };
 const CLIP_LIMITS = { Walk: [0.2, 2.4], Run: [1.5, 7], Sprint: [2.5, 9] };
 
+// Skin light transport, cheap: the blue channel of the packed ORM map (metalness, unused on the infected) holds a
+// skin mask; where it is set, light wraps a little past the terminator with a blood-red tint, so faces in sunlight
+// read as tissue instead of plaster. The added term carries the light's shadow, so cast shadow stays dark.
+const ZOMBIE_SKIN = {
+  key: 'zombie',
+  fragmentPars: `float vmSkinW = 0.0;
+#define VM_SKIN_WRAP(L) { float vmNl = dot(normalize(vNormal), L.direction); float vmWr = max(0.0, (vmNl + 0.4) / 1.4) - max(0.0, vmNl); reflectedLight.directDiffuse += vmSkinW * vmWr * L.color * diffuseColor.rgb * vec3(0.30, 0.11, 0.08); }`,
+  surface: `
+#ifdef USE_ROUGHNESSMAP
+ vmSkinW = texture2D(roughnessMap, vRoughnessMapUv).b;
+#endif
+`,
+  patch(shader) { shader.fragmentShader = shader.fragmentShader.replace(/RE_Direct\(\s*directLight,[^;]*;/g, (m) => `${m}
+		VM_SKIN_WRAP(directLight)`); },
+};
 async function fetchGlb(loader, name) {
   try {
     const res = await fetch(`./assets/models/${name}.glb`);
@@ -335,7 +350,7 @@ export class Zombies {
         m.roughness = 1; m.envMapIntensity = 1.15;
         m.color.multiplyScalar(1.25);   // the delivered albedos are dark; lift them to sit in the scene's light
         if (m.map) m.map.anisotropy = 4;
-        enhance(m, { key: 'zombie' }); m.userData.variant = i;
+        enhance(m, ZOMBIE_SKIN); m.userData.variant = i;
       };
       variants.forEach(prep);
       for (const t in set.tints) set.tints[t].forEach(prep);
@@ -452,7 +467,17 @@ export class Zombies {
     z.floorY = z.pos.y; z.floorT = 0;
     z.probeX = x; z.probeZ = zz; z.probeT = 0; z.stuck = 0; z.avoidT = 0; z.losT = 0; z.direct = false;
     z.wet = false; z.clrOk = false; z.clrN = 0; z.clrX = x; z.clrY = z.pos.y; z.clrZ = zz;
+    z.progD = 1e9; z.progT = 0; z.progX = x; z.progZ = zz;       // the director's long-term progress check
     z.root.position.copy(z.pos);
+  }
+
+  // take one out of the world without a death (the director's last resort for one that can never arrive)
+  discard(z) {
+    const i = this.list.indexOf(z);
+    if (i < 0) return;
+    this.list.splice(i, 1);
+    z.alive = false;
+    this._release(z);
   }
 
   // opts: type ('walker' | 'runner' | 'brute' | 'boss'), aware, yaw, variant, speed, healthMult (older callers: runner true / false)
@@ -467,7 +492,7 @@ export class Zombies {
     zb.yaw = opts.yaw ?? Math.random() * 6.28;
     zb.state = 'idle'; zb.stateT = 0; zb.alive = true;
     zb.maxHealth = def.health * (opts.healthMult ?? 1); zb.health = zb.maxHealth;
-    zb.scale = (zb.borrowed && def.tall ? def.tall / set.height : 1) * (def.size[0] + Math.random() * (def.size[1] - def.size[0]));
+    zb.scale = (zb.borrowed && def.tall ? def.tall / set.height : def.grow || 1) * (def.size[0] + Math.random() * (def.size[1] - def.size[0]));
     zb.bulk = zb.borrowed ? def.bulk : 1;
     zb.rad = def.radius;
     zb.root.scale.set(zb.scale * zb.bulk, zb.scale, zb.scale * zb.bulk);

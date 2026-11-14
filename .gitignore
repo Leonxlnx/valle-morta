@@ -20,3 +20,5 @@ cinematic/*.mp4
 *.f32
 tools/zombie/build*/
 tools/weapon/build/
+tools/vehicles/**/build/
+tools/zombie/stage/

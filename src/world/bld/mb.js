@@ -10,11 +10,12 @@ LAYERS.forEach((n, i) => { LY[n] = i; });
 const NEUTRAL = [1, 1, 1];
 const OB = {};
 const neg = (v) => [-v[0], -v[1], -v[2]];
+const _pv = new THREE.Vector3();
 
 export class MB {
   constructor() {
     this.pos = []; this.nrm = []; this.uv = []; this.mat = []; this.tint = []; this.idx = [];
-    this.n = 0;
+    this.n = 0; this.dv = []; this.det = 0;
     this.c = 1; this.s = 0; this.ox = 0; this.oy = 0; this.oz = 0;
     this.layer = 0; this.tr = 128; this.tg = 128; this.tb = 128;
     this.P = new Float64Array(12); this.U = new Float64Array(8); this.F = [0, 0, 0, 0]; this.S = [0, 0, 0, 0];
@@ -33,7 +34,12 @@ export class MB {
     this.nrm.push(nx * c - nz * s, ny, nx * s + nz * c);
     this.uv.push(u, v);
     this.mat.push(this.layer, fl * 255, ao * 255, soot * 255);
-    this.tint.push(this.tr, this.tg, this.tb, (y + 2) * (255 / 18));
+    if (this.tintFn) {
+      // baked weathering: the generator returns a colour factor for this vertex (local y, local + world normal)
+      const k = this.tintFn(x, y, z, nx, nz, nx * c - nz * s, nx * s + nz * c);
+      this.tint.push(this.tr * k[0], this.tg * k[1], this.tb * k[2], (y + 2) * (255 / 18));
+    } else this.tint.push(this.tr, this.tg, this.tb, (y + 2) * (255 / 18));
+    this.dv.push(this.det);
     return this.n++;
   }
 
@@ -173,6 +179,118 @@ export class MB {
     return hAt;
   }
 
+  // Gravity pass over the triangles emitted since index offset i0: splits them into connected parts
+  // (vertices welded at 4 mm), links parts that touch (within tol) and drops every part that has no
+  // chain of contacts down to the ground (a vertex at most `tol` above ground(x, z)). Returns the
+  // dropped parts' centres, so detached rafters, wall shards and beam stubs never hang in the air.
+  prune(i0, ground, tol = 0.04) {
+    const idx = this.idx, pos = this.pos, nt = (idx.length - i0) / 3;
+    if (nt <= 0) return [];
+    const weld = new Map(), par = [], vid = new Map();
+    const root = (a) => { while (par[a] !== a) { par[a] = par[par[a]]; a = par[a]; } return a; };
+    const wid = (q) => {
+      let w = vid.get(q); if (w !== undefined) return w;
+      const k = `${Math.round(pos[q * 3] * 250)},${Math.round(pos[q * 3 + 1] * 250)},${Math.round(pos[q * 3 + 2] * 250)}`;
+      w = weld.get(k); if (w === undefined) { w = par.length; par.push(w); weld.set(k, w); }
+      vid.set(q, w); return w;
+    };
+    for (let t = 0; t < nt; t++) { const o = i0 + t * 3, a = root(wid(idx[o])), b = root(wid(idx[o + 1])), c = root(wid(idx[o + 2])); par[b] = a; par[root(c)] = a; }
+    const parts = [], pid = new Map(), triPart = new Int32Array(nt);
+    for (let t = 0; t < nt; t++) {
+      const r = root(vid.get(idx[i0 + t * 3])); let p = pid.get(r);
+      if (p === undefined) { p = parts.length; pid.set(r, p); parts.push({ tris: [], box: new THREE.Box3(), grounded: false }); }
+      triPart[t] = p; const P = parts[p]; P.tris.push(t);
+      for (let k = 0; k < 3; k++) {
+        const q = idx[i0 + t * 3 + k], x = pos[q * 3], y = pos[q * 3 + 1], z = pos[q * 3 + 2];
+        P.box.expandByPoint(_pv.set(x, y, z));
+        if (!P.grounded && y <= ground(x, z) + tol) P.grounded = true;
+      }
+    }
+    if (parts.length < 2) return [];
+    const tri = new THREE.Triangle();
+    const test = (t, box) => {
+      const o = i0 + t * 3;
+      tri.a.fromArray(pos, idx[o] * 3); tri.b.fromArray(pos, idx[o + 1] * 3); tri.c.fromArray(pos, idx[o + 2] * 3);
+      return tri.intersectsBox(box);
+    };
+    // big parts (walls, roofs) get a 1 m grid of their triangles, so the many small dressing parts
+    // that touch them only test the triangles nearby instead of the whole wall
+    const stamp = new Int32Array(nt); let qn = 0;
+    const gridOf = (A) => {
+      const g = new Map(), all = [];
+      for (const t of A.tris) {
+        let x0 = Infinity, y0 = Infinity, z0 = Infinity, x1 = -Infinity, y1 = -Infinity, z1 = -Infinity;
+        for (let k = 0; k < 3; k++) {
+          const q = idx[i0 + t * 3 + k] * 3, x = pos[q], y = pos[q + 1], z = pos[q + 2];
+          if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; if (z < z0) z0 = z; if (z > z1) z1 = z;
+        }
+        const a = Math.floor(x0), b = Math.floor(y0), c = Math.floor(z0), A2 = Math.floor(x1), B2 = Math.floor(y1), C2 = Math.floor(z1);
+        if ((A2 - a + 1) * (B2 - b + 1) * (C2 - c + 1) > 48) { all.push(t); continue; }
+        for (let i = a; i <= A2; i++) for (let j = b; j <= B2; j++) for (let k = c; k <= C2; k++) {
+          const key = (i + 2048) * 16777216 + (j + 2048) * 4096 + (k + 2048);
+          let l = g.get(key); if (!l) g.set(key, l = []); l.push(t);
+        }
+      }
+      return { g, all };
+    };
+    const hits = (A, box) => {
+      if (A.tris.length < 96) { for (const t of A.tris) if (test(t, box)) return true; return false; }
+      const G = A.grid || (A.grid = gridOf(A));
+      for (const t of G.all) if (test(t, box)) return true;
+      qn++;
+      for (let i = Math.floor(box.min.x); i <= Math.floor(box.max.x); i++) for (let j = Math.floor(box.min.y); j <= Math.floor(box.max.y); j++) for (let k = Math.floor(box.min.z); k <= Math.floor(box.max.z); k++) {
+        const l = G.g.get((i + 2048) * 16777216 + (j + 2048) * 4096 + (k + 2048));
+        if (l) for (const t of l) { if (stamp[t] === qn) continue; stamp[t] = qn; if (test(t, box)) return true; }
+      }
+      return false;
+    };
+    for (const P of parts) { P.ex = P.box.clone().expandByScalar(tol); P.adj = []; }
+    const order = parts.map((_, i) => i).sort((a, b) => parts[a].ex.min.x - parts[b].ex.min.x);
+    for (let ii = 0; ii < order.length; ii++) {
+      const A = parts[order[ii]];
+      for (let jj = ii + 1; jj < order.length; jj++) {
+        const B = parts[order[jj]];
+        if (B.ex.min.x > A.ex.max.x) break;
+        if (!A.ex.intersectsBox(B.ex)) continue;
+        const [S, L] = A.tris.length <= B.tris.length ? [A, B] : [B, A];
+        if (hits(S, L.ex) && hits(L, S.ex)) { A.adj.push(order[jj]); B.adj.push(order[ii]); }
+      }
+    }
+    const seen = new Uint8Array(parts.length), stack = [];
+    parts.forEach((P, i) => { if (P.grounded) { seen[i] = 1; stack.push(i); } });
+    while (stack.length) for (const j of parts[stack.pop()].adj) if (!seen[j]) { seen[j] = 1; stack.push(j); }
+    const dropped = [];
+    parts.forEach((P, i) => { if (!seen[i]) { P.box.getCenter(_pv); dropped.push([+_pv.x.toFixed(2), +_pv.y.toFixed(2), +_pv.z.toFixed(2)]); } });
+    if (!dropped.length) return dropped;
+    const keep = [];
+    for (let t = 0; t < nt; t++) if (seen[triPart[t]]) keep.push(idx[i0 + t * 3], idx[i0 + t * 3 + 1], idx[i0 + t * 3 + 2]);
+    idx.length = i0;
+    for (let k = 0; k < keep.length; k++) idx.push(keep[k]);
+    return dropped;
+  }
+
+  // moves the triangles emitted since i0 in detail mode (this.det = 1) into another builder: small
+  // dressings that should not cast shadows or be split into culling cells
+  extract(i0, to) {
+    const idx = this.idx, dv = this.dv, keep = [], map = new Map();
+    for (let t = i0; t < idx.length; t += 3) {
+      const a = idx[t], b = idx[t + 1], c = idx[t + 2];
+      if (!(dv[a] && dv[b] && dv[c])) { keep.push(a, b, c); continue; }
+      for (const q of [a, b, c]) {
+        let r = map.get(q);
+        if (r === undefined) {
+          r = to.n++; map.set(q, r);
+          to.pos.push(this.pos[q * 3], this.pos[q * 3 + 1], this.pos[q * 3 + 2]); to.nrm.push(this.nrm[q * 3], this.nrm[q * 3 + 1], this.nrm[q * 3 + 2]);
+          to.uv.push(this.uv[q * 2], this.uv[q * 2 + 1]); to.dv.push(1);
+          for (let k = 0; k < 4; k++) { to.mat.push(this.mat[q * 4 + k]); to.tint.push(this.tint[q * 4 + k]); }
+        }
+        to.idx.push(r);
+      }
+    }
+    idx.length = i0;
+    for (let k = 0; k < keep.length; k++) idx.push(keep[k]);
+  }
+
   toGeometry() {
     const g = new THREE.BufferGeometry();
     g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(this.pos), 3));
@@ -190,7 +308,7 @@ export class MB {
   toMesh(material, name) {
     if (!this.n) return null;
     const m = new THREE.Mesh(this.toGeometry(), material);
-    m.name = name; m.castShadow = true; m.receiveShadow = true; m.matrixAutoUpdate = false; m.updateMatrixWorld(true);
+    m.name = name; m.castShadow = !this.noShadow; m.receiveShadow = true; m.matrixAutoUpdate = false; m.updateMatrixWorld(true);
     return m;
   }
 }

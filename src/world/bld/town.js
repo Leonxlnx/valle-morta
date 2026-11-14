@@ -50,7 +50,8 @@ function stall(mb, cb, gl, rng) {
   mb.set(LY.wood_planks, WOOD);
   obb(mb, cb, 0, 0.92, -0.45, 1.27, 0.03, 0.32, 0, { tile: 2 });
   mb.set(LY.wood_planks, OLD);
-  obb(mb, cb, 0, 0.45, -0.75, 1.2, 0.45, 0.02, 0, { tile: 2, uo: 0.3 });
+  const fb = Math.min(gl(-1.2, -0.75), gl(1.2, -0.75), gl(0, -0.75), 0) - 0.08;
+  obb(mb, cb, 0, (fb + 0.9) / 2, -0.75, 1.2, (0.9 - fb) / 2, 0.02, 0, { tile: 2, uo: 0.3 });
   // canopy frame: side rails, ridge and a couple of slats (one fallen)
   mb.set(LY.wood_beam, BEAM);
   for (const x of [-1.22, 1.22]) mb.beam([x, 2.3, -0.85], [x, 2.0, 0.85], 0.06, 0.08);
@@ -58,7 +59,7 @@ function stall(mb, cb, gl, rng) {
   mb.beam([-1.3, 2.0, 0.72], [1.3, 2.0, 0.72], 0.06, 0.08);
   mb.set(LY.wood_planks, WOOD);
   for (const z of [-0.35, 0.0, 0.35]) if (rng.chance(0.75)) { const y = 2.3 - (z + 0.72) / 1.44 * 0.3 + 0.06; mb.beam([-1.3, y, z], [1.3, y, z], 0.18, 0.02, { uo: z }); }
-  const fx = rng.range(-0.6, 0.6); mb.beam([fx - 1.1, gl(fx - 1.1, -1.2) + 0.03, -1.25], [fx + 1.1, 0.95, -0.8], 0.18, 0.02);
+  const fx = rng.range(-0.6, 0.12); mb.beam([fx - 1.1, gl(fx - 1.1, -1.2) + 0.03, -1.25], [fx + 1.1, 0.95, -0.8], 0.18, 0.02);
   // crates under the counter
   mb.set(LY.wood_planks, OLD); obb(mb, null, 0.6, gl(0.6, 0.3) + 0.2, 0.3, 0.3, 0.2, 0.22, 0.2, { tile: 2 });
 }

@@ -277,22 +277,24 @@ def run(mod, opts):
             W.sheet(os.path.join(W.PREV, 'final_%s_model.png' % wid), 2, 450, files)
         elif o.startswith('sheets='):
             for item in o[7:].split(','):
-                fpv = '@fp' in item or 'fpcam' in opts; item = item.replace('@fp', '')
+                fpv = '@fp' in item or 'fpcam' in opts; near = '@c' in item; item = item.replace('@fp', '').replace('@c', '')
                 lst = mod.MISC if item == 'misc' else [(item.split(':')[0], item.split(':')[1] if ':' in item else 12)]
                 fl = lambda c, k: [int(x) for x in k.split('-')] if isinstance(k, str) and '-' in k else sorted(set(int(round(x)) for x in np.linspace(0, c.N, int(k))))
                 cols = 5 if item == 'misc' else (4 if len(fl(st.clips[lst[0][0]], lst[0][1])) <= 8 else 3); tw = 900 // cols; files = []
+                if near: cols = 4; tw = 1600 // cols                   # close-up review sheet: per-clip camera from CLOSE (falls back to CAMS / first person)
                 for cn, k in lst:
                     c = st.clips[cn]; loc, look, fov = (fp if fpv else getattr(mod, 'CAMS', {}).get(cn, fp))
+                    if near: loc, look, fov = getattr(mod, 'CLOSE', {}).get(cn, (loc, look, fov))
                     for i in fl(c, k):
                         st.apply(c, i); bpy.context.view_layer.update()
                         files.append([view('%s_%s_%03d' % (wid, cn, i), loc, look, fov, (tw, int(tw * 9 / 16))), '%s %.2fs' % (cn, i / FPS)])
-                W.sheet(os.path.join(W.PREV, 'final_%s_%s.png' % (wid, lst[0][0] if item != 'misc' else 'misc')), cols, tw, files)
+                W.sheet(os.path.join(W.PREV, '%s_%s_%s.png' % ('close' if near else 'final', wid, lst[0][0] if item != 'misc' else 'misc')), cols, tw, files)
     if 'noexport' in opts: return
     # ---- actions, export
     for n in ('sun', 'cam'):
         if n in bpy.data.objects: bpy.data.objects.remove(bpy.data.objects[n])
     st.apply(idle, 0); order = [n for n in st.clips if n != 'Idle'] + ['Idle']; st.actions(order)
-    bpy.context.view_layer.update(); out = getattr(mod, 'OUT', None) or os.path.join(W.MODELS, wid + '.glb')
+    bpy.context.view_layer.update(); out = getattr(mod, 'OUT', None) or os.path.join(os.environ.get('WEAPON_OUT') or W.MODELS, wid + '.glb')   # WEAPON_OUT: build outside public/ (dev server reloads)
     exp = [o for o in bpy.data.objects if o.type in ('MESH', 'EMPTY', 'ARMATURE')]
     W.export_glb(out, exp)
     json.dump(side, open(os.path.splitext(out)[0] + '.anim.json', 'w'), indent=1)
