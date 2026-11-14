@@ -195,10 +195,10 @@ export function createFilm(vm) {
         const [x, z] = sx(14, 0.4), [x1, z1] = sx(36, 0);
         p.spawn(x, z, yawTo(x, z, x1, z1) + 0.6); p.enabled = true;
         arm('rifle', 30);
-        for (const [s, lat] of [[32, 0.9], [35, -0.8], [30, -0.2], [38, 0.4], [41, -0.5]]) onStreet(s, lat, { speed: 1.0 });
+        for (const [s, lat] of [[27, 0.5], [29.5, -0.4], [26, -0.1], [32, 0.3], [34, -0.3]]) onStreet(s, lat, { speed: 1.0 });
         p.script = shooter({
-          rest: sp(40, 0, 1.5), from: 1.7, restRate: 1.8, fireFrom: 2.5, aimRate: 6, burst: 0.2, gap: 0.38,
-          ads: (t) => t > 1.1,
+          rest: sp(28, 0, 1.3), from: 1.7, restRate: 1.8, fireFrom: 2.5, aimRate: 6, burst: 0.2, gap: 0.38,
+          ads: () => false,                              // from the hip: the rifle low on the right, the infected in the centre
           move: (t, pl) => { pl.input.fwd = t < 2.4 ? 0.62 : 0.15; },
         });
       },
@@ -210,12 +210,12 @@ export function createFilm(vm) {
         const [x, z] = sx(30, 0.5), [x1, z1] = sx(52, 0);
         p.spawn(x, z, yawTo(x, z, x1, z1)); p.enabled = true;
         arm('rifle', 9);
-        for (const [s, lat] of [[45, 0.9], [48, -0.7], [42, 0.1]]) onStreet(s, lat, { speed: 1.1 });
+        for (const [s, lat] of [[38, 0.4], [40.5, -0.4], [36.5, 0.1]]) onStreet(s, lat, { speed: 1.1 });
         for (const [s, lat] of [[58, 0.3], [61, -0.9]]) onStreet(s, lat, { type: 'runner' });
         p.script = shooter({
           rest: sp(52, 0, 1.4), fireFrom: 0.05, aimRate: 9, burst: 0.26, gap: 0.22,
           head: (zb) => zb.type === 'runner' && zb.pos.distanceTo(p.pos) < 10,
-          ads: (t, d) => d > 7 && !weapon.act,
+          ads: (t, d) => t > 3.4 && d > 9 && !weapon.act,     // hip fire through the magazine, a brief aim only for the runners
           move: (t, pl) => { if (t > 1.4 && t < 3.6) pl.input.fwd = -0.5; },
         });
       },
@@ -320,7 +320,8 @@ export function createFilm(vm) {
       pre(t) {
         p.health = 100;
         if (!this.m && t >= -1.45) { this.m = true; use('mortar'); }
-        if (!this.t && t >= -0.15) { this.t = true; use('tank'); weapon.visible = false; }
+        // the tank called late: it comes down in the second half and slams near the end, before its cut-away chutes can drift up the street into the lens
+        if (!this.t && t >= 0.85) { this.t = true; use('tank'); weapon.visible = false; }
       },
       cam(u) {
         const [x, z] = this.c, k = ease(u), q = sx(78, 0);
@@ -348,16 +349,16 @@ export function createFilm(vm) {
           pl.input.fwd = t > -0.4 ? (t > 2.0 && t < 2.9 ? 0.45 : 1) : 0;
           pl.input.strafe = clamp(-diff * 2.6, -1, 1);
           const b = this.boss;
-          if (b.alive && t > 0.6) look.set(b.pos.x, b.pos.y + 1.6, b.pos.z);
+          // one round early, at the boss far down the street, so the blast and its smoke stay in the distance
+          if (b.alive && t > -0.6 && t < 1.6) look.set(b.pos.x, b.pos.y + 1.6, b.pos.z);
           else { const [lx, lz] = sx(Math.max(2, s - 16), 0); look.set(lx, gy(lx, lz) + 1.3, lz); }
           pl.lookAt(look, 3.2, dt);
-          pl.input.fire = b.alive && t > 1.2 && b.pos.distanceTo(tk.pos) < 24;
+          pl.input.fire = b.alive && tk.shots < 1 && t > 0.25 && t < 1.4;
         };
       },
       pre(t) {
         p.health = 100;
         if (!this.used && t >= -3.85) { this.used = true; use('tank'); }
-        if (t >= 0.4 && this.boss.chargeCd > 50) this.boss.chargeCd = 0;
       },
     },
     {
@@ -575,8 +576,7 @@ export function createFilm(vm) {
       stance: p.stance, hp: Math.round(p.health), cam: [r1(cam.position.x), r1(cam.position.y - gy(cam.position.x, cam.position.z)), r1(cam.position.z)],
     };
     if (boss) out.boss = `${Math.round(boss.health)} ${boss.state} d${r1(boss.pos.distanceTo(p.pos))}`;
-    if (tk) out.tank = `${tk.state} v${r1(tk.v)} y${r1(tk.pos.y - tk.ground)} crushed${op.kit.stats.crushed} shots${tk.shots}`;
-    if (film.op && op.kit) out.blasts = `${op.kit.shells.length} pending, ${op.kit.stats.blastKills} kills`;
+    if (tk) out.tank = `${tk.state} v${r1(tk.v)} y${r1(tk.pos.y - tk.ground)} crushed${op.kit.stats.crushed} shots${tk.shots}`;    if (film.op && op.kit) out.blasts = `${op.kit.shells.length} pending, ${op.kit.stats.blastKills} kills`;
     if (h && h.state !== 'gone') out.heli = `${h.state} t${h.t.toFixed(2)} alt${r1(h.group.position.y - LZ.y)} d${r1(h.group.position.distanceTo(cam.position))}`;
     if (i === 0 && frac < 0.5) { const sd = engine.sun.position.clone().sub(engine.sun.target ? engine.sun.target.position : _c.set(0, 0, 0)).normalize(); out.sun = [r1(sd.x), r1(sd.y), r1(sd.z)]; out.lz = [r1(LZ.x), r1(LZ.z), r1(LZ.yaw)]; }
     return out;
