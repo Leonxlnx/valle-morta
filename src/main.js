@@ -126,9 +126,9 @@ async function boot() {
     const t = [];
     for (let i = 0; i < 3; i++) { t.push(run(8)); await nextFrame(); }
     t.sort((a, b) => a - b);
-    // cost of each preset relative to medium at full render scale (measured on the 780M at
-    // 1920x1200, street + meadow); the bench runs on whatever preset was loaded
-    const REL = { low: 0.6, medium: 1, high: 1.55, ultra: 2.0 };
+    // cost of each preset relative to medium at its own render scale, measured on the 780M at
+    // 1920x1200 (GPU split, street; meadow agrees within 10 %); the bench runs on whatever preset was loaded
+    const REL = { low: 0.68, medium: 1, high: 1.3, ultra: 1.55 };
     const ms = t[1] / (REL[engine.qualityName] || 1) / Math.max(0.5, (engine.dynScale ?? engine.renderScale) / engine.q.scale) ** 2;
     const unsure = t[2] > t[0] * 1.3;
     const m = unsure ? 0.9 : 1;   // margin: prefer the lower preset when the timing is unsteady

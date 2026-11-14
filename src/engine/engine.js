@@ -22,12 +22,20 @@ import { PostFX } from './post.js';
 export const QUALITY = {
   low:    { scale: 0.75, msaa: 0, shadow: 2048, shadowRange: 70,  pano: [2048, 512],  cloudSteps: 44, ao: true,  vol: true, volSteps: 16, volScale: 4, texSize: 1024, grass: 0.55, aniso: 4,  far: 1,   sharpen: 0.9, rays: 16, rayStrength: 0.08 },
   medium: { scale: 1.0,  msaa: 0, shadow: 2048, shadowRange: 95,  pano: [2048, 512],  cloudSteps: 48, ao: true,  vol: true, volSteps: 18, volScale: 3, texSize: 1024, grass: 0.8,  aniso: 8,  far: 1,   sharpen: 0.95, rays: 20, rayStrength: 0.08 },
-  high:   { scale: 1.0,  msaa: 4, shadow: 4096, shadowRange: 130, pano: [4096, 1024], cloudSteps: 72, ao: true,  vol: true, volSteps: 30, volScale: 2, texSize: 2048, grass: 1.0,  aniso: 16, far: 1,   sharpen: 0.8, rays: 32, rayStrength: 0.1, reflect: 0.34, clutter: 0.5 },
-  ultra:  { scale: 1.0,  msaa: 4, shadow: 6144, shadowRange: 150, pano: [5120, 1280], cloudSteps: 96, ao: true,  aoHQ: true, aoRadius: 1.6, aoIntensity: 2.1, aoAmount: 1.0, contact: 1.0, shadowSoft: 1.2, vol: true, volSteps: 44, volScale: 2, texSize: 2048, grass: 1.0, grassRange: 1.5, aniso: 16, far: 1.5, sharpen: 1.0,
-            rays: 40, rayStrength: 0.13, volStrength: 0.85, reflect: 0.5, aoFull: true, cloudFine: 1, clutter: 1, clarity: 0.3, vibrance: 0.32, contrast: 1.17 },
+  high:   { scale: 1.0,  msaa: 0, shadow: 4096, shadowRange: 130, pano: [4096, 1024], cloudSteps: 72, ao: true,  vol: true, volSteps: 30, volScale: 2, texSize: 2048, grass: 1.0,  aniso: 16, far: 1,   sharpen: 0.8, rays: 32, rayStrength: 0.1, reflect: 0.34, clutter: 0.5 },
+  ultra:  { scale: 1.0,  msaa: 0, shadow: 5120, shadowRange: 150, pano: [5120, 1280], cloudSteps: 96, ao: true,  aoHQ: true, aoRadius: 1.6, aoIntensity: 2.1, aoAmount: 1.0, contact: 1.0, shadowSoft: 1.2, vol: true, volSteps: 36, volScale: 2, texSize: 2048, grass: 1.0, grassRange: 1.5, aniso: 16, far: 1.5, sharpen: 1.0,
+            rays: 32, rayStrength: 0.13, volStrength: 0.85, reflect: 0.34, aoFull: false, cloudFine: 1, clutter: 1, clarity: 0.3, vibrance: 0.32, contrast: 1.17 },
 };
+// ?qo=key:value,... overrides preset keys (tooling A/B, e.g. qo=msaa:4,reflect:0)
+function withOverrides(q) {
+  try {
+    const o = new URLSearchParams(location.search).get('qo');
+    if (o) for (const kv of o.split(',')) { const [k, v] = kv.split(':'); if (k && v !== undefined) q[k] = v === 'true' ? true : v === 'false' ? false : Number(v); }
+  } catch (e) { /* no location */ }
+  return q;
+}
 // dynamic resolution: floor of the governor (ms per frame, 40 fps) and the steps of the render scale
-const DYN_FLOOR_MS = 25, DYN_UP_MS = 20.5, DYN_STEP = 0.08, DYN_MIN = 0.5;
+const DYN_FLOOR_MS = 25, DYN_UP_MS = 22.5, DYN_STEP = 0.08, DYN_MIN = 0.5;
 
 // Shadows fade out over the rim of the shadow volume instead of ending in a hard line (the volume
 // is a square centred on the viewer, so the rim is far away in every direction).
@@ -44,7 +52,7 @@ export class Engine {
   constructor(canvas, qualityName = 'high') {
     this.canvas = canvas;
     this.qualityName = qualityName;
-    this.q = { ...QUALITY[qualityName] };
+    this.q = withOverrides({ ...QUALITY[qualityName] });
     const renderer = new THREE.WebGLRenderer({ canvas, antialias: false, alpha: false, depth: false, stencil: false, powerPreference: 'high-performance', preserveDrawingBuffer: false });
     renderer.setPixelRatio(1);
     renderer.toneMapping = THREE.NoToneMapping;
@@ -110,7 +118,7 @@ export class Engine {
 
   setQuality(name) {
     this.qualityName = name;
-    this.q = { ...QUALITY[name] };
+    this.q = withOverrides({ ...QUALITY[name] });
     this.renderScale = this.q.scale;
     this.sun.shadow.mapSize.set(this.q.shadow, this.q.shadow);
     if (this.sun.shadow.map) { this.sun.shadow.map.dispose(); this.sun.shadow.map = null; }
@@ -184,7 +192,7 @@ export class Engine {
   // Dynamic resolution governor, fed once per displayed frame with the frame interval (ms).
   // Smoothed frame time above 25 ms (below 40 fps) for 0.4 s: one step down (two when below 30 fps).
   // Up only when the frame predicted for the next step up (cost taken as proportional to the
-  // pixels, a pessimistic guess) stays under 20.5 ms for a while; an up step that has to be taken
+  // pixels, a pessimistic guess) stays under 22.5 ms for a while; an up step that has to be taken
   // back soon doubles that wait, so the image does not pump between two steps.
   govern(ms) {
     const g = this._gov;
@@ -207,8 +215,9 @@ export class Engine {
     // a long calm spell halves the extra wait again
     if (g.upWait > 2000 && g.clock - g.lastUp > 20000) { g.upWait = Math.max(2000, g.upWait / 2); g.lastUp = g.clock - 10000; }
     if (g.k === 0) return;
-    // (about three quarters of the frame taken to scale with the pixels)
-    if (g.ema * (0.25 + 0.75 * this.levels[g.k - 1].cost / cost) < DYN_UP_MS) {
+    // (about two thirds of the frame taken to scale with the pixels: measured on the 780M, the
+    // old three quarters and 20.5 ms kept it at the bottom step while running at 50-57 fps)
+    if (g.ema * (0.35 + 0.65 * this.levels[g.k - 1].cost / cost) < DYN_UP_MS) {
       g.under += ms;
       if (g.under > g.upWait) { g.lastUp = g.clock; this._step(g.k - 1); }
     } else g.under = 0;
@@ -359,7 +368,18 @@ export class Engine {
     this.weaponCamera.matrixWorldInverse.copy(this.camera.matrixWorldInverse);
 
     // compile every program in the scene once, before the first frame, rather than on first sight
-    if (!this._precompiled) { this._precompiled = true; try { r.compile(this.scene, this.camera); } catch (e) { /* compiled lazily */ } }
+    // Hidden objects (far house detail, tree LOD levels, pooled infected) and the weapon layer
+    // are included: compile() only visits visible objects on the camera's layers, and a program
+    // linked on first sight stalls that frame (up to 0.8 s measured with ANGLE / D3D11).
+    if (!this._precompiled) {
+      this._precompiled = true;
+      const hidden = [], cam = this.camera, mask = cam.layers.mask;
+      this.scene.traverse((o) => { if (!o.visible) { hidden.push(o); o.visible = true; } });
+      cam.layers.enableAll();
+      try { r.compile(this.scene, cam); } catch (e) { /* compiled lazily */ }
+      cam.layers.mask = mask;
+      for (const o of hidden) o.visible = false;
+    }
     r.setRenderTarget(this.sceneRT);
     r.setClearColor(0x000000, 1);
     r.clear(true, true, true);

@@ -62,6 +62,9 @@ const SETUP = () => {
     final: (on) => { if (on) { keep.fs = s.sharpen; keep.fx = s.fxaa; s.sharpen = 0; s.fxaa = false; } else { s.sharpen = keep.fs; s.fxaa = keep.fx; } },
     sky: (on) => { if (on) { keep.su = e.sky.update; e.sky.update = () => {}; } else e.sky.update = keep.su; },
     msaa0: (on) => { if (on) keep.ms = e.q.msaa; e.q.msaa = on ? 0 : keep.ms; e.resize(e.outW, e.outH); },
+    refl: (on) => { if (on) keep.rf = e.q.reflect; e.q.reflect = on ? 0 : keep.rf; },
+    aofull: (on) => { if (on) keep.af = s.aoFull; s.aoFull = on ? false : keep.af; },
+    rays: (on) => { if (on) keep.ry = s.raySteps; s.raySteps = on ? Math.round(keep.ry / 2) : keep.ry; },
     scale75: (on) => { if (on) keep.rs = e.renderScale; e.renderScale = on ? 0.75 : keep.rs; e.resize(e.outW, e.outH); },
   };
   for (const k of ['terrain', 'buildings', 'props', 'water', 'grass', 'flowers', 'trees', 'impostors', 'vegsmall', 'other', 'sky']) T['hide_' + k] = (on) => hide(k, on);
