@@ -148,6 +148,22 @@ try {
     log(`pace street: median ${pace.median.toFixed(2)} p95 ${pace.p95.toFixed(2)} p99 ${pace.p99.toFixed(2)} worst ${pace.worst.toFixed(2)} mean ${pace.mean.toFixed(2)} | cpu median ${pace.cpuMedian.toFixed(2)} worst ${pace.cpuWorst.toFixed(2)} | top ${pace.top.join(' ')}`);
     result.pace = pace;
   }
+  if (arg('cpu', false)) {
+    // CPU-side cost per frame (no GPU sync): world updaters, terrain, sky, shadow submit, main submit, post
+    const cpu = await page.evaluate(() => {
+      const vm = window.__vm, e = vm.engine, r = e.renderer, acc = {};
+      vm.setView('street'); vm.stop();
+      const wrap = (obj, key, name) => { const f = obj[key]; obj[key] = function (...a) { const t = performance.now(); const v = f.apply(this, a); acc[name] = (acc[name] || 0) + performance.now() - t; return v; }; return () => { obj[key] = f; }; };
+      const undo = [wrap(vm.terrain, 'update', 'terrain.update'), wrap(e.sky, 'update', 'sky.update'), wrap(e.post, 'render', 'post.render'), wrap(r.shadowMap, 'render', 'shadowMap.render'), wrap(r, 'render', 'renderer.render(all)'), wrap(e, 'render', 'engine.render')];
+      vm.world.updaters.forEach((u, i) => { vm.world.updaters[i] = function (...a) { const t = performance.now(); u.apply(this, a); acc['updater' + i] = (acc['updater' + i] || 0) + performance.now() - t; }; vm.world.updaters[i]._o = u; });
+      undo.push(wrap(vm.game.fx, 'update', 'game.fx.update'));
+      const N = 120, c = e.camera;
+      for (let i = 0; i < N; i++) { c.rotation.y += 0.01; const t = performance.now(); vm.step(1 / 60); acc.step = (acc.step || 0) + performance.now() - t; }
+      undo.forEach((f) => f()); vm.world.updaters.forEach((u, i) => { vm.world.updaters[i] = u._o; }); vm.start();
+      return Object.fromEntries(Object.entries(acc).map(([k, v]) => [k, +(v / N).toFixed(2)]));
+    });
+    log('cpu ms/frame: ' + JSON.stringify(cpu));
+  }
   if (arg('presets', false)) {
     for (const p of ['low', 'medium', 'high', 'ultra']) {
       // grass density and texture sizes are fixed at build time: load the page on each preset

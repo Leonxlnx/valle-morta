@@ -108,9 +108,10 @@ def clips(st):
     c = Clip(st, 'BipodDeploy', 0.8)
     c.pr['BipodL'].k(0.27, Z).k(0.50, (-90, 8, 0), ease='in'); c.pr['BipodR'].k(0.28, Z).k(0.51, (-90, -8, 0), ease='in')
     c.hand['L'].clear().hold(0, 0.03, A['sup'], open=0.03).hold(0.22, 0.52, A['bip'], close=0.05, open=0.03, lift=(-0.02, 0, -0.04)).hold(0.72, 0.8, A['sup'], close=0.07)
-    c.wr.k(0.15, (-1.5, -3, 0), 'c').k(0.50, (-2.5, -4, 0.5), 'c').k(0.8, Z); c.wr.add(spring(0.50, (-0.8, 0.5, 0), 9, 14))
-    c.wp.k(0.5, (0, 0.004, 0.004), 'c').k(0.8, Z)
-    RR, RP = (6, 20, 6), (-0.03, 0.0, 0.055)                     # reload workspace: rifle raised, rolled so the magazine comes towards the support hand
+    c.wr.k(0.22, (8, 32, 10), 'c').k(0.52, (9, 34, 11), 'c').k(0.8, Z); c.wr.add(spring(0.50, (-0.8, 0.5, 0), 9, 14))
+    c.wp.k(0.22, (-0.06, 0.03, 0.05), 'c').k(0.52, (-0.06, 0.03, 0.05), 'c').k(0.8, Z)
+    c.sh['R'].k(0.02, Z, 'c').k(0.25, (-0.03, 0.12, 0.09), 'c').k(0.52, (-0.03, 0.12, 0.09), 'c').k(0.8, Z)
+    RR, RP = (10, 38, 14), (-0.07, 0.03, 0.06)                     # reload workspace: rifle raised, rolled so the magazine comes towards the support hand
 
     def swap(c, t0, empty):
         """magazine change from t0: the hand cups the base plate, thumb on the paddle, pulls it straight down the well, stows it at the belt and brings a fresh one,
@@ -124,7 +125,7 @@ def clips(st):
         mq.k(T(1.95), (0, 0, -0.07), ease='out').k(T(2.12), (0, 0, -0.012), ease='io').k(T(2.22), Z, ease='in')
         mr.k(T(0.75), Z).k(T(1.05), BR, ease='in').k(T(1.35), BR).k(T(1.80), (6, -4, 8), 'c').k(T(1.95), Z)
         c.wr.add(spring(T(0.55), (-0.8, 0.4, 0), 6, 11)).add(spring(T(2.22), (1.6, -0.7, 0.3), 7, 12)); c.wp.add(spring(T(2.22), (0, 0.002, 0.005), 7, 12))
-        c.sh['R'].k(T(0.40), (0, 0.05, 0.05), 'c').k(T(2.22), (0, 0.05, 0.05), 'c')
+        c.sh['R'].k(T(0.40), (-0.03, 0.12, 0.09), 'c').k(T(2.22), (-0.03, 0.12, 0.09), 'c')
         if empty: c.ps['MagRounds'] = Tr(1, [0.001]).k(T(1.05), [0.001]).k(T(1.07), [1.0], ease='lin')
         c.hand['L'].clear().hold(0, T(0.04), A['sup'], open=0.04).hold(T(0.40), T(2.30), A['magh'], close=0.08, open=0.06, lift=(-0.03, -0.02, -0.06))
         c.ev(T(0.55), 'mag_out').ev(T(2.22), 'mag_in').ev(T(2.22), 'ammo')

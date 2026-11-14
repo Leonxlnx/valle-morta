@@ -35,10 +35,13 @@ export const WEAPONS = {
       Reload: [[0.5, 'mag_out'], [1.5, 'mag_in'], [1.5, 'ammo']],
       ReloadEmpty: [[0.5, 'mag_out'], [1.5, 'mag_in'], [1.5, 'ammo'], [2.25, 'bolt_back'], [2.5, 'bolt_forward']],
     },
-    hip: [0.082, -0.118, -0.235], zoom: 1.35, scopeFov: 0, adsRate: 11, sway: 0.0014,
+    // view-model framing: grip position in camera space (m), base rotation [pitch up, yaw inward, cant] (rad),
+    // weapon-camera field of view at the hip and aimed (deg), eye to rear sight when aimed (m), extra sprint offset [y, z, pitch]
+    pose: { rot: [0.05, 0.07, 0.05], fov: 54, adsFov: 46, eye: 0.25, sprint: [-0.03, 0.02, -0.12] },
+    hip: [0.115, -0.148, -0.235], zoom: 1.35, scopeFov: 0, adsRate: 11, sway: 0.0014,
     spread: { hip: 0.0115, ads: 0.0012, bloom: 0.0018, bloomMax: 0.012, recover: 6, move: 0.012, air: 0.03 },
     recoil: { v0: 0.0095, v1: 0.003, tau: 4.5, h0: 0.0006, h: 0.0026, hStart: 3, hPeriod: 8, jit: 0.1, hJit: 0.0006, ads: 0.7, hold: 0.16, recover: 7, max: 0.17 },
-    flash: { star: 0.17, tongue: [0.36, 0.1], jets: 0, light: 55 },
+    flash: { star: 0.22, tongue: [0.36, 0.1], jets: 0, light: 55 },
     shot: { sound: 'rifle_shot', rate: 1, volume: 1 },
     casing: { scale: [1, 1], vel: [3.6, 1.9, 1.1], spin: 46 },
     kick: 1, shake: 0.45, fovPunch: 0.5, smoke: 1, tracer: false,
@@ -51,7 +54,8 @@ export const WEAPONS = {
       Reload: [[0.35, 'mag_out'], [1.1, 'mag_in'], [1.1, 'ammo']],
       ReloadEmpty: [[0.35, 'mag_out'], [1.1, 'mag_in'], [1.1, 'ammo'], [1.7, 'slide_release']],
     },
-    hip: [0.07, -0.105, -0.26], zoom: 1.2, scopeFov: 0, adsRate: 15, sway: 0.0018,
+    pose: { rot: [0.06, 0.12, 0.04], fov: 52, adsFov: 46, eye: 0.3, sprint: [-0.02, 0.0, 0.0] },
+    hip: [0.062, -0.122, -0.27], zoom: 1.2, scopeFov: 0, adsRate: 15, sway: 0.0018,
     spread: { hip: 0.009, ads: 0.0022, bloom: 0.0042, bloomMax: 0.016, recover: 7, move: 0.008, air: 0.03 },
     recoil: { v0: 0.016, v1: 0.02, tau: 3, h0: 0.001, h: 0, hStart: 0, hPeriod: 8, jit: 0.12, hJit: 0.003, ads: 0.75, hold: 0.2, recover: 9, max: 0.2 },
     flash: { star: 0.1, tongue: [0.15, 0.06], jets: 0, light: 30 },
@@ -67,7 +71,8 @@ export const WEAPONS = {
       Reload: [[0.3, 'bolt_back'], [0.9, 'mag_out'], [2.0, 'mag_in'], [2.0, 'ammo'], [2.75, 'bolt_forward']],
       BoltCycle: [[0.28, 'bolt_back'], [0.36, 'shell'], [0.72, 'bolt_forward']],
     },
-    hip: [0.086, -0.124, -0.22], zoom: 1.15, scopeFov: 10, adsRate: 7.5, sway: 0.0078, bipod: true,
+    pose: { rot: [0.03, 0.06, 0.05], fov: 54, adsFov: 50, eye: 0.085, sprint: [-0.03, 0.02, -0.08] },
+    hip: [0.122, -0.168, -0.2], zoom: 1.15, scopeFov: 10, adsRate: 7.5, sway: 0.0078, bipod: true,
     spread: { hip: 0.04, ads: 0.00012, bloom: 0, bloomMax: 0, recover: 6, move: 0.03, air: 0.06 },
     recoil: { v0: 0.06, v1: 0.06, tau: 1, h0: 0, h: 0, hStart: 0, hPeriod: 8, jit: 0.08, hJit: 0.012, ads: 0.8, hold: 0.12, recover: 3.2, max: 0.2 },
     flash: { star: 0.24, tongue: [0.5, 0.13], jets: 0.13, light: 85 },
@@ -258,7 +263,7 @@ export class Weapon {
       view.nodes[o.name.replace(/[._\s]/g, '')] = o;
       if (o.isMesh) {
         o.frustumCulled = false; o.castShadow = false; o.receiveShadow = true;
-        if (o.material && !o.material.userData.vm) { enhance(o.material, { key: 'vm-' + o.material.uuid, noFog: true }); o.material.userData.vm = true; o.material.envMapIntensity = 1.0; }
+        if (o.material && !o.material.userData.vm) { enhance(o.material, { key: 'vm-' + o.material.uuid, noFog: true }); o.material.userData.vm = true; o.material.envMapIntensity = 1.25; }
       }
     });
     const n = view.nodes;
@@ -274,13 +279,13 @@ export class Weapon {
     const local = (node) => this.rig.worldToLocal(node.getWorldPosition(new THREE.Vector3()));
     if (n.ScopeEye && def.scopeFov) {
       const e = local(n.ScopeEye);
-      view.ads.set(-e.x, -e.y, -0.085 - e.z);
+      view.ads.set(-e.x, -e.y, -def.pose.eye - e.z);
     } else if (n.SightRear && n.SightFront) {
       const r = local(n.SightRear), f = local(n.SightFront);
       view.adsTilt = -Math.atan2(f.y - r.y, -(f.z - r.z));
       const c = Math.cos(view.adsTilt), s = Math.sin(view.adsTilt);
       const ry = r.y * c - r.z * s, rz = r.y * s + r.z * c;   // where the rear sight ends up once the rig is tilted about its origin
-      view.ads.set(-r.x, -ry, -0.17 - rz);
+      view.ads.set(-r.x, -ry, -def.pose.eye - rz);
     }
     if (poser) { poser.stopAllAction(); poser.uncacheRoot(src.scene); }
     if (src.animations && src.animations.length) {
@@ -385,6 +390,22 @@ export class Weapon {
     this.light = new THREE.PointLight(0xffb060, 0, 14, 1.6);
     this.light.layers.enableAll();
     this.engine.scene.add(this.light);
+    // view-model only (layer 1): a soft key over the left shoulder and a cool rim from ahead, following the camera,
+    // so steel, wood and cloth read in shade as well as in sun; both scale with the scene's sun
+    const mk = (color) => { const l = new THREE.DirectionalLight(color, 0); l.layers.set(1); this.engine.scene.add(l, l.target); return l; };
+    this.fill = mk(0xfff1e0); this.rim = mk(0xcfdcff);
+  }
+
+  _lightRig() {
+    const cam = this.engine.camera, sun = this.engine.sun;
+    const day = sun ? Math.min(1.4, sun.intensity / 8.5) : 1;
+    const place = (l, x, y, z, k) => {
+      l.target.position.copy(cam.position);
+      l.position.set(x, y, z).applyQuaternion(cam.quaternion).add(cam.position);
+      l.intensity = k * (0.25 + 0.75 * day);
+    };
+    place(this.fill, -0.7, 0.9, 0.6, 1.5);
+    place(this.rim, 0.6, 0.5, -1.0, 1.1);
   }
 
   // ------------------------------------------------------------ scope
@@ -445,6 +466,9 @@ export class Weapon {
       events = side && side.events ? side.events.map((e) => ({ t: e.t, name: e.name })) : (def.events[name] || []).map(([t, n]) => ({ t: (t * dur) / (def.times[name] || dur), name: n }));
     }
     events.sort((a, b) => a.t - b.t);
+    // a bolt gun throws the case at the end of the rearward stroke, never before the bolt moves
+    const bb = events.find((e) => e.name === 'bolt_back'), sh = events.find((e) => e.name === 'shell');
+    if (bb && sh && sh.t < bb.t + 0.03) { sh.t = bb.t + 0.03; events.sort((a, b) => a.t - b.t); }
     return { name, dur, events, clip };
   }
 
@@ -722,13 +746,26 @@ export class Weapon {
     pos.x += bobX + this.swayX * 0.35 * (0.3 + 0.7 * hipK);
     pos.y += bobY + breath * (0.3 + hipK) - this.swayY * 0.3 - p.landKick * 0.02;
     pos.z += this.kick * 0.028 * (1 - 0.35 * ads);
-    rot.x = this.kickRot * 0.022 * (1 - 0.45 * ads) + this.swayY * 0.7 * hipK + view.adsTilt * ads - 0.012 * hipK;
-    rot.y = this.kickYaw * 0.006 + this.swayX * 0.9 * (0.25 + 0.75 * hipK) + 0.018 * hipK;
-    rot.z = this.kickRoll * 0.012 + bobX * 2.2 - this.swayX * 1.2 * (0.25 + 0.75 * hipK);
-    // sprint pose: muzzle down and across the body (a model with a Sprint clip brings its own)
+    const P = def.pose;
+    // recoil: the weapon is driven back into the shoulder and its muzzle climbs in the hands
+    pos.y += this.kickRot * 0.0035 * (1 - 0.6 * ads);
+    rot.x = this.kickRot * 0.03 * (1 - 0.5 * ads) + this.swayY * 0.7 * hipK + view.adsTilt * ads + P.rot[0] * hipK;
+    rot.y = this.kickYaw * 0.006 + this.swayX * 0.9 * (0.25 + 0.75 * hipK) + P.rot[1] * hipK;
+    rot.z = this.kickRoll * 0.012 + bobX * 2.2 - this.swayX * 1.2 * (0.25 + 0.75 * hipK) + P.rot[2] * hipK;
+    // sprint pose: muzzle down and across the body (a model with a Sprint clip brings its own, trimmed per weapon)
     const sp = procSprint ? this.sprintT : 0;
     pos.x -= 0.035 * sp; pos.y -= 0.045 * sp; pos.z += 0.04 * sp;
     rot.x -= 0.34 * sp; rot.y += 0.62 * sp; rot.z += 0.22 * sp;
+    // working the bolt from the hip: the rifle rolls onto its left side and comes up so the hand on the bolt is seen
+    if (act && act.name === 'BoltCycle' && act.clip) {
+      const u = act.t / act.dur, b = ss(0, 0.16, u) * (1 - ss(0.78, 1, u)) * hipK;
+      pos.x -= 0.025 * b; pos.y += 0.04 * b; pos.z += 0.01 * b; rot.z += 0.32 * b; rot.x += 0.06 * b; rot.y -= 0.05 * b;
+    }
+    if (!procSprint) { pos.y += P.sprint[0] * this.sprintT; pos.z += P.sprint[1] * this.sprintT; rot.x += P.sprint[2] * this.sprintT; }
+    // weapon-camera field of view: each weapon framed on its own, a touch tighter when aimed
+    const wc = this.engine.weaponCamera, fov = lerp(P.fov, P.adsFov, ads);
+    if (Math.abs(wc.fov - fov) > 1e-3) { wc.fov = fov; wc.updateProjectionMatrix(); }
+    if (this.fill) this._lightRig();
     // lying down the weapon rests lower and canted
     const pr = p.prone * hipK * (1 - this.bipodT);
     pos.y -= 0.012 * pr; rot.z += 0.1 * pr;

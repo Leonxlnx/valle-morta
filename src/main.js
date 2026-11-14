@@ -159,6 +159,8 @@ async function boot() {
     if (now - stats.t0 >= 500) { stats.fps = (stats.frames * 1000) / (now - stats.t0); stats.frames = 0; stats.t0 = now; game.fps = stats.fps; }
   };
   requestAnimationFrame(frame);
+  // the minimap's aerial picture: one orthographic render once the menu scene has settled
+  if (!AUTO) (async () => { for (let i = 0; i < 4; i++) await nextFrame(); ui.bakeMap(engine, layout); })();
 
   window.__vm = {
     engine, terrain, layout, world, game, ui, THREE, G, stats, setView, VIEWS, step, progress, operation: game.operation,

@@ -1,7 +1,8 @@
-// Interface: loading screen, main menu, settings, pause, HUD and the summary
-// screen. Plain DOM, one typeface, neutral palette.
+// Interface: loading screen, main menu, settings, pause, HUD and the summary screens.
+// Plain DOM, one typeface, the tokens in ui.css. The minimap lives in minimap.js.
 import { Vector3 } from 'three';
 import { BaseScreen } from './base.js';
+import { Minimap } from './minimap.js';
 
 const DEFAULTS = {
   quality: 'high', renderScale: 1, fov: 72, sensitivity: 1, invertY: false,
@@ -15,7 +16,19 @@ function saveSettings(s) { try { localStorage.setItem('valle-morta-settings', JS
 
 const el = (tag, cls, html) => { const e = document.createElement(tag); if (cls) e.className = cls; if (html !== undefined) e.innerHTML = html; return e; };
 const fmtTime = (t) => `${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padStart(2, '0')}`;
-const _p = new Vector3();
+const fmtN = (n) => String(Math.round(n)).replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
+const kbd = (k) => k.split(' ').map((x) => `<kbd>${x}</kbd>`).join('');
+const _p = new Vector3(), _d = new Vector3();
+
+// line silhouettes of the three weapons, side view, muzzle to the right (viewBox 120 x 34)
+const GUNS = {
+  rifle: '<path class="fill" d="M25 11 H66 V19 H25 Z"/><path d="M3 14 L25 11.5 V18.5 L5 23 Q2.5 23 3 20 Z"/><path d="M66 12 H92 V17.5 H66 M92 13.5 H117 M66 9.5 H95 V12 M111 13.5 V9.5 M62 11 V8.5 H66"/><path d="M37 19 L33 29 H39.5 L43 19 M43 19 Q44 23.5 49 23 M49 19 Q50.5 27 56 32.5 L62.5 29.5 Q58 25 57.5 19"/>',
+  pistol: '<path class="fill" d="M34 8 H88 V15 H34 Z"/><path d="M38 15 H86 V18 H54 M38 15 L33 31 H45 L48.5 20 H54 M54 18 Q56 23.5 62 18 M44 8 V15 M48 8 V15 M84 8 V6.5"/>',
+  sniper: '<path class="fill" d="M2 15 Q2 13 5 13 H36 L40 16 H74 V20 H42 L36 25 H26 L22 20 H6 Q2 20 2 17 Z"/><path d="M74 17 H119 M44 6.5 H74 V10.5 H44 Z M38 5 L44 6.5 V10.5 L38 12 Z M74 6.5 L80 5.5 V11.5 L74 10.5 M50 10.5 V13 M68 10.5 V16 M60 16 L63 22.5 M50 20 V24 H58 V20"/>',
+};
+const gun = (id) => `<svg class="gun" viewBox="0 0 120 34" aria-hidden="true">${GUNS[id] || GUNS.rifle}</svg>`;
+const KIND = { pack: 'Runner pack', escort: 'Brute escort', boss: 'Boss wave' };
+const STANCE = { crouch: 'Crouched', prone: 'Prone' };
 
 export class UI {
   constructor(root, settings, handlers, progress) {
@@ -31,14 +44,14 @@ export class UI {
         <p class="load-note">Preparing the valley</p>
       </div>`);
 
-    // ---- menu
+    // ---- menu: the two modes are the first choice
     this.menu = el('section', 'screen menu', `
       <div class="menu-col">
         <h1 class="wordmark big">Valle Morta</h1>
-        <p class="lede">The war emptied this valley. Something else moved in. Hold the ruins for as long as you can.</p>
+        <p class="lede">The war emptied this valley. Something else moved in.</p>
         <div class="modes">
-          <button class="mode" data-act="play"><strong>Survival</strong><span>Hold the village against wave after wave, for as long as you last.</span></button>
-          <button class="mode" data-act="operation"><strong>Operation</strong><span>Fly in, gather salvage, get out alive, and build up your kit at Base.</span></button>
+          <button class="mode" data-act="play"><strong>Survival</strong><span>Hold the village against wave after wave, for as long as you last.</span><em>A boss every fifth wave</em></button>
+          <button class="mode" data-act="operation"><strong>Operation</strong><span>Fly in, gather salvage, get out alive, and build up your kit at Base.</span><em class="op-meta">Progress is kept between runs</em></button>
         </div>
         <nav class="menu-nav">
           <button class="btn" data-act="settings">Settings</button>
@@ -51,6 +64,7 @@ export class UI {
     this.pause = el('section', 'screen pause', `
       <div class="sheet">
         <h2>Paused</h2>
+        <p class="sub"></p>
         <nav class="menu-nav">
           <button class="btn primary" data-act="resume">Resume</button>
           <button class="btn" data-act="settings">Settings</button>
@@ -58,7 +72,7 @@ export class UI {
         </nav>
       </div>`);
 
-    // ---- game over
+    // ---- game over (Survival)
     this.over = el('section', 'screen over', `
       <div class="sheet">
         <h2>You fell in the valley</h2>
@@ -80,23 +94,16 @@ export class UI {
     this.baseScreen = new BaseScreen(this.profile, this.h);
 
     // ---- how to play
+    const keys = [
+      ['Move / look', 'W A S D', 'mouse'], ['Fire / aim', 'LMB', 'RMB'], ['Reload', 'R'], ['Next weapon / pick one', 'Q', '1 2 3'],
+      ['Sprint / jump', 'Shift', 'Space'], ['Crouch / lie down', 'C', 'Z'], ['Dodge roll', 'V'], ['Use a bandage', 'H'],
+      ['Open a crate / board', 'F'], ['Abilities in Operation', 'G', '4 5'], ['Pause', 'Esc'],
+    ];
     this.howto = el('section', 'screen panel', `
       <div class="sheet wide">
         <h2>How to play</h2>
-        <dl class="keys">
-          <div><dt>Move / look</dt><dd>W A S D / mouse</dd></div>
-          <div><dt>Fire / aim</dt><dd>Left / right mouse button</dd></div>
-          <div><dt>Reload</dt><dd>R</dd></div>
-          <div><dt>Next weapon / pick one</dt><dd>Q / 1 2 3</dd></div>
-          <div><dt>Sprint / jump</dt><dd>Shift / Space</dd></div>
-          <div><dt>Crouch / lie down</dt><dd>Ctrl or C / Z</dd></div>
-          <div><dt>Dodge roll</dt><dd>V</dd></div>
-          <div><dt>Use a bandage</dt><dd>H</dd></div>
-          <div><dt>Open a crate / board the helicopter</dt><dd>F</dd></div>
-          <div><dt>Abilities in Operation</dt><dd>G / 4 5</dd></div>
-          <div><dt>Pause</dt><dd>Esc</dd></div>
-        </dl>
-        <p class="hint">Health comes back only to the top of the segment you are in; bandages do the rest. Each cleared wave leaves a supply crate nearby with ammunition and bandages. A roll as you land halves a hard fall. Music by Kevin MacLeod (incompetech.com), licensed under CC BY 4.0.</p>
+        <dl class="keys">${keys.map(([a, k1, k2]) => `<div><dt>${a}</dt><dd>${k1 === 'W A S D' ? kbd(k1) : `<kbd>${k1}</kbd>`}${k2 ? ` / ${k2 === 'mouse' ? 'mouse' : k2.includes(' ') ? kbd(k2) : `<kbd>${k2}</kbd>`}` : ''}</dd></div>`).join('')}</dl>
+        <p class="hint">Health comes back only to the top of the segment you are in; bandages do the rest. Each cleared wave leaves a supply crate nearby with ammunition and bandages. A roll as you land halves a hard fall. Ctrl also crouches. Music by Kevin MacLeod (incompetech.com), licensed under CC BY 4.0.</p>
         <nav class="menu-nav row"><button class="btn" data-act="back">Back</button></nav>
       </div>`);
 
@@ -125,34 +132,56 @@ export class UI {
         <nav class="menu-nav row"><button class="btn" data-act="back">Back</button></nav>
       </div>`);
 
-    // ---- HUD
+    // ---- HUD: corners only, the centre stays clear
     this.hud = el('section', 'hud', `
+      <div class="hurt"></div>
+      <div class="arcs"><i></i><i></i><i></i><i></i></div>
       <div class="cross"><i></i><i></i><i></i><i></i><b></b></div>
       <div class="hitmark"><i></i><i></i><i></i><i></i></div>
-      <div class="arcs"><i></i><i></i><i></i><i></i></div>
-      <div class="vitals"><div class="hp-row"><span class="hp-num">100</span><span class="band"></span></div><div class="hp"><b><i></i></b><b><i></i></b><b><i></i></b><b><i></i></b></div></div>
-      <div class="ammo"><span class="wname"></span><span class="mag">30</span><span class="res">120</span></div>
-      <div class="boss"><span></span><div class="boss-bar"><i></i></div></div>
-      <div class="marker"><i></i><span></span></div>
-      <div class="status"></div>
-      <div class="salvage"><b>0</b><span>salvage</span><i></i></div>
-      <div class="marker lz"><i></i><span></span></div>
-      <div class="abil"></div>
-      <div class="toast"><strong></strong><span></span></div>
-      <div class="prompt"></div>
-      <div class="hurt"></div>
-      <div class="fps"></div>`);
+      <div class="marker t"><i></i><span></span></div>
+      <div class="marker lz t"><i></i><span></span></div>
+      <div class="nav zk t">
+        <div class="info">
+          <div class="wave status"></div>
+          <div class="line threat"></div>
+          <div class="salvage"><b>0</b><span>salvage</span><i></i></div>
+          <div class="extract"><u></u><span></span></div>
+        </div>
+      </div>
+      <div class="boss zk t"><span></span><em></em><div class="boss-bar"><s></s><i></i></div></div>
+      <div class="toast zk t"><strong></strong><span></span></div>
+      <div class="keyhint zk t">
+        <span>${kbd('W A S D')} move</span><span><kbd>Shift</kbd> sprint</span><span><kbd>C</kbd><kbd>Z</kbd> stance</span><span><kbd>V</kbd> roll</span><span><kbd>H</kbd> bandage</span><span><kbd>F</kbd> use</span>
+      </div>
+      <div class="vitals zk t">
+        <div class="hp-row"><span class="hp-num">100</span><span class="hp-max">/ 100</span></div>
+        <div class="hp"></div>
+        <div class="vit-line"><span class="band"></span><span class="stance"></span></div>
+      </div>
+      <div class="arsenal zk t">
+        <div class="ammo"><span class="mag">30</span><span class="res">120</span></div>
+        <div class="cur"><span class="wname"></span>${gun('rifle')}</div>
+        <div class="slots-row"></div>
+      </div>
+      <div class="prompt zk t"></div>
+      <div class="abil zk t"></div>
+      <div class="fps t"></div>`);
+    this.minimap = new Minimap();
+    this.hud.querySelector('.nav').prepend(this.minimap.el);
 
     root.append(this.hud, this.menu, this.pause, this.over, this.debrief, this.baseScreen.el, this.howto, this.settingsEl, this.loading);
-    this.q = (s, p = this.hud) => p.querySelector(s);
-    this.cross = this.q('.cross'); this.hitEl = this.q('.hitmark'); this.hpNum = this.q('.hp-num'); this.hpSegs = [...this.hud.querySelectorAll('.hp i')];
-    this.band = this.q('.band'); this.wname = this.q('.wname'); this.arcs = [...this.hud.querySelectorAll('.arcs i')];
-    this.bossEl = this.q('.boss'); this.bossName = this.q('.boss span'); this.bossBar = this.q('.boss-bar i'); this.marker = this.q('.marker'); this.markerText = this.q('.marker span');
-    this.mag = this.q('.mag'); this.res = this.q('.res'); this.status = this.q('.status'); this.toastEl = this.q('.toast');
-    this.prompt = this.q('.prompt'); this.hurtEl = this.q('.hurt'); this.fpsEl = this.q('.fps');
-    this.hurtV = 0; this.hitT = 0; this.toastT = 0; this.back = 'menu';
-    this.salvNum = this.q('.salvage b'); this.salvGain = this.q('.salvage i'); this.lz = this.q('.marker.lz'); this.lzText = this.q('.marker.lz span'); this.abil = this.q('.abil'); this.abEls = [];
-    this._last = {};
+    const q = (s) => this.hud.querySelector(s);
+    this.cross = q('.cross'); this.hitEl = q('.hitmark'); this.hpNum = q('.hp-num'); this.hpMax = q('.hp-max'); this.hpEl = q('.hp'); this.hpSegs = [];
+    this.band = q('.band'); this.stance = q('.stance'); this.wname = q('.wname'); this.curGun = q('.cur'); this.slotsEl = q('.slots-row');
+    this.arcs = [...this.hud.querySelectorAll('.arcs i')];
+    this.bossEl = q('.boss'); this.bossName = q('.boss span'); this.bossPct = q('.boss em'); this.bossBar = q('.boss-bar i'); this.bossGhost = q('.boss-bar s');
+    this.marker = q('.marker'); this.markerText = q('.marker span');
+    this.mag = q('.mag'); this.res = q('.res'); this.status = q('.status'); this.threat = q('.threat'); this.toastEl = q('.toast');
+    this.prompt = q('.prompt'); this.hurtEl = q('.hurt'); this.fpsEl = q('.fps'); this.keyhint = q('.keyhint');
+    this.salvNum = q('.salvage b'); this.salvGain = q('.salvage i'); this.lz = q('.marker.lz'); this.lzText = q('.marker.lz span');
+    this.extract = q('.extract'); this.extractArrow = q('.extract u'); this.extractText = q('.extract span');
+    this.abil = q('.abil'); this.abEls = [];
+    this.hurtV = 0; this.toastT = 0; this.back = 'menu'; this._last = {}; this._frame = 0; this.game = null;
 
     root.addEventListener('click', (e) => {
       const b = e.target.closest('[data-act]');
@@ -172,6 +201,9 @@ export class UI {
     this._bindSettings();
   }
 
+  // the aerial picture for the minimap, once the world is built
+  bakeMap(engine, layout) { this.minimap.bake(engine, layout); }
+
   _bindSettings() {
     const s = this.settings, root = this.settingsEl;
     const fmt = { renderScale: (v) => `${Math.round(v * 100)}%`, fov: (v) => `${v}°`, sensitivity: (v) => Number(v).toFixed(2), master: (v) => `${Math.round(v * 100)}`, music: (v) => `${Math.round(v * 100)}`, sfx: (v) => `${Math.round(v * 100)}` };
@@ -180,7 +212,11 @@ export class UI {
         const k = c.dataset.key;
         if (c.classList.contains('seg')) c.querySelectorAll('button').forEach((b) => b.classList.toggle('on', b.dataset.v === s[k]));
         else if (c.type === 'checkbox') c.checked = !!s[k];
-        else { c.value = s[k]; const o = c.parentElement.querySelector('output'); if (o) o.textContent = fmt[k] ? fmt[k](s[k]) : s[k]; }
+        else {
+          c.value = s[k];
+          c.style.setProperty('--v', `${(((s[k] - c.min) / (c.max - c.min)) * 100).toFixed(1)}%`);
+          const o = c.parentElement.querySelector('output'); if (o) o.textContent = fmt[k] ? fmt[k](s[k]) : s[k];
+        }
       });
     };
     root.addEventListener('input', (e) => {
@@ -211,9 +247,15 @@ export class UI {
     this._summary = summary;
     this.hud.classList.toggle('show', state === 'playing' || state === 'paused');
     document.body.classList.toggle('in-game', state === 'playing');
-    if (state === 'menu') this.show(this.menu);
-    else if (state === 'paused') this.show(this.pause);
-    else if (state === 'playing') this.show(null);
+    if (state === 'menu') {
+      const p = this.profile, d = p && p.data;
+      if (d && d.totals && d.totals.runs) this.menu.querySelector('.op-meta').textContent = `${fmtN(p.salvage)} salvage banked · best wave ${d.best.wave}`;
+      this.show(this.menu);
+    } else if (state === 'paused') {
+      const g = this.game;
+      this.pause.querySelector('.sub').textContent = g && g.wave ? `Wave ${g.wave} · ${g.stats.kills} down · ${fmtTime(g.playTime || 0)}` : 'The valley waits.';
+      this.show(this.pause);
+    } else if (state === 'playing') this.show(null);
     else if (state === 'over') {
       const s = summary || {};
       this.over.querySelector('.stats').innerHTML = `
@@ -250,34 +292,70 @@ export class UI {
   }
 
   hitMarker(kill, head) {
-    this.hitEl.classList.remove('on', 'kill');
+    this.hitEl.classList.remove('on', 'kill', 'head');
     void this.hitEl.offsetWidth;
     this.hitEl.classList.add('on');
     if (kill) this.hitEl.classList.add('kill');
+    if (head) this.hitEl.classList.add('head');
   }
 
   hurt() { this.hurtV = Math.min(1, this.hurtV + 0.55); }
 
+  // screen position of a world point, pinned to the screen edge when it is behind or off screen
+  _pin(node, pos, lift, cam) {
+    _p.set(pos.x, pos.y + lift, pos.z).project(cam);
+    const behind = _p.z > 1;
+    const x = Math.max(-0.92, Math.min(0.92, behind ? -Math.sign(_p.x || 1) : _p.x)), y = behind ? -0.5 : Math.max(-0.7, Math.min(0.8, _p.y));
+    node.classList.toggle('flip', x > 0.6);
+    node.style.transform = `translate(${((x * 0.5 + 0.5) * window.innerWidth).toFixed(0)}px, ${((0.5 - y * 0.5) * window.innerHeight).toFixed(0)}px)`;
+  }
+
   update(game, dt) {
+    this.game = game;
     if (this.state !== 'playing') return;
     const p = game.player, w = game.weapon, L = this._last, cam = game.engine.camera;
     const set = (key, val, fn) => { if (L[key] !== val) { L[key] = val; fn(val); } };
-    // health in four segments, bandages beside it
-    // one 25 point segment each: the maximum-health upgrade adds segments
+    this._frame++;
+    this.minimap.draw(game);
+
+    // health: one 25 point segment each; the light part shows how far it will regenerate
     const nSeg = Math.max(1, Math.round(p.maxHealth / 25)), seg = p.maxHealth / nSeg;
     set('nseg', nSeg, (n) => {
-      const hp = this.hud.querySelector('.hp');
-      hp.innerHTML = '<b><i></i></b>'.repeat(n); hp.style.gridTemplateColumns = `repeat(${n}, 1fr)`; hp.style.width = `${n * 44}px`;
-      this.hpSegs = [...hp.querySelectorAll('i')];
-      for (const k in L) if (/^seg\d/.test(k)) delete L[k];
+      this.hpEl.innerHTML = '<b><u></u><i></i></b>'.repeat(n); this.hpEl.style.gridTemplateColumns = `repeat(${n}, 1fr)`; this.hpEl.style.width = `${n * 46}px`;
+      this.hpSegs = [...this.hpEl.children].map((b) => [b.firstChild, b.lastChild]);
+      for (const k in L) if (/^(seg|cap)\d/.test(k)) delete L[k];
     });
+    set('hpmax', Math.round(p.maxHealth), (v) => { this.hpMax.textContent = `/ ${v}`; });
     set('hp', Math.ceil(p.health), (v) => { this.hpNum.textContent = v; this.hud.classList.toggle('low', v <= 35); });
-    for (let i = 0; i < nSeg; i++) set('seg' + i, Math.round(Math.max(0, Math.min(1, (p.health - i * seg) / seg)) * 50), (v) => { this.hpSegs[i].style.transform = `scaleX(${v / 50})`; });
-    set('band', p.bandaging > 0 ? 'Bandaging' : `${p.bandages} ${p.bandages === 1 ? 'bandage' : 'bandages'}`, (v) => { this.band.textContent = v; });
+    const cap = p.regenCap ?? p.maxHealth;
+    for (let i = 0; i < nSeg; i++) {
+      set('seg' + i, Math.round(Math.max(0, Math.min(1, (p.health - i * seg) / seg)) * 50), (v) => { this.hpSegs[i][1].style.transform = `scaleX(${v / 50})`; });
+      set('cap' + i, Math.round(Math.max(0, Math.min(1, (cap - i * seg) / seg)) * 50), (v) => { this.hpSegs[i][0].style.transform = `scaleX(${v / 50})`; });
+    }
+    const bmax = p.bandageMax || 3;
+    set('band', `${p.bandages}|${bmax}|${p.bandaging > 0}`, () => {
+      this.band.innerHTML = `${'<i class="on"></i>'.repeat(Math.min(p.bandages, bmax))}${'<i></i>'.repeat(Math.max(0, bmax - p.bandages))}<em>${p.bandaging > 0 ? 'Bandaging' : `${p.bandages} ${p.bandages === 1 ? 'bandage' : 'bandages'}`}</em>`;
+    });
+    set('stance', STANCE[p.stance] || '', (v) => { this.stance.textContent = v; });
+
+    // arsenal
+    set('wid', w.id, (v) => { this.curGun.querySelector('svg').innerHTML = GUNS[v] || GUNS.rifle; });
     set('wname', w.name, (v) => { this.wname.textContent = v; });
     set('mag', w.ammo, (v) => { this.mag.textContent = v; this.mag.classList.toggle('empty', v <= Math.max(1, w.magSize / 6)); });
     set('res', w.reserve, (v) => { this.res.textContent = Number.isFinite(v) ? v : '∞'; });
-    set('status', `${game.wave}|${game.stats.kills}`, () => { this.status.textContent = game.wave ? `Wave ${game.wave} · ${game.stats.kills} down` : ''; });
+    if (w.inventory && (L.wid !== L.invId || L.mag !== L.invMag || this._frame % 30 === 0)) {
+      L.invId = L.wid; L.invMag = L.mag;
+      const inv = w.inventory();
+      set('inv', inv.map((s) => `${s.id}${s.owned ? 1 : 0}${s.active ? 1 : 0}${s.ammo + (Number.isFinite(s.reserve) ? s.reserve : 1)}`).join(), () => {
+        this.slotsEl.innerHTML = inv.map((s, i) => `<span class="wslot${s.active ? ' on' : ''}${s.owned === false ? ' off' : ''}${s.owned !== false && !s.active && s.ammo + (Number.isFinite(s.reserve) ? s.reserve : 1) === 0 ? ' dry' : ''}"><kbd>${s.slot || i + 1}</kbd>${gun(s.id)}</span>`).join('');
+      });
+    }
+
+    // wave header and threat
+    const left = game.wave ? (game.zombies.aliveCount || 0) + (game.queue || 0) : 0;
+    set('status', `${game.wave}|${game.waveKind}`, () => { this.status.innerHTML = game.wave ? `Wave ${game.wave}${KIND[game.waveKind] ? `<span>${KIND[game.waveKind]}</span>` : ''}` : ''; });
+    set('threat', `${game.wave}|${left}|${game.stats.kills}`, () => { this.threat.textContent = game.wave ? `${left} left · ${game.stats.kills} down` : ''; });
+
     // crosshair: its gap is the real spread cone; hidden while aiming, sprinting or behind the scope
     const spread = Math.max(5, (w.spread / Math.tan((cam.fov * Math.PI) / 360)) * (window.innerHeight / 2));
     this.cross.style.setProperty('--s', `${Math.min(80, spread).toFixed(1)}px`);
@@ -285,35 +363,37 @@ export class UI {
     // where the blows came from
     for (let i = 0; i < this.arcs.length; i++) {
       const a = p.damageArcs[i], e = this.arcs[i];
-      if (a && a.directional) { e.style.opacity = String(Math.max(0, 1 - a.age / a.life) * a.strength); e.style.transform = `rotate(${a.angle.toFixed(3)}rad) translateY(-190px)`; } else if (e.style.opacity !== '0') e.style.opacity = '0';
+      if (a && a.directional) { e.style.opacity = String(Math.max(0, 1 - a.age / a.life) * (0.45 + 0.55 * a.strength)); e.style.transform = `rotate(${a.angle.toFixed(3)}rad)`; } else if (e.style.opacity !== '0') e.style.opacity = '0';
     }
     const boss = game.boss;
     set('boss', boss ? boss.name : '', (v) => { this.bossEl.classList.toggle('on', !!v); this.bossName.textContent = v; });
-    if (boss) set('bossHp', Math.round(boss.frac * 200), (v) => { this.bossBar.style.transform = `scaleX(${v / 200})`; });
+    if (boss) set('bossHp', Math.round(boss.frac * 200), (v) => { this.bossBar.style.transform = this.bossGhost.style.transform = `scaleX(${v / 200})`; this.bossPct.textContent = `${Math.ceil(v / 2)}%`; });
     // the supply crate, pinned to where it is (or to the screen edge on that side)
     const crate = game.supply.crates.find((c) => !c.opened);
     set('crate', !!crate, (v) => { this.marker.classList.toggle('on', v); });
     if (crate) {
-      _p.set(crate.pos.x, crate.pos.y + 0.9, crate.pos.z).project(cam);
-      const behind = _p.z > 1;
-      const x = Math.max(-0.92, Math.min(0.92, behind ? -Math.sign(_p.x || 1) : _p.x)), y = behind ? -0.6 : Math.max(-0.8, Math.min(0.85, _p.y));
-      this.marker.style.transform = `translate(${((x * 0.5 + 0.5) * window.innerWidth).toFixed(0)}px, ${((0.5 - y * 0.5) * window.innerHeight).toFixed(0)}px)`;
+      this._pin(this.marker, crate.pos, 0.9, cam);
       set('crateD', Math.round(Math.hypot(crate.pos.x - p.pos.x, crate.pos.z - p.pos.z)), (v) => { this.markerText.textContent = `Supplies · ${v} m`; });
     }
     // Operation: salvage, the way to the helicopter, ability rings
     const op = game.mode === 'operation' ? game.operation : null, ex = op ? op.extraction : null;
     set('op', !!op, (v) => { this.hud.classList.toggle('op', v); });
     set('cine', !!(op && op.cinematic), (v) => { this.hud.classList.toggle('cine', v); });
-    set('lz', ex ? ex.state : '', (v) => { this.lz.classList.toggle('on', !!v); });
+    set('lz', ex ? ex.state : '', (v) => { this.lz.classList.toggle('on', !!v); this.extract.classList.toggle('on', !!v); });
     if (ex) {
-      _p.set(ex.pos.x, ex.pos.y + 2.6, ex.pos.z).project(cam);
-      const behind = _p.z > 1;
-      const x = Math.max(-0.92, Math.min(0.92, behind ? -Math.sign(_p.x || 1) : _p.x)), y = behind ? -0.45 : Math.max(-0.8, Math.min(0.85, _p.y));
-      this.lz.style.transform = `translate(${((x * 0.5 + 0.5) * window.innerWidth).toFixed(0)}px, ${((0.5 - y * 0.5) * window.innerHeight).toFixed(0)}px)`;
-      set('lzText', ex.state === 'waiting' ? `Extraction · ${Math.round(ex.dist)} m · ${fmtTime(Math.max(0, Math.ceil(ex.timeLeft)))}` : `Helicopter inbound · ${Math.round(ex.dist)} m`, (v) => { this.lzText.textContent = v; });
+      this._pin(this.lz, ex.pos, 2.6, cam);
+      const d = Math.round(ex.dist);
+      set('lzText', ex.state === 'waiting' ? `${d}|${Math.ceil(ex.timeLeft)}` : `${d}`, () => {
+        this.lzText.textContent = `Extraction · ${d} m`;
+        this.extractText.innerHTML = ex.state === 'waiting' ? `Extraction <b>${fmtTime(Math.max(0, Math.ceil(ex.timeLeft)))}</b> · ${d} m` : `Helicopter inbound · ${d} m`;
+      });
+      cam.getWorldDirection(_d);
+      const yaw = Math.atan2(-_d.x, -_d.z), dx = ex.pos.x - cam.position.x, dz = ex.pos.z - cam.position.z;
+      const sx = dx * Math.cos(yaw) - dz * Math.sin(yaw), sy = dx * Math.sin(yaw) + dz * Math.cos(yaw);
+      this.extractArrow.style.transform = `rotate(${Math.atan2(sx, -sy).toFixed(2)}rad)`;
     }
     if (op) {
-      set('salv', Math.round(op.salvage), (v) => { this.salvNum.textContent = v; });
+      set('salv', Math.round(op.salvage), (v) => { this.salvNum.textContent = fmtN(v); });
       set('gain', op.gainSeq, (v) => { if (!v) return; this.salvGain.textContent = `+${op.gain}`; this.salvGain.classList.remove('on'); void this.salvGain.offsetWidth; this.salvGain.classList.add('on'); });
       const abs = op.abilities;
       set('abs', abs.map((a) => a.id).join(), () => {
@@ -323,25 +403,32 @@ export class UI {
       });
       for (let i = 0; i < abs.length; i++) {
         const a = abs[i], live = a.active > 0, k = live ? a.active / (a.duration || 1) : a.cooldown ? a.cd / a.cooldown : 0;
-        set('ab:' + i, (live ? 1000 : 0) + Math.round(k * 250), () => { const e = this.abEls[i]; e.style.setProperty('--k', k.toFixed(3)); e.classList.toggle('live', live); e.classList.toggle('wait', !live && a.cd > 0); });
+        set('ab:' + i, (live ? 1000 : 0) + Math.round(k * 250), () => { const e = this.abEls[i]; e.style.setProperty('--k2', k.toFixed(3)); e.classList.toggle('live', live); e.classList.toggle('wait', !live && a.cd > 0); });
       }
     }
     this.hurtV = Math.max(0, this.hurtV - dt * 0.9);
-    const low = p.health < 40 ? (40 - p.health) / 40 * 0.55 : 0;
+    const low = p.health < 40 ? ((40 - p.health) / 40) * 0.55 : 0;
     this.hurtEl.style.opacity = String(Math.min(1, this.hurtV + low));
     if (this.toastT > 0) { this.toastT -= dt; if (this.toastT <= 0) this.toastEl.classList.remove('on'); }
-    let prompt = '';
-    if (!p.alive) prompt = '';
-    else if (!p.script && document.pointerLockElement !== game.engine.canvas) prompt = 'Click to take aim';
-    else if (p.boundary > 0.3) prompt = 'Turn back — the valley is sealed beyond this point';
-    else if (game.interact) prompt = `${game.interact.key} · ${game.interact.text}`;
-    else if (p.bandaging > 0) prompt = 'Applying a bandage';
-    else if (p.blocked) prompt = 'No room to stand up here';
-    else if (w.reloading) prompt = 'Reloading';
-    else if (w.ammo === 0 && w.reserve === 0) prompt = 'Out of ammunition — press Q for another weapon';
-    else if (w.ammo <= Math.max(1, w.magSize / 6) && !w.busy) prompt = 'Press R to reload';
-    else if (p.health <= 50 && p.bandages > 0) prompt = 'Press H to use a bandage';
-    set('prompt', prompt, (v) => { this.prompt.textContent = v; this.prompt.classList.toggle('on', !!v); });
+    set('hint', (game.playTime || 0) > 60, (v) => { this.keyhint.classList.toggle('gone', v); });
+
+    // one prompt at a time, the key first
+    let key = '', text = '';
+    if (!p.alive) text = '';
+    else if (!p.script && document.pointerLockElement !== game.engine.canvas) text = 'Click to take aim';
+    else if (p.boundary > 0.3) text = 'Turn back, the valley is sealed beyond this point';
+    else if (game.interact) { key = game.interact.key; text = game.interact.text; }
+    else if (p.bandaging > 0) text = 'Applying a bandage';
+    else if (p.blocked) text = 'No room to stand up here';
+    else if (w.reloading) text = 'Reloading';
+    else if (w.ammo === 0 && w.reserve === 0) { key = 'Q'; text = 'Out of ammunition, switch weapon'; }
+    else if (w.ammo <= Math.max(1, w.magSize / 6) && !w.busy) { key = 'R'; text = 'Reload'; }
+    else if (p.health <= 50 && p.bandages > 0) { key = 'H'; text = 'Use a bandage'; }
+    set('prompt', key + '|' + text, () => {
+      this.prompt.innerHTML = key ? `<kbd>${key}</kbd><span>${text}</span>` : text;
+      this.prompt.classList.toggle('plain', !key);
+      this.prompt.classList.toggle('on', !!text);
+    });
     if (this.settings.showFps) { this.fpsEl.textContent = `${Math.round(game.fps || 0)} fps`; this.fpsEl.style.display = 'block'; } else if (L.fpsHidden !== true) { this.fpsEl.style.display = 'none'; L.fpsHidden = true; }
     if (this.settings.showFps) L.fpsHidden = false;
   }
