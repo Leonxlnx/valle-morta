@@ -6,12 +6,27 @@ import { G } from './shared.js';
 import { Sky } from './sky.js';
 import { PostFX } from './post.js';
 
+// Each preset is one deliberate bundle (measured on the integrated Radeon 780M, street view):
+//   low     1280x720 laptops on battery: 0.6 scale, small shadow map, no AO
+//   medium  1920x1080 at 60 fps: 0.75 scale, 2048 shadows over 70 m, half the grass
+//   high    1280x720 at 60 fps (14 ms): native scale, FXAA instead of MSAA, 2048 shadows over 95 m
+//   ultra   the film and fast GPUs: MSAA 4, 4096 shadows over 130 m, 4K sky, full grass
+// shadowFade: the outer part of the shadow volume (as a fraction of its half width) fades out
 export const QUALITY = {
-  low:    { scale: 0.6,  msaa: 0, shadow: 1024, shadowRange: 55, pano: [1024, 256], cloudSteps: 36, ao: false, vol: true, volSteps: 14, volScale: 4, texSize: 512,  grass: 0.35, aniso: 2,  far: 0.5 },
-  medium: { scale: 0.75, msaa: 0, shadow: 2048, shadowRange: 70, pano: [2048, 512], cloudSteps: 48, ao: true,  vol: true, volSteps: 18, volScale: 3, texSize: 1024, grass: 0.6,  aniso: 4,  far: 1 },
-  high:   { scale: 1.0,  msaa: 2, shadow: 4096, shadowRange: 130, pano: [3072, 768], cloudSteps: 56, ao: true,  vol: true, volSteps: 22, volScale: 3, texSize: 1024, grass: 0.85, aniso: 16,  far: 1 },
-  ultra:  { scale: 1.0,  msaa: 4, shadow: 4096, shadowRange: 130, pano: [4096, 1024], cloudSteps: 72, ao: true, vol: true, volSteps: 30, volScale: 2, texSize: 2048, grass: 1.0,  aniso: 16, far: 1 },
+  low:    { scale: 0.6,  msaa: 0, shadow: 1024, shadowRange: 55,  pano: [1024, 256],  cloudSteps: 36, ao: false, vol: true, volSteps: 12, volScale: 4, texSize: 512,  grass: 0.35, aniso: 2,  far: 0.5, sharpen: 0.8 },
+  medium: { scale: 0.75, msaa: 0, shadow: 2048, shadowRange: 70,  pano: [2048, 512],  cloudSteps: 44, ao: true,  vol: true, volSteps: 16, volScale: 4, texSize: 1024, grass: 0.55, aniso: 4,  far: 1,   sharpen: 0.9 },
+  high:   { scale: 1.0,  msaa: 0, shadow: 2048, shadowRange: 95,  pano: [2048, 512],  cloudSteps: 48, ao: true,  vol: true, volSteps: 18, volScale: 3, texSize: 1024, grass: 0.8,  aniso: 8,  far: 1,   sharpen: 0.95 },
+  ultra:  { scale: 1.0,  msaa: 4, shadow: 4096, shadowRange: 130, pano: [4096, 1024], cloudSteps: 72, ao: true,  vol: true, volSteps: 30, volScale: 2, texSize: 2048, grass: 1.0,  aniso: 16, far: 1,   sharpen: 0.8 },
 };
+
+// Shadows fade out over the rim of the shadow volume instead of ending in a hard line (the volume
+// is a square centred on the viewer, so the rim is far away in every direction).
+{
+  const C = THREE.ShaderChunk, src = C.shadowmap_pars_fragment, cut = src.indexOf('getPointShadow');
+  const head = cut > 0 ? src.slice(0, cut) : src;
+  C.shadowmap_pars_fragment = head.replaceAll('return mix( 1.0, shadow, shadowIntensity );',
+    'return mix( 1.0, shadow, shadowIntensity * ( 1.0 - smoothstep( 0.86, 0.985, max( abs( shadowCoord.x * 2.0 - 1.0 ), abs( shadowCoord.y * 2.0 - 1.0 ) ) ) ) );') + (cut > 0 ? src.slice(cut) : '');
+}
 
 export class Engine {
   constructor(canvas, qualityName = 'high') {
@@ -104,6 +119,7 @@ export class Engine {
     });
     const s = this.post.settings;
     s.ao = this.q.ao; s.volumetric = this.q.vol; s.volSteps = this.q.volSteps; s.volScale = this.q.volScale;
+    if (this.q.sharpen !== undefined) s.sharpen = this.q.sharpen;
     this.post.setSize(w, h);
     this.camera.aspect = outW / outH; this.camera.updateProjectionMatrix();
     this.weaponCamera.aspect = outW / outH; this.weaponCamera.updateProjectionMatrix();

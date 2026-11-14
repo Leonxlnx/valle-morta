@@ -33,6 +33,9 @@ vec4 vmMeadowVar(vec2 wxz) {
 `;
 
 const LAYER_LIB = /* glsl */`
+#ifndef VM_FULL_D
+#define VM_FULL_D 1e9
+#endif
 uniform sampler2DArray uTCol;
 uniform sampler2DArray uTNrm;
 uniform sampler2DArray uTArh;
@@ -72,6 +75,14 @@ VmLayer vmSampleC(float idx, vec2 uv, vec2 dx, vec2 dy, vec4 st, float k) {
   L.n.y = -L.n.y;
   vec3 a = textureGrad(uTArh, vec3(uv, idx), dx, dy).rgb;
   L.ao = mix(1.0, a.r, 0.5); L.rough = a.g; L.h = a.b;
+  return L;
+}
+// Distance-switched layer sample for the local ground: the full stochastic pair up to 70 m, beyond
+// it the colour pair only (normal and relief of one plain tile are far below a pixel there).
+VmLayer vmSampleD(float idx, vec2 uv, vec2 dx, vec2 dy, vec4 st, float k, float dist) {
+  if (dist < VM_FULL_D) return vmSampleS(idx, uv, dx, dy, st, k);
+  VmLayer L = vmSampleC(idx, uv, dx, dy, st, k);
+  L.ao = L.ao * 2.0 - 1.0;   // undo the sward's halved occlusion
   return L;
 }
 void vmBlend(inout VmLayer A, VmLayer B, float w, float sharp) {
@@ -131,8 +142,11 @@ const LOCAL_SURFACE = /* glsl */`
   float slope = 1.0 - N0.y;
 
   vec2 uv = wxz / 4.0;
-  // slightly tightened gradients: a crisper ground at grazing angles (anisotropic filtering does the rest)
-  vec2 dx = dFdx(uv) * 0.75, dy = dFdy(uv) * 0.75;
+  // slightly tightened gradients near the eye: a crisper ground at grazing angles (anisotropic
+  // filtering does the rest). Further out the true gradients: a finer mip there only costs bandwidth
+  // and adds shimmer.
+  float gk = mix(0.75, VM_GK_FAR, smoothstep(25.0, 80.0, dist));
+  vec2 dx = dFdx(uv) * gk, dy = dFdy(uv) * gk;
   vec4 mv = vmMeadowVar(wxz);
   float macro2 = texture2D(uNoiseTex, wxz / 53.0 + 0.31).g;
   float fine = texture2D(uNoiseTex, wxz / 9.0 + 0.7).b;
@@ -143,15 +157,19 @@ const LOCAL_SURFACE = /* glsl */`
   float si = floor(sk), sf = fract(sk);
   vec4 sOff = vec4(fract(sin(vec2(3.0, 7.0) * si) * 43.7), fract(sin(vec2(3.0, 7.0) * (si + 1.0)) * 43.7));
 
-  // meadow
-  VmLayer L = vmSampleC(0.0, uv, dx, dy, sOff, sf);
+  // meadow: the 4 m tile near the eye, a rotated larger-scale copy carries the distance. Beyond
+  // 95 m the 4 m tile is sub-pixel noise and is no longer sampled (its weight runs out smoothly).
   float farK = smoothstep(16.0, 90.0, dist);
+  float farOnly = smoothstep(60.0, 95.0, dist) * VM_FAR_ONLY;
+  VmLayer L;
+  if (farOnly < 0.999) L = vmSampleC(0.0, uv, dx, dy, sOff, sf);
   if (farK > 0.01) {
-    // rotated, larger scale copy carries the distance
     vec2 uv2 = mat2(0.819, -0.574, 0.574, 0.819) * uv * 0.23;
     VmLayer Lf = vmSampleC(0.0, uv2, dx * 0.23, dy * 0.23, sOff * 1.7 + 0.37, sf);
-    L.col = mix(L.col, Lf.col, farK * 0.8); L.n = mix(L.n, Lf.n, farK * 0.6);
-    L.rough = mix(L.rough, Lf.rough, farK * 0.6); L.h = mix(L.h, Lf.h, farK * 0.5);
+    if (farOnly >= 0.999) L = Lf;
+    float kc = mix(farK * 0.8, 1.0, farOnly), kn = mix(farK * 0.6, 1.0, farOnly), kh = mix(farK * 0.5, 1.0, farOnly);
+    L.col = mix(L.col, Lf.col, kc); L.n = mix(L.n, Lf.n, kn);
+    L.rough = mix(L.rough, Lf.rough, kn); L.h = mix(L.h, Lf.h, kh); L.ao = mix(L.ao, Lf.ao, kh);
   }
   // lush / dry / mossy variation across the meadow
   vec3 tint = mv.rgb;
@@ -171,10 +189,10 @@ const LOCAL_SURFACE = /* glsl */`
 
   // forest floor under the conifers
   float wF = mC.r * smoothstep(0.25, 0.6, macro2 * 0.6 + mC.r * 0.7);
-  if (wF > 0.004) vmBlend(L, vmSampleS(3.0, uv, dx, dy, sOff, sf), wF, 0.3);
+  if (wF > 0.035) vmBlend(L, vmSampleD(3.0, uv, dx, dy, sOff, sf, dist), wF, 0.3);
   // bedrock where the ground is steep
   float wR = smoothstep(0.24, 0.42, slope + (macro2 - 0.5) * 0.16 + (fine - 0.5) * 0.08);
-  if (wR > 0.004) {
+  if (wR > 0.035) {
     vec2 ru = wxz / 6.0; vmBlend(L, vmSample(4.0, ru, dx * 0.667, dy * 0.667), wR, 0.2);
     // moss in patches on the damp rock
     L.col = mix(L.col, uMeadow * vec3(1.15, 1.3, 0.62), wR * smoothstep(0.5, 0.72, macro2 * 0.55 + fine * 0.45) * 0.55);
@@ -186,21 +204,21 @@ const LOCAL_SURFACE = /* glsl */`
   // noise-placed breaks in the sward: bare soil, and stones lying in some of them
   float bare = mv.a * (1.0 - wF) * (1.0 - wR);
   wM = max(wM, bare * 0.75);
-  if (wM > 0.004) vmBlend(L, vmSampleS(1.0, uv, dx, dy, sOff, sf), wM, 0.22);
+  if (wM > 0.035) vmBlend(L, vmSampleD(1.0, uv, dx, dy, sOff, sf, dist), wM, 0.22);
   float wSt = bare * smoothstep(0.5, 0.68, fine2);
-  if (wSt > 0.004) vmBlend(L, vmSampleS(5.0, uv * 1.37, dx * 1.37, dy * 1.37, sOff.yxwz, sf), wSt, 0.3);
+  if (wSt > 0.035) vmBlend(L, vmSampleD(5.0, uv * 1.37, dx * 1.37, dy * 1.37, sOff.yxwz, sf, dist), wSt, 0.3);
   // dirt road
   float wRoad = mA.r;
-  if (wRoad > 0.004) vmBlend(L, vmSampleS(2.0, uv, dx, dy, sOff, sf), wRoad, 0.18);
+  if (wRoad > 0.035) vmBlend(L, vmSampleD(2.0, uv, dx, dy, sOff, sf, dist), wRoad, 0.18);
   // cobbled streets
   float wC = mB.g;
-  if (wC > 0.004) vmBlend(L, vmSample(7.0, uv, dx, dy), wC, 0.14);
+  if (wC > 0.035) vmBlend(L, vmSample(7.0, uv, dx, dy), wC, 0.14);
   // rubble aprons around ruined buildings
   float wRb = mA.b;
-  if (wRb > 0.004) vmBlend(L, vmSampleS(6.0, uv, dx, dy, sOff, sf), wRb, 0.25);
+  if (wRb > 0.035) vmBlend(L, vmSampleD(6.0, uv, dx, dy, sOff, sf, dist), wRb, 0.25);
   // river bed
   float wBed = mB.r;
-  if (wBed > 0.004) vmBlend(L, vmSampleS(5.0, uv, dx, dy, sOff, sf), wBed, 0.2);
+  if (wBed > 0.035) vmBlend(L, vmSampleD(5.0, uv, dx, dy, sOff, sf, dist), wBed, 0.2);
 
   // rain-soaked ground and standing water
   float wet = mB.b;
@@ -410,7 +428,10 @@ export class Terrain {
         vertexPars: LOCAL_VERT_PARS,
         vertexNormal: 'objectNormal = vec3(0.0, 1.0, 0.0);',
         vertexBegin: LOCAL_VERT_BEGIN,
-        fragmentPars: LOCAL_FRAG_PARS,
+        // ultra (the film) keeps the full ground at every distance
+        fragmentPars: (engine.qualityName === 'ultra'
+          ? '#define VM_FULL_D 1e9\n#define VM_GK_FAR 0.75\n#define VM_FAR_ONLY 0.0\n'
+          : '#define VM_FULL_D 70.0\n#define VM_GK_FAR 1.0\n#define VM_FAR_ONLY 1.0\n') + LOCAL_FRAG_PARS,
         surface: LOCAL_SURFACE,
         ao: 'vmTerrainAO',
         patch: (shader) => {

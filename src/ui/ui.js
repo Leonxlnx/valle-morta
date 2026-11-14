@@ -12,7 +12,8 @@ const DEFAULTS = {
 export function loadSettings() {
   try { return { ...DEFAULTS, ...JSON.parse(localStorage.getItem('valle-morta-settings') || '{}') }; } catch (e) { return { ...DEFAULTS }; }
 }
-function saveSettings(s) { try { localStorage.setItem('valle-morta-settings', JSON.stringify(s)); } catch (e) { /* private mode */ } }
+export function hasSavedSettings() { try { return !!localStorage.getItem('valle-morta-settings'); } catch (e) { return false; } }
+export function saveSettings(s) { try { localStorage.setItem('valle-morta-settings', JSON.stringify(s)); } catch (e) { /* private mode */ } }
 
 const el = (tag, cls, html) => { const e = document.createElement(tag); if (cls) e.className = cls; if (html !== undefined) e.innerHTML = html; return e; };
 const fmtTime = (t) => `${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padStart(2, '0')}`;
@@ -114,7 +115,7 @@ export class UI {
         <div class="rows">
           <h3>Graphics</h3>
           <div class="row"><span>Quality</span>
-            <span class="seg" data-key="quality">
+            <span class="seg" data-key="quality" title="">
               <button type="button" data-v="low">Low</button><button type="button" data-v="medium">Medium</button><button type="button" data-v="high">High</button><button type="button" data-v="ultra">Ultra</button>
             </span></div>
           <label class="row"><span>Render scale</span><input type="range" min="0.5" max="1" step="0.05" data-key="renderScale"><output></output></label>
@@ -210,7 +211,13 @@ export class UI {
     const sync = () => {
       root.querySelectorAll('[data-key]').forEach((c) => {
         const k = c.dataset.key;
-        if (c.classList.contains('seg')) c.querySelectorAll('button').forEach((b) => b.classList.toggle('on', b.dataset.v === s[k]));
+        if (c.classList.contains('seg')) {
+          c.querySelectorAll('button').forEach((b) => {
+            b.classList.toggle('on', b.dataset.v === s[k]);
+            // the preset chosen by the first-start benchmark says so
+            b.textContent = b.textContent.replace(/ \(auto\)$/, '') + (k === 'quality' && s.autoQuality && s.autoQuality.pick === b.dataset.v ? ' (auto)' : '');
+          });
+        }
         else if (c.type === 'checkbox') c.checked = !!s[k];
         else {
           c.value = s[k];
@@ -231,6 +238,7 @@ export class UI {
       saveSettings(s); sync(); this.h.settings?.(k);
     });
     sync();
+    this.syncSettings = sync;
   }
 
   show(screen) {

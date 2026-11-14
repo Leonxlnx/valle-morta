@@ -7,7 +7,7 @@ import { Terrain } from './world/terrain.js';
 import { createLayout } from './world/layout.js';
 import { buildWorld } from './world/world.js';
 import { Game } from './game/game.js';
-import { UI, loadSettings } from './ui/ui.js';
+import { UI, loadSettings, saveSettings, hasSavedSettings } from './ui/ui.js';
 import { Progress } from './game/progress.js';
 import { Operation } from './game/operation.js';
 import { createFilm } from './cinematic/film.js';
@@ -37,6 +37,8 @@ const VIEWS = {
 
 async function boot() {
   const settings = loadSettings();
+  // first start (no saved settings): a one-second benchmark at the end of loading picks the preset
+  const firstRun = !AUTO && !params.get('q') && !hasSavedSettings();
   if (params.get('q')) settings.quality = params.get('q');
   let game = null, engine = null;
   // the player asks for raw (unaccelerated) mouse input and falls back to the plain lock
@@ -100,6 +102,39 @@ async function boot() {
     engine.camera.lookAt(v.look[0], v.look[1], v.look[2]);
   };
 
+  // Renders the street view (the most expensive hero view) on the current preset, three batches of
+  // eight synced frames (about a second on the target GPU), and keeps the fastest preset expected
+  // to hold 60 fps. On an unsteady (busy) machine or near a threshold it takes the lower preset.
+  const autoQuality = async () => {
+    const cam = engine.camera, p0 = cam.position.clone(), r0 = cam.rotation.clone();
+    setView('street');
+    const gl = engine.gl, px = new Uint8Array(4);
+    const sync = () => gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px);
+    const run = (n) => {
+      sync();
+      const t0 = performance.now();
+      for (let i = 0; i < n; i++) { terrain.update(cam); for (const u of world.updaters) u(0, cam, engine.time); engine.render(0); }
+      sync();
+      return (performance.now() - t0) / n;
+    };
+    run(4); await nextFrame();
+    const t = [];
+    for (let i = 0; i < 3; i++) { t.push(run(8)); await nextFrame(); }
+    t.sort((a, b) => a - b);
+    // scale to the high preset at full render scale (the bench runs on whatever was loaded)
+    const rel = { low: 0.4, medium: 0.62, high: 1, ultra: 1.9 }[engine.qualityName] || 1;
+    const ms = t[1] / rel / Math.max(0.5, settings.renderScale) ** 2;
+    const unsure = t[2] > t[0] * 1.3;
+    const m = unsure ? 0.9 : 1;   // margin: prefer the lower preset when the timing is unsteady
+    const pick = ms <= 14.5 * m ? 'high' : ms <= 23 * m ? 'medium' : 'low';
+    cam.position.copy(p0); cam.rotation.copy(r0);
+    settings.autoQuality = { pick, ms: +ms.toFixed(1), unsure };
+    console.info(`[auto quality] ${ms.toFixed(1)} ms on high (batches ${t.map((x) => x.toFixed(1)).join(' ')}) -> ${pick}`);
+    if (pick !== settings.quality) { settings.quality = pick; applySetting('quality'); }
+    saveSettings(settings);
+    ui.syncSettings?.();
+  };
+
   // pointer lock <-> pause
   document.addEventListener('pointerlockchange', () => {
     if (document.pointerLockElement !== canvas && game.state === 'playing' && !AUTO) game.pause();
@@ -126,6 +161,10 @@ async function boot() {
       engine.camera.rotation.x = THREE.MathUtils.clamp(engine.camera.rotation.x - e.movementY * 0.003, -1.5, 1.5);
     });
   } else {
+    if (firstRun) {
+      ui.progress(0.99, 'Tuning graphics');
+      try { await autoQuality(); } catch (e) { console.error('[auto quality] failed:', e); }
+    }
     ui.progress(1);
     game.toMenu();
   }

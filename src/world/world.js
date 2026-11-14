@@ -8,6 +8,8 @@
 // }
 // A module that throws is logged and skipped so one broken file never takes
 // the whole scene down. `?off=a,b` in the URL skips modules by name.
+import { splitStatic } from './chunks.js';
+
 const LOADERS = {
   water: () => import('./water.js'),
   buildings: () => import('./buildings.js'),
@@ -27,6 +29,13 @@ export async function buildWorld(engine, terrain, layout, off = new Set(), onPro
       console.error(`[world] module "${name}" failed:`, e);
     }
     onProgress(++i / names.length, name);
+  }
+  // the merged village and prop meshes span the valley: cut them into cullable cells
+  try {
+    const st = splitStatic(ctx.scene, (o) => /^(bld:|props-)/.test(o.name));
+    ctx.mods.chunks = st;
+  } catch (e) {
+    console.error('[world] chunk split failed:', e);
   }
   return ctx;
 }
