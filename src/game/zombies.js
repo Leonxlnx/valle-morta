@@ -259,6 +259,8 @@ const ZOMBIE_SKIN = {
  vmSkinW = texture2D(roughnessMap, vRoughnessMapUv).b;
 #endif
 `,
+  // soft fill from the viewer's side: a face in shade or against the light stays readable
+  emissive: ' totalEmissiveRadiance += diffuseColor.rgb * 0.14 * (0.3 + 0.7 * max(0.0, normalize(vNormal).z));',
   patch(shader) { shader.fragmentShader = shader.fragmentShader.replace(/RE_Direct\(\s*directLight,[^;]*;/g, (m) => `${m}
 		VM_SKIN_WRAP(directLight)`); },
 };

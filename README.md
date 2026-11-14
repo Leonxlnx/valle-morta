@@ -72,6 +72,8 @@ All tools drive the real game in headless Chrome against the running dev server,
 | `node tools/uishots.mjs --w 1280 --h 720` | menus, settings, Base and the HUD in both modes |
 | `node tools/zslip.mjs` | planted-foot slip of each infected type and gait |
 | `node tools/perf.mjs`, `node tools/shot.mjs --bench` | frame timing |
+| `node tools/audit.mjs` | world audit with coordinates: floating, hanging and buried parts, missing colliders, chunk culling, z-fighting (`--only float,col,cull,zf`) |
+| `node tools/zcap.mjs --look` | portrait and scene sheets of every infected type and variant |
 | `node tools/bake-terrain.mjs` | re-bakes the erosion-simulated terrain |
 | `node cinematic/capture.mjs --stills` | quick framing check of the film (without `--stills` it renders the full 4K HDR film, which needs ffmpeg with libx265 and takes a long time) |
 
@@ -83,6 +85,9 @@ Offline generators live in `tools/texgen/` (PBR textures, Python + numpy) and `t
 - The weapons, arms and infected are fully procedural and show it at close range. Aiming the rifle, the receiver fills the lower part of the view.
 - The middle span of the bridge is blown out: the bridge cannot be crossed on top; the river can be waded.
 - Infected planted feet still slide by roughly 10 % of their travel while they steer round corners.
+- The world audit still lists about 270 coplanar overlaps (z-fighting), mostly floor and roof surfaces lying on each other inside the house meshes and stacked crates; one floor fragment in house20 (122.1, 3.4, -26.9) hangs 0.17 m above the ground.
+- The dark rooms seen through ground-floor windows have no collider of their own; the walls around the window hold the player out.
+- Infected skin gets a small fill from the viewer's side so faces stay readable in shade; against a bright sky they are still darker than the scene around them.
 - The wave bell is a temple bell recording, because no freely licensed church bell could be found; nobody has auditioned the sound set by ear.
 
 ## Credits

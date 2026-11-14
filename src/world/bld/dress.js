@@ -226,8 +226,15 @@ export function dressOpening(B, fr, o, S, solidAt, sp) {
       const ang = S.enterable ? R.range(1.45, 1.65) : R.range(0.5, 1.6), hu = o.u0 + 0.03, hd = rd + 0.03;
       const dir = [fr.ux * Math.cos(ang) - fr.nx * Math.sin(ang), 0, fr.uz * Math.cos(ang) - fr.nz * Math.sin(ang)];
       const H0 = FP(fr, hu, 0, hd), C = [H0[0] + dir[0] * len / 2, h / 2 + 0.01, H0[2] + dir[2] * len / 2];
-      mb.set(lay, tint);
-      mb.obox(C, [dir[0] * len / 2, 0, dir[2] * len / 2], [0, h / 2, 0], [-dir[2] * 0.022, 0, dir[0] * 0.022], { tile: 2, uo: R.f() });
+      // a leaf swung over a floorless ruin whose ground falls away would hang in the air: leave it off
+      const E = [H0[0] + dir[0] * len, H0[2] + dir[2] * len];
+      const sag = S.enterable ? 0 : -Math.min(S.gl(C[0], C[2]), S.gl(E[0], E[1]));
+      if (sag < 0.08) {
+        mb.set(lay, tint);
+        mb.obox(C, [dir[0] * len / 2, 0, dir[2] * len / 2], [0, h / 2, 0], [-dir[2] * 0.022, 0, dir[0] * 0.022], { tile: 2, uo: R.f() });
+        // the leaf blocks like the wall it stands against (thin box along the leaf)
+        if (B.cb) B.cb.box(Math.min(H0[0], E[0]) - 0.03, 0, Math.min(H0[2], E[1]) - 0.03, Math.max(H0[0], E[0]) + 0.03, h, Math.max(H0[2], E[1]) + 0.03);
+      }
     } else if (o.leaf === 'off') {
       // torn off, lying in front of the doorway
       const du = R.range(-0.6, 0.6), dd0 = R.range(-0.9, -1.6), a = R.range(-0.6, 0.6);
@@ -261,7 +268,7 @@ export function dressOpening(B, fr, o, S, solidAt, sp) {
 }
 
 function interiorBox(mb, fr, o, S, D, R) {
-  const t = fr.t, fy = Math.floor((o.v0 + 0.1) / S.fH) * S.fH, ua = o.u0 - 0.6, ub = o.u1 + 0.6, kb = (S.nIb = ((S.nIb || 0) + 1) % 5), yb = fy + 0.03 + kb * 0.007, yt = fy + S.fH - 0.32 + kb * 0.011, d1 = t + D + kb * 0.009;
+  const t = fr.t, fy = Math.floor((o.v0 + 0.1) / S.fH) * S.fH, ua = o.u0 - 0.6, ub = o.u1 + 0.6, kb = (S.nIb = ((S.nIb || 0) + 1) % 5), yb = (fy < 0.1 ? -0.3 : fy + 0.03) + kb * 0.007, yt = fy + S.fH - 0.32 + kb * 0.011, d1 = t + D + kb * 0.009;
   const P = (u, v, d) => [u, v, d], tO = S.tO;
   mb.set(0, tO.map((v) => v * 0.7));
   quadW(mb, fr, P(ua, yb, d1), P(ub, yb, d1), P(ub, yt, d1), P(ua, yt, d1), nOut(fr));
