@@ -173,9 +173,21 @@ const S_PLAYER = () => {
   o.bridgeProfile = prof.join(' ');
   pt.reset(sx, sz, 0); p.pos.y = col.floorAt(sx, 60, sz, 90);
   let yMid = null, dMid = 1e9, lastTop = null; const along = () => r2((p.pos.x - b.x) * b.dirx + (p.pos.z - b.z) * b.dirz, 1);
-  p.script = (dt, pl) => { end.y = pl.eye.y; pl.lookAt(end, 999, dt); pl.input.fwd = 1; pl.input.sprint = true; };
-  const tb = pt.sim((L + 20) / 5 + 8, 1 / 60, () => { if (p.pos.y > col.floorAt(p.pos.x, 60, p.pos.z, 90) - 0.3) lastTop = along(); const d = Math.hypot(p.pos.x - b.x, p.pos.z - b.z); if (d < dMid) { dMid = d; yMid = p.pos.y; } track(); return pt.xz(p.pos, end) > 1.5; });
-  o.bridge = { length: r2(L), deckY: r2(b.deckY), yMid: r2(yMid), bedMid: r2(terr.heightAt(b.x, b.z)), depthMid: r2(col.waterDepth(b.x, b.z)), offAxis: r2(dMid), reached: pt.xz(p.pos, end) < 2.5, time: r2(tb), onTopUntil: lastTop, endAt: along(), endY: r2(p.pos.y), endSpeed: r2(p.speed) };
+  // the middle span is blown out by design (bld/bridge.js): the deck ends ~7 m either side of the
+  // centre over a 5 m drop onto the rubble heap, and the far break face is a 4 m wall. A player
+  // who runs over the edge must be able to wade out beside the bridge and reach the far bank, so
+  // when the run stalls below the deck the bot steps out sideways past the bridge's flank first.
+  let stallT = 0, detour = null, route = 'deck', h0 = p.health; const tgt = new T.Vector3();
+  p.script = (dt, pl) => {
+    if (!detour && pl.speed < 0.5 && pl.pos.y < b.deckY - 2) {
+      stallT += dt;
+      if (stallT > 0.8) { const u = along() + 1.5, off = b.width / 2 + 4; detour = new T.Vector3(b.x + b.dirx * u - b.dirz * off, 0, b.z + b.dirz * u + b.dirx * off); route = 'through the gap, wading out beside the bridge'; }
+    } else if (!detour) stallT = 0;
+    if (detour && pt.xz(pl.pos, detour) < 1.2) detour = false;
+    tgt.copy(detour || end); tgt.y = pl.eye.y; pl.lookAt(tgt, 999, dt); pl.input.fwd = 1; pl.input.sprint = true;
+  };
+  const tb = pt.sim((L + 20) / 5 + 20, 1 / 60, () => { if (p.pos.y > col.floorAt(p.pos.x, 60, p.pos.z, 90) - 0.3) lastTop = along(); const d = Math.hypot(p.pos.x - b.x, p.pos.z - b.z); if (d < dMid) { dMid = d; yMid = p.pos.y; } track(); return pt.xz(p.pos, end) > 1.5; });
+  o.bridge = { length: r2(L), deckY: r2(b.deckY), yMid: r2(yMid), bedMid: r2(terr.heightAt(b.x, b.z)), depthMid: r2(col.waterDepth(b.x, b.z)), offAxis: r2(dMid), reached: pt.xz(p.pos, end) < 2.5, route, healthLost: r2(h0 - p.health), time: r2(tb), onTopUntil: lastTop, endAt: along(), endY: r2(p.pos.y), endSpeed: r2(p.speed) };
 
   // wading across the river
   const tq = vm.layout.river.query(b.x - b.dirz * 55, b.z + b.dirx * 55, {});
@@ -349,22 +361,33 @@ const S_NAV = () => {
   const A = new T.Vector3(), B = new T.Vector3();
   const chase = (runner) => {
     const z = Z.spawn(cand.x, cand.z, { runner, aware: true }); if (!z) return 'spawn failed';
-    let prev = null, slip = 0, st = 0, travel = 0, lx = z.pos.x, lz = z.pos.z, flowT = 0;
-    const fl = z.bones.FootL, fr = z.bones.FootR;
+    let travel = 0, lx = z.pos.x, lz = z.pos.z, flowT = 0;
+    const fl = z.bones.FootL, fr = z.bones.FootR, F = [];
     pt.god = true;
+    // foot slip as tools/zslip.mjs measures it: animate this infected at the full (near) rate
+    // although the camera stays with the player, log both feet per frame, and count only frames
+    // where the lower foot stays the support foot within 3 cm of its own lowest height
+    const animAll = Z.animAll; Z.animAll = true;
     const t = pt.sim((cand.path / z.speed) * 2.5 + 15, 1 / 60, (tt, dt) => {
       travel += Math.hypot(z.pos.x - lx, z.pos.z - lz); lx = z.pos.x; lz = z.pos.z;
       if (!z.direct) flowT += dt;
       if (fl && (z.state === 'walk' || z.state === 'run')) {
         z.root.updateWorldMatrix(true, true); fl.getWorldPosition(A); fr.getWorldPosition(B);
-        const ha = A.y - terr.heightAt(A.x, A.z), hb = B.y - terr.heightAt(B.x, B.z);
-        const foot = ha < hb ? 0 : 1; const P = foot ? B : A; const down = Math.min(ha, hb) < 0.135 * z.scale;   // ankle within ~3 cm of its lowest: the foot is on the ground
-        if (prev && prev.foot === foot && down && prev.down) { slip += Math.hypot(P.x - prev.x, P.z - prev.z); st += dt; }
-        prev = { foot, x: P.x, z: P.z, down };
-      } else prev = null;
+        F.push({ bx: z.pos.x, bz: z.pos.z, x0: A.x, z0: A.z, h0: A.y - terr.heightAt(A.x, A.z), x1: B.x, z1: B.z, h1: B.y - terr.heightAt(B.x, B.z) });
+      } else F.push(null);
       return pt.xz(z.pos, p.pos) > 1.6;
     });
-    const res = { speed: r2(z.speed), time: r2(t), travel: r2(travel), avgSpeed: r2(travel / t), reached: pt.xz(z.pos, p.pos) <= 1.7, flowShare: r2(flowT / t), plantedTime: r2(st, 1), plantedFootSlip: r2(slip / Math.max(st, 1e-3), 3), slipPct: r2((100 * slip) / Math.max(st, 1e-3) / z.speed, 1), clip: z.currentName };
+    Z.animAll = animAll;
+    const live = F.filter(Boolean), tol = 0.03 * z.scale;
+    const hmin = live.length ? [Math.min(...live.map((f) => f.h0)), Math.min(...live.map((f) => f.h1))] : [0, 0];
+    let slip = 0, body = 0, sup = 0;
+    for (let i = 1; i < F.length; i++) {
+      const a = F[i - 1], c = F[i]; if (!a || !c) continue;
+      const k = c.h0 <= c.h1 ? 0 : 1, kp = a.h0 <= a.h1 ? 0 : 1;
+      if (k !== kp || c['h' + k] > hmin[k] + tol || a['h' + k] > hmin[k] + tol) continue;
+      slip += Math.hypot(c['x' + k] - a['x' + k], c['z' + k] - a['z' + k]); body += Math.hypot(c.bx - a.bx, c.bz - a.bz); sup++;
+    }
+    const res = { speed: r2(z.speed), time: r2(t), travel: r2(travel), avgSpeed: r2(travel / t), reached: pt.xz(z.pos, p.pos) <= 1.7, flowShare: r2(flowT / t), supportTime: r2(sup / 60, 1), slipPct: body > 0 ? r2((100 * slip) / body, 1) : null, clip: z.currentName };
     pt.god = false; p.health = 100; const h0 = p.health; let firstHit = null;
     pt.sim(5, 1 / 60, (tt) => { if (firstHit === null && p.health < h0) firstHit = tt; });
     res.attack = { firstHitAfter: r2(firstHit), dmgIn5s: r2(h0 - p.health, 0), state: z.state, dist: r2(pt.xz(z.pos, p.pos)) };

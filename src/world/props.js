@@ -6,6 +6,7 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { enhance } from '../engine/materials.js';
+import { footprintDist } from './layout.js';
 import { loadPBR, loadTexture } from '../engine/textures.js';
 
 const V3 = THREE.Vector3, M4 = THREE.Matrix4, PI = Math.PI, TAU = PI * 2;
@@ -722,6 +723,14 @@ export function _selftest() {
 export async function build(ctx) {
   const { scene, terrain, layout } = ctx, aniso = ctx.quality?.aniso ?? 8, hAt = (x, z) => terrain.heightAt(x, z);
   if (typeof window !== 'undefined') window.__propsH = hAt;      // lets the screenshot tool aim at ground-relative targets
+  // keep street cover out of doorways: the buildings module has recorded each ground-floor door
+  // (the layout places cover before the doors exist), so drop any piece within a metre of the
+  // threshold or of the step in front of it; layout.cover is shared with navigation and the map
+  if (layout.cover) {
+    const doors = (layout.buildings || []).flatMap((b) => b.doors || []);
+    layout.cover = layout.cover.filter((c) => !doors.some((d) => Math.abs(d.x - c.x) < 12 && Math.abs(d.z - c.z) < 12 &&
+      (footprintDist(c, d.x, d.z) < 1.0 || footprintDist(c, d.x + d.nx * 1.2, d.z + d.nz * 1.2) < 1.0)));
+  }
   const rustT = loadPBR('rust_metal', { aniso }), beamT = loadPBR('wood_beam', { aniso }), plankT = loadPBR('wood_planks', { aniso }), concT = loadPBR('concrete_old', { aniso });
   const maskT = loadTexture('./assets/tex/rust_metal_mask.jpg', { aniso });
   // the triplanar shader takes ~19 samples per pixel: keep anisotropy low on everything but the albedo

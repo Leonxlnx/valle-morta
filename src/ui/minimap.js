@@ -116,6 +116,8 @@ export class Minimap {
       const u0 = (px - (this.c[0] - this.half)) / mpp, v0 = (pz - (this.c[1] - this.half)) / mpp, sr = reach / mpp;
       ctx.drawImage(this.map, u0 - sr, v0 - sr, sr * 2, sr * 2, -reach * k, -reach * k, reach * 2 * k, reach * 2 * k);
     }
+    // rim shade over the picture only: markers, rim glows and ticks drawn after it keep their colour
+    ctx.fillStyle = this.rim; ctx.fillRect(-R, -R, S, S);
     // hearing range
     ctx.strokeStyle = `rgba(${INK},0.16)`; ctx.lineWidth = u; ctx.setLineDash([2 * u, 4 * u]);
     ctx.beginPath(); ctx.arc(0, 0, HEAR * k, 0, TAU); ctx.stroke(); ctx.setLineDash([]);
@@ -196,8 +198,7 @@ export class Minimap {
     ctx.strokeStyle = `rgba(${INK},0.4)`; ctx.lineWidth = u;
     for (let i = 1; i < 4; i++) { const a = (i * Math.PI) / 2; ctx.beginPath(); ctx.moveTo(Math.sin(a) * (R - u), -Math.cos(a) * (R - u)); ctx.lineTo(Math.sin(a) * (R - 5 * u), -Math.cos(a) * (R - 5 * u)); ctx.stroke(); }
     ctx.rotate(-yaw);
-    // rim shade, view cone and the player at the centre, always pointing up
-    ctx.fillStyle = this.rim; ctx.fillRect(-R, -R, S, S);
+    // view cone and the player at the centre, always pointing up
     const fovH = Math.atan(Math.tan((cam.fov * Math.PI) / 360) * cam.aspect);
     const cone = ctx.createRadialGradient(0, 0, 0, 0, 0, R * 0.7);
     cone.addColorStop(0, `rgba(${INK},0.09)`); cone.addColorStop(1, `rgba(${INK},0)`);

@@ -83,19 +83,23 @@ try {
   await page.evaluate(() => __vm.start());
   await page.keyboard.press('KeyP'); await sleep(600); await shot(page, 'pause');
   await page.click('.pause [data-act="resume"]'); await sleep(300);
-  await page.evaluate(() => { __vm.game.player.damage(999); }); await sleep(3600); await shot(page, 'over');
-  await page.click('.over [data-act="quit"]'); await sleep(900);
+  // wait for the screens rather than for fixed times: on a loaded machine the summary comes late
+  await page.evaluate(() => { __vm.game.player.damage(999); });
+  await page.waitForFunction(() => document.querySelector('.over').classList.contains('show'), { timeout: 60000, polling: 200 }); await sleep(1200); await shot(page, 'over');
+  await page.click('.over [data-act="quit"]');
+  await page.waitForFunction(() => document.querySelector('.menu').classList.contains('show'), { timeout: 60000, polling: 200 }); await sleep(900);
 
   // ---- Operation: Base, then a run
+  // a fresh profile, so the shots do not depend on what earlier runs bought (a maxed item has no buy button)
+  await page.evaluate(() => { __vm.progress.reset(); __vm.progress.grant(5000); });
   await page.click('.menu [data-act="operation"]'); await sleep(900);
-  await page.evaluate(() => { __vm.progress.grant(5000); });
-  for (const s of ['[data-buy="rifle.damage"]', '[data-buy="rifle.damage"]', '[data-buy="rifle.mag"]']) { await page.click(`.base ${s}`); await sleep(120); }
+  for (const s of ['[data-buy="rifle.damage"]', '[data-buy="rifle.damage"]', '[data-buy="rifle.mag"]']) { const b = await page.$(`.base ${s}`); if (b) { await b.click(); await sleep(120); } else console.log('missing', s); }
   await sleep(900); await shot(page, 'base');
   await page.click('.base [data-tab="abilities"]'); await sleep(150);
   for (const s of ['ability.adrenaline', 'ability.jump', 'ability.tank', 'ability.mortar']) { const b = await page.$(`.base [data-buy="${s}"]`); if (b) { await b.click(); await sleep(150); } }
   await sleep(900); if (!quick) await shot(page, 'base_abilities');
   await page.click('.base [data-act="deploy"]');
-  await page.waitForFunction(() => { const g = __vm.game; return g.state === 'playing' && !(g.operation && g.operation.cinematic); }, { timeout: 60000, polling: 300 }).catch(() => console.log('insertion did not finish'));
+  await page.waitForFunction(() => { const g = __vm.game; return g.state === 'playing' && !(g.operation && g.operation.cinematic); }, { timeout: 240000, polling: 300 }).catch(() => console.log('insertion did not finish'));
   await sleep(2500);
   await page.evaluate(() => {
     const vm = __vm, g = vm.game, p = g.player, Z = g.zombies, op = g.operation; vm.stop();

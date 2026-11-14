@@ -103,7 +103,7 @@ export class UI {
       <div class="sheet wide">
         <h2>How to play</h2>
         <dl class="keys">${keys.map(([a, k1, k2]) => `<div><dt>${a}</dt><dd>${k1 === 'W A S D' ? kbd(k1) : `<kbd>${k1}</kbd>`}${k2 ? ` / ${k2 === 'mouse' ? 'mouse' : k2.includes(' ') ? kbd(k2) : `<kbd>${k2}</kbd>`}` : ''}</dd></div>`).join('')}</dl>
-        <p class="hint">Health comes back only to the top of the segment you are in; bandages do the rest. Each cleared wave leaves a supply crate nearby with ammunition and bandages. A roll as you land halves a hard fall. Ctrl also crouches. Music by Kevin MacLeod (incompetech.com), licensed under CC BY 4.0.</p>
+        <p class="hint">Health comes back only to the top of the segment you are in; bandages do the rest. Each cleared wave leaves a supply crate nearby with ammunition and bandages. A roll as you land halves a hard fall. Ctrl also crouches. Music by Kevin MacLeod (incompetech.com), licensed under CC BY 4.0. Roll and landing foley by dklon (opengameart.org), CC BY 3.0.</p>
         <nav class="menu-nav row"><button class="btn" data-act="back">Back</button></nav>
       </div>`);
 

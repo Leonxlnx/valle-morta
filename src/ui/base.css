@@ -85,6 +85,10 @@
 .base-foot p { font-size: var(--t-s); color: var(--ink-3); }
 .base-foot .btn { padding: var(--s1) 0; white-space: nowrap; }
 
+/* large screens: the same layout, a size up (as the menu and sheets do in ui.css) */
+@media (min-height: 900px) and (min-width: 1500px) {
+  .base-wrap { zoom: 1.2; }
+}
 @media (max-width: 1100px) {
   .cards, .cards.three { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .slot { min-width: 0; }

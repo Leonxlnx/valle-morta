@@ -550,15 +550,18 @@ export function buildStair(B, st, burnt) {
     mb.quad([xo, -0.1, za], [xo, -0.1, zb], [xo, yb - 0.1, zb], [xo, ya - 0.1, za], [Math.sign(xo - x), 0, 0], [za / 2, 0], [zb / 2, 0], [zb / 2, yb / 2], [za / 2, ya / 2], 0.55, 0, 0, true);
   }
   mb.set(burnt ? LY.wood_charred : LY.wood_beam, burnt ? CHAR_T : WOOD_T);
-  mb.abox(xo - 0.05, -0.05, z0 - 0.05, xo + 0.05, 1.05, z0 + 0.05, { axis: 'y', skip: 2 });
-  mb.beam([xo, 1.0, z0], [xo, h + 0.95, z1], 0.06, 0.07);
-  for (let k = 1; k < 5; k++) { const zz = z0 + sg * run * k / 5, yy = h * k / 5; mb.beam([xo, yy, zz], [xo, yy + 0.92, zz], 0.035, 0.035); }
+  // the foot of every stair abuts a wall, so it is entered from the open side over its first
+  // treads: the newel and rail start a quarter of the way up (fR), leaving that side open below
+  const fR = 0.28, zR = z0 + sg * run * fR, yR = h * fR;
+  mb.abox(xo - 0.05, yR - 0.05, zR - 0.05, xo + 0.05, yR + 1.05, zR + 0.05, { axis: 'y', skip: 2 });
+  mb.beam([xo, yR + 1.0, zR], [xo, h + 0.95, z1], 0.06, 0.07);
+  for (let k = 2; k < 5; k++) { const zz = z0 + sg * run * k / 5, yy = h * k / 5; mb.beam([xo, yy, zz], [xo, yy + 0.92, zz], 0.035, 0.035); }
   if (B.cb) {
     // ramp through the nosings, flat run onto the landing, spandrel wall and rail
     const zs = z0 - sg * tr;
     B.cb.quad([x0, -0.05, zs], [x1, -0.05, zs], [x1, h, z1 - sg * tr], [x0, h, z1 - sg * tr]);
     B.cb.quad([x0, h, z1 - sg * tr], [x1, h, z1 - sg * tr], [x1, h, z1 + sg * 0.3], [x0, h, z1 + sg * 0.3]);
-    B.cb.quad([xo, -0.1, z0], [xo, -0.1, z1], [xo, h + 1.0, z1], [xo, 1.0, z0]);
+    B.cb.quad([xo, -0.1, zR], [xo, -0.1, z1], [xo, h + 1.0, z1], [xo, yR + 1.0, zR]);
   }
 }
 
@@ -627,6 +630,15 @@ export function buildHouse(B, b, cfg = {}) {
     }
     return ops;
   };
+  // ground-floor doorways in world space, for the infected's navigation grid
+  b.doors = [];
+  const doorsOf = (ops, fr) => {
+    for (const o of ops) if (o.door && o.v0 < 0.3) {
+      const u = (o.u0 + o.u1) / 2, p = W(fr.ox + fr.ux * u, fr.oz + fr.uz * u);
+      b.doors.push({ x: p[0], z: p[1], nx: fr.nx * c - fr.nz * s, nz: fr.nx * s + fr.nz * c, w: o.u1 - o.u0 });
+    }
+    return ops;
+  };
   const yRoof = (z) => H + (dd / 2 - Math.abs(z)) * tanp;
   const frames = [
     mkFrame(-w / 2, dd / 2, w / 2, dd / 2, 0, 1, t), mkFrame(w / 2, -dd / 2, -w / 2, -dd / 2, 0, -1, t),
@@ -636,7 +648,7 @@ export function buildHouse(B, b, cfg = {}) {
   for (let wi = 0; wi < 4; wi++) {
     const fr = frames[wi], gable = wi >= 2;
     buildWall(B, fr, {
-      ...base, openings: mkOps(fr.L, gable, wi), uvo: rng.range(0, 40), ends: gable ? [2, 2] : [6, 6],
+      ...base, openings: doorsOf(mkOps(fr.L, gable, wi), fr), uvo: rng.range(0, 40), ends: gable ? [2, 2] : [6, 6],
       top: gable ? (u) => yRoof(fr.oz + fr.uz * u) : null,
     });
   }

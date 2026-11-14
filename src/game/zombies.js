@@ -116,11 +116,18 @@ export class FlowField {
       const sl = Math.max(Math.abs(T.heightAt(x + 1, z) - T.heightAt(x - 1, z)), Math.abs(T.heightAt(x, z + 1) - T.heightAt(x, z - 1))) / 2;
       let w = sl > 0.95 ? 0 : 1;
       if (w && collision.bvh) {
-        _box.min.set(x - cell * 0.45, h + 0.45, z - cell * 0.45); _box.max.set(x + cell * 0.45, h + 1.5, z + cell * 0.45);
+        // stand on the floor where there is one (house floors sit up to ~0.6 m above the ground)
+        const f = collision.floorAt(x, h + 0.75, z, 0.85), y = f > h && f - h < 0.6 ? f : h;
+        _box.min.set(x - cell * 0.45, y + 0.45, z - cell * 0.45); _box.max.set(x + cell * 0.45, y + 1.5, z + cell * 0.45);
         if (collision.bvh.intersectsBox(_box, _id)) w = 0;
       }
       if (w) { const wd = collision.waterDepth(x, z); if (wd > 1.5) w = 0; else if (wd > 0.25) w = 2; }
       this.walk[j * n + i] = w;
+    }
+    // doorways (~1 m) are narrower than a cell: open a line of cells straight through each one
+    for (const b of (layout && layout.buildings) || []) for (const d of b.doors || []) {
+      if (d.w < 0.9) continue;
+      for (let t = -1.8; t <= 1.81; t += 0.3) { const c = this.cellOf(d.x + d.nx * t, d.z + d.nz * t); if (c >= 0 && !this.walk[c]) this.walk[c] = 1; }
     }
     this.dist.fill(65535);
   }
