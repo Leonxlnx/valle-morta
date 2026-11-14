@@ -169,6 +169,20 @@ function defaultStorage() {
   return { getItem: (k) => (k in mem ? mem[k] : null), setItem: (k, v) => { mem[k] = String(v); } };
 }
 
+// Test cheat: unlimited salvage. Open the game once with ?coins=1 to switch it on (it is remembered in this
+// browser), ?coins=0 switches it off again. Purchases then cost nothing and the saved balance is left alone.
+const CHEAT_KEY = 'valle-morta-cheat-coins';
+const CHEAT_BALANCE = 999999;
+function cheatCoins() {
+  try {
+    const q = new URLSearchParams(globalThis.location?.search || '').get('coins');
+    if (q === '1') globalThis.localStorage?.setItem(CHEAT_KEY, '1');
+    else if (q === '0') globalThis.localStorage?.removeItem(CHEAT_KEY);
+    return globalThis.localStorage?.getItem(CHEAT_KEY) === '1';
+  } catch (e) { return false; }
+}
+export const UNLIMITED_SALVAGE = cheatCoins();
+
 export class Progress {
   constructor(storage) {
     this.storage = storage || defaultStorage();
@@ -191,7 +205,7 @@ export class Progress {
   reset() { this.data = blank(); this.save(); }
   onChange(fn) { this._subs.push(fn); return this; }
 
-  get salvage() { return this.data.salvage; }
+  get salvage() { return UNLIMITED_SALVAGE ? CHEAT_BALANCE : this.data.salvage; }
   grant(n) { this.data.salvage = Math.max(0, this.data.salvage + Math.floor(num(n))); this.save(); return this.data.salvage; }
 
   item(id) { return BY_ID.get(id) || null; }
@@ -209,8 +223,10 @@ export class Progress {
     const level = this.level(id), cost = this.cost(id);
     if (this.locked(id)) return { ok: false, reason: 'locked', level, cost };
     if (cost === null) return { ok: false, reason: 'max', level, cost };
-    if (cost > this.data.salvage) return { ok: false, reason: 'funds', level, cost };
-    this.data.salvage -= cost;
+    if (!UNLIMITED_SALVAGE) {
+      if (cost > this.data.salvage) return { ok: false, reason: 'funds', level, cost };
+      this.data.salvage -= cost;
+    }
     this.data.levels[id] = level + 1;
     if (it.choice) this.data.options[id] = level + 1;                       // a new step is switched on when bought
     if (it.ability && level === 0 && this.slotOf(it.ability.key) < 0) {     // a new ability takes a free slot
