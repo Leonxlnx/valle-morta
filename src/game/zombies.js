@@ -266,6 +266,8 @@ export class Zombies {
     this.maxActive = 26;
     this.passive = false;      // nobody notices the player (menu backdrop, tests)
     this.noCull = false;
+    this.animAll = false;      // inspection: every body animated every step, whatever the distance (zslip)
+    this.prof = null;          // inspection: {} collects milliseconds per update section (zslip --perf)
     this.time = 0;
     this._frustum = new THREE.Frustum(); this._pv = new THREE.Matrix4();
     this._sphere = new THREE.Sphere(new THREE.Vector3(), 3.2);
@@ -404,6 +406,10 @@ export class Zombies {
         if (o.isSkinnedMesh) { o.castShadow = true; o.receiveShadow = true; o.frustumCulled = false; z.mesh = o; }
       });
       z.root.add(model);
+      // a hidden body (pooled, or outside the view) keeps its bones as they are: no world matrices
+      // for a skeleton nobody draws (hit volumes and blood ask for them with updateWorldMatrix)
+      const upd = z.root.updateMatrixWorld;
+      z.root.updateMatrixWorld = function (force) { if (this.visible) upd.call(this, force); };
       z.mixer = new THREE.AnimationMixer(model);
       for (const name in set.clips) {
         const a = z.mixer.clipAction(set.clips[name]);
@@ -438,6 +444,7 @@ export class Zombies {
     z.spd = 0; z.gs = 0; z.yawV = 0; z.navX = 0; z.navZ = 0; z.losN = 0;
     z.floorY = z.pos.y; z.floorT = 0;
     z.probeX = x; z.probeZ = zz; z.probeT = 0; z.stuck = 0; z.avoidT = 0; z.losT = 0; z.direct = false;
+    z.wet = false; z.clrOk = false; z.clrN = 0; z.clrX = x; z.clrY = z.pos.y; z.clrZ = zz;
     z.root.position.copy(z.pos);
   }
 
@@ -513,8 +520,9 @@ export class Zombies {
     if (w === 'Idle') { if (v > 0.25 * g.Walk * s) w = z.lastGait === 'Walk' || v < g.Walk * s ? 'Walk' : z.lastGait; } else if (v < 0.1 * g.Walk * s) w = 'Idle';
     if (w !== 'Idle') {
       const wr = Math.sqrt(g.Walk * g.Run) * s, rs = Math.sqrt(g.Run * g.Sprint) * s;
-      if (w === 'Walk' && A.Run && v > wr * 1.08) w = 'Run';
-      if (w === 'Run' && A.Sprint && v > rs * 1.08) w = 'Sprint';
+      // up-shift before the next clip's own speed (boss Run 6.6 / Sprint 7.6 sit closer than 8 %)
+      if (w === 'Walk' && A.Run && v > Math.min(wr * 1.08, g.Run * s * 0.97)) w = 'Run';
+      if (w === 'Run' && A.Sprint && v > Math.min(rs * 1.08, g.Sprint * s * 0.97)) w = 'Sprint';
       if (w === 'Sprint' && v < rs * 0.92) w = 'Run';
       if (w === 'Run' && v < wr * 0.92) w = 'Walk';
       if (!A[w]) w = 'Walk';
@@ -742,14 +750,41 @@ export class Zombies {
     if (knock > 0 && dist > 1e-3) p.knock(dx / dist, dz / dist, knock, 3);
   }
 
+  // Nothing solid within a margin around the body (a cheap box query on the collider BVH and the
+  // box colliders) means the exact capsule test cannot push it this step, nor until it has moved
+  // that margin; next to geometry the exact test runs every step and the query waits a while.
+  _contactFree(z) {
+    const M = 0.35, p = z.pos;
+    if (z.clrOk && Math.abs(p.x - z.clrX) < M && Math.abs(p.z - z.clrZ) < M && Math.abs(p.y - z.clrY) < M) return true;
+    z.clrOk = false;
+    if (--z.clrN > 0) return false;
+    const r = Math.min(z.rad, 0.45) + M, col = this.col;
+    // from just above the soles: the floor it stands on never pushes it sideways
+    _box.min.set(p.x - r, p.y + 0.15, p.z - r); _box.max.set(p.x + r, p.y + 1.7 + M, p.z + r);
+    let hit = !!(col.bvh && col.bvh.intersectsBox(_box, _id));
+    if (!hit && col.boxes) for (const b of col.boxes) {
+      if (p.y - M >= b.y + b.h || p.y + 1.7 + M <= b.y) continue;
+      const R = r + Math.abs(b.hx) + Math.abs(b.hz);
+      if (Math.abs(p.x - b.x) < R && Math.abs(p.z - b.z) < R) { hit = true; break; }
+    }
+    if (hit) { z.clrN = 12; return false; }
+    z.clrOk = true; z.clrX = p.x; z.clrY = p.y; z.clrZ = p.z;
+    return true;
+  }
+
   _recover(z, time) { z.state = 'recover'; z.stateT = 0; z.recoverT = time; if (z.def.boss) this._play(z, 'HitBody', 0.25, 0.45, true, 0.5); }
 
   update(dt) {
     this.time += dt;
     const p = this.player, T = this.col.terrain;
     const hunting = !this.passive && p.alive;
+    // inspection: Zombies.prof = {} collects milliseconds per section (zslip --perf)
+    const P = this.prof;
+    let tp = P ? performance.now() : 0;
+    const lap = P ? (k) => { const t = performance.now(); P[k] = (P[k] || 0) + t - tp; tp = t; } : null;
     this.flowT -= dt;
     if (this.flow && this.flowT <= 0 && !this.passive) { this.flow.update(p.pos.x, p.pos.z); this.flowT = 0.45; }
+    if (lap) lap('flowField');
     const cam = this.engine.camera;
     cam.updateMatrixWorld();
     this._frustum.setFromProjectionMatrix(this._pv.multiplyMatrices(cam.projectionMatrix, cam.matrixWorldInverse));
@@ -777,6 +812,7 @@ export class Zombies {
         if (l !== z.lod || z.mesh.geometry !== set.lods[l]) { z.lod = l; z.mesh.geometry = set.lods[l]; }
         z.mesh.castShadow = camD < 28;
       }
+      if (lap) lap('cullLod');
       if (!z.alive) {
         if (z.stateT < 2) {
           // momentum carries the body on a little; it turns into the fall and settles onto the slope
@@ -814,6 +850,7 @@ export class Zombies {
           }
         }
         if (z.mixer && z.stateT < 5) this._animate(z, dt, false);
+        if (lap) lap('dead');
         continue;
       }
       // awareness: sight / hearing radius
@@ -954,6 +991,7 @@ export class Zombies {
       z.lookW += (lookOn - z.lookW) * Math.min(1, dt * 2);
       z.look = Math.sin(this.time * 0.43 + z.seed) * 0.7 * Math.max(0, Math.sin(this.time * 0.17 + z.seed * 1.7) + 0.3);
 
+      if (lap) lap('think');
       // ---- locomotion: turn towards where it wants to go and move along the facing.
       // The turn rate eases in and out, speed changes by acceleration, nothing slides sideways.
       let tspd = 0;
@@ -964,7 +1002,7 @@ export class Zombies {
         z.yawV += (clamp(dy * 5, -lim, lim) - z.yawV) * (1 - Math.exp(-dt * 10));
         const stepY = z.yawV * dt;
         z.yaw += Math.abs(stepY) > Math.abs(dy) ? dy : stepY;
-        if (target > 0) tspd = target * (this.col.waterDepth(z.pos.x, z.pos.z) > 0.3 ? 0.55 : 1) * clamp((Math.cos(dy) - 0.2) / 0.6, 0, 1);
+        if (target > 0) tspd = target * (z.wet ? 0.55 : 1) * clamp((Math.cos(dy) - 0.2) / 0.6, 0, 1);
       } else z.yawV *= Math.exp(-dt * 10);
       z.spd += clamp(tspd - z.spd, -def.brake * dt, accel * dt);
       const hx = Math.sin(z.yaw), hz = Math.cos(z.yaw);
@@ -990,6 +1028,7 @@ export class Zombies {
         if (Math.abs(z.kickX) + Math.abs(z.kickZ) < 0.01) z.kickX = z.kickZ = 0;
       }
       z.pos.x += sx; z.pos.z += sz;
+      if (lap) lap('steerCrowd');
       // bodies do not overlap the player; the big ones are not pushed aside
       const minD = 0.42 + z.rad;
       if (dist < minD && dist > 1e-3 && p.alive && p.enabled && Math.abs(p.pos.y - z.pos.y) < 1.5) {
@@ -997,12 +1036,15 @@ export class Zombies {
         z.pos.x -= (dx / dist) * push * share; z.pos.z -= (dz / dist) * push * share;
         p.pos.x += (dx / dist) * push * (1 - share); p.pos.z += (dz / dist) * push * (1 - share);
       }
-      const c = this.col.resolveCapsule(z.pos, Math.min(z.rad, 0.45), 1.7);
-      if (c.lengthSq() > 0) { z.pos.x += c.x; z.pos.z += c.z; }
+      if (!this._contactFree(z)) {
+        const c = this.col.resolveCapsule(z.pos, Math.min(z.rad, 0.45), 1.7);
+        if (c.lengthSq() > 0) { z.pos.x += c.x; z.pos.z += c.z; }
+      }
       z.floorT -= dt;
-      if (z.floorT <= 0) { z.floorT = 0.15 + Math.random() * 0.1; z.floorY = this.col.floorAt(z.pos.x, z.pos.y + 0.6, z.pos.z, 2.5); }
+      if (z.floorT <= 0) { z.floorT = 0.15 + Math.random() * 0.1; z.floorY = this.col.floorAt(z.pos.x, z.pos.y + 0.6, z.pos.z, 2.5); z.wet = this.col.waterDepth(z.pos.x, z.pos.z) > 0.3; }
       const ty = Math.max(z.floorY, T.heightAt(z.pos.x, z.pos.z));
       z.pos.y += (ty - z.pos.y) * Math.min(1, dt * 12);
+      if (lap) lap('collide');
 
       // ---- animation follows the ground actually covered along the facing, so feet stay planted
       const adv = Math.max(0, ((z.pos.x - ox - sx) * hx + (z.pos.z - oz - sz) * hz) / Math.max(dt, 1e-4));
@@ -1019,12 +1061,16 @@ export class Zombies {
       const rk = Math.exp(-dt * 5); z.recoil *= rk; z.twist *= rk;
       z.root.position.copy(z.pos);
       z.root.rotation.set(z.pitch + z.recoil * 0.13, z.yaw, z.lean);
+      if (z.mixer) z.animAcc = Math.min(0.25, z.animAcc + dt);
       if (z.mixer && seen) {
-        // far bodies animate less often (the accumulated time keeps them in step)
-        z.animAcc = Math.min(0.25, z.animAcc + dt);
-        const every = camD < 18 ? 1 : camD < 36 ? 2 : camD < 70 ? 3 : 4;
-        if (every === 1 || (frame + i) % every === 0) { this._animate(z, z.animAcc, camD < 22); z.animAcc = 0; }
+        // small on screen: animated less often (the accumulated time keeps them in step); the
+        // apparent distance follows the zoom, and fast movers step one rate finer
+        const ad = camD * fovK;
+        let every = this.animAll ? 1 : ad < 12 ? 1 : ad < 30 ? 2 : ad < 55 ? 3 : 4;
+        if (every > 1 && z.gs > 2.5) every--;
+        if (every === 1 || (frame + i) % every === 0) { if (lap) lap('gaitLean'); this._animate(z, z.animAcc, camD < 22); z.animAcc = 0; if (lap) lap('mixer'); }
       }
+      if (lap) lap('gaitLean');
     }
   }
 }

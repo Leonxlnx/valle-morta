@@ -332,7 +332,7 @@ def hook_rifle2(c):
     engrave(c)
 
 
-HOOKS = dict(arms=(hook_arms, 1.6), rifle=(hook_rifle, 3.0), rifle2=(hook_rifle2, 3.0), pistol=(hook_pistol, 3.0), sniper=(hook_sniper, 3.0))
+HOOKS = dict(arms=(hook_arms, 1.6), rifle=(hook_rifle2, 3.0), rifle2=(hook_rifle2, 3.0), pistol=(hook_pistol, 3.0), sniper=(hook_sniper, 3.0))
 if __name__ == '__main__':
     for an in sys.argv[2:]:
         c = load(an); HOOKS[an][0](c); finish(c, an, HOOKS[an][1])
