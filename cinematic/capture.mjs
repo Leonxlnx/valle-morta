@@ -87,7 +87,36 @@ await new Promise((r) => server.listen(0, '127.0.0.1', r));
 const PORT = server.address().port;
 
 let browser = null, page = null, info = null;
+
+// ---- GPU courtesy guard (final render only). This laptop's integrated GPU is shared with other programs. A 4K render
+// that kept going while other GPU jobs started ended in a display-driver bug check (0x119) once. So the render yields:
+// it waits while another program loads the GPU or memory is short, and when that lasts it closes the browser, which
+// gives all GPU memory back, and renders the shot again once the GPU is free.
+const GUARD = !!arg('final', false) && !arg('noguard', false);
+if (GUARD) { try { os.setPriority(os.constants.priority.PRIORITY_BELOW_NORMAL); } catch (e) { /* stays at normal */ } }   // children inherit it
+function gpuState() {
+  try {
+    const root = browser && browser.process() ? browser.process().pid : 0;
+    const out = execFileSync('powershell', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', 'cinematic/gpu-state.ps1', '-Root', String(root)], { encoding: 'utf8', timeout: 90000 }).trim().split(/\s+/).map(Number);
+    if (out.length < 3 || out.some((v) => !Number.isFinite(v))) return null;
+    return { other: out[0], own: out[1], shared: out[2], free: os.freemem() / 1024 ** 3 };
+  } catch (e) { return null; }
+}
+const gpuBusy = (s) => !!s && (s.other > 35 || s.shared > 22 || s.free < 8);
+async function yieldGpu(where) {
+  if (!GUARD) return;
+  let waited = 0, said = -1;
+  for (;;) {
+    const s = gpuState();
+    if (!gpuBusy(s)) { if (waited) log(`${where}: GPU free again after ${waited} s`); return; }
+    if (Math.floor(waited / 120) !== said) { said = Math.floor(waited / 120); log(`${where}: yielding (other programs ${s.other}% 3D, shared GPU memory ${s.shared} GB, free RAM ${s.free.toFixed(1)} GB)`); }
+    if (waited >= 180 && browser) { const e = new Error('the GPU is needed elsewhere: closing the browser to give it back'); e.yielded = true; throw e; }
+    await sleep(20000); waited += 24;
+  }
+}
+
 async function open() {
+  await yieldGpu('before opening the browser');
   browser = await puppeteer.launch({
     executablePath: 'C:/Program Files/Google/Chrome/Application/chrome.exe',
     headless: 'new',
@@ -147,8 +176,19 @@ async function renderShot(i) {
     await prime(i);
     await page.evaluate((i) => window.__vm.film.begin(i, true), i);
     const n = info.shots[i].frames;
+    const times = []; let slow = 0;
     for (let f = 0; f < n; f++) {
+      if (GUARD && f % 5 === 0) await yieldGpu(`shot ${i + 1} frame ${f + 1}`);
+      const tf = Date.now();
       await page.evaluate((f, url) => window.__vm.film.frame(f, url), f, `http://127.0.0.1:${PORT}/frame`);
+      if (GUARD) {
+        // a frame that takes several times the shot's normal time means the GPU is contended or short of memory
+        const dtf = (Date.now() - tf) / 1000;
+        const base = times.length >= 8 ? [...times].sort((a, b) => a - b)[Math.floor(times.length / 4)] : Infinity;
+        times.push(dtf);
+        if (dtf > 3 * base) { slow++; log(`shot ${i + 1} frame ${f + 1} took ${dtf.toFixed(0)} s (normal ${base.toFixed(1)} s)`); await yieldGpu(`shot ${i + 1} frame ${f + 1}`); } else slow = 0;
+        if (slow >= 12) { const e = new Error(`twelve slow frames in a row (${dtf.toFixed(0)} s against ${base.toFixed(1)} s): restarting the browser`); e.yielded = true; throw e; }
+      }
       if (f === 2 || (f + 1) % 30 === 0) log(`shot ${i + 1} ${info.shots[i].name}: frame ${f + 1}/${n} (${((Date.now() - t0) / 1000 / (f + 1)).toFixed(2)} s/frame)`);
     }
     tape = await page.evaluate(() => window.__vm.film.endTape());
@@ -368,8 +408,9 @@ try {
       let ok = false;
       for (let attempt = 1; attempt <= 6 && !ok; attempt++) {
         try { if (!page) await open(); await renderShot(i); ok = true; } catch (e) {
-          log(`shot ${i + 1} attempt ${attempt} failed: ${String(e && e.message).slice(0, 160)}`);
+          log(`shot ${i + 1} attempt ${attempt} ${e && e.yielded ? 'stopped' : 'failed'}: ${String(e && e.message).slice(0, 160)}`);
           await close();
+          if (e && e.yielded) attempt--;   // not a failure: the next open() waits until the GPU is free, then the shot is rendered again
           await sleep(30000);
         }
       }
