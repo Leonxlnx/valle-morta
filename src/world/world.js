@@ -20,7 +20,15 @@ const LOADERS = {
 export async function buildWorld(engine, terrain, layout, off = new Set(), onProgress = () => {}) {
   const ctx = { engine, scene: engine.scene, terrain, layout, quality: engine.q, colliders: [], updaters: [], mods: {} };
   const names = Object.keys(LOADERS).filter((n) => !off.has(n));
-  let i = 0;
+  let i = 0, last = performance.now();
+  // modules call `await ctx.tick(p)` between pieces of work (p: their own progress 0..1): it moves
+  // the loading display and gives the page a frame after ~40 ms, so a slow phone never freezes on one module
+  ctx.tick = async (p) => {
+    if (p !== undefined) onProgress((i + Math.min(1, Math.max(0, p))) / names.length);
+    if (performance.now() - last < 40) return;
+    await new Promise((r) => setTimeout(r, 0));
+    last = performance.now();
+  };
   for (const name of names) {
     try {
       const mod = await LOADERS[name]();

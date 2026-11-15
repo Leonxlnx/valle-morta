@@ -3,10 +3,14 @@
 import { Vector3 } from 'three';
 import { BaseScreen } from './base.js';
 import { Minimap } from './minimap.js';
+import { TouchControls } from './touch.js';
+import { TOUCH } from '../core/device.js';
+import { QUALITY_CHOICES } from '../engine/engine.js';
 
 const DEFAULTS = {
   quality: 'high', renderScale: 1, dynamicRes: true, fov: 72, sensitivity: 1, invertY: false,
   master: 0.8, music: 0.55, sfx: 0.9, grain: true, showFps: false,
+  touchSens: 1, aimAssist: TOUCH, touchSize: 1,
 };
 
 export function loadSettings() {
@@ -94,7 +98,20 @@ export class UI {
       </div>`);
     this.baseScreen = new BaseScreen(this.profile, this.h);
 
+    // ---- portrait on a phone: the game is played sideways
+    this.rotate = el('section', 'rotate', `
+      <div class="rotate-box">
+        <svg viewBox="0 0 64 64" aria-hidden="true"><rect x="22" y="10" width="20" height="36" rx="4"/><path d="M14 40a20 20 0 0 0 20 14M30 50l4 4-4 4"/></svg>
+        <h2>Turn your phone sideways</h2>
+        <p>Valle Morta is played in landscape.</p>
+      </div>`);
+
     // ---- how to play
+    const touchRows = [
+      ['Move', 'Left thumb anywhere on the left half'], ['Sprint', 'Push the stick to its edge'], ['Look', 'Drag on the right half'],
+      ['Fire', 'Hold the large button, drag to keep turning'], ['Aim', 'The eye button, tap again to lower'], ['Crouch / lie down', 'Tap / hold the lower chevrons'],
+      ['Weapon', 'Tap the ammunition read-out'], ['Bandage', 'The button under pause'], ['Crates, helicopter', 'Tap the prompt that appears'], ['Abilities', 'Tap their rings'],
+    ];
     const keys = [
       ['Move / look', 'W A S D', 'mouse'], ['Fire / aim', 'LMB', 'RMB'], ['Reload', 'R'], ['Next weapon / pick one', 'Q', '1 2 3'],
       ['Sprint / jump', 'Shift', 'Space'], ['Crouch / lie down', 'C', 'Z'], ['Dodge roll', 'V'], ['Use a bandage', 'H'],
@@ -103,8 +120,9 @@ export class UI {
     this.howto = el('section', 'screen panel', `
       <div class="sheet wide">
         <h2>How to play</h2>
-        <dl class="keys">${keys.map(([a, k1, k2]) => `<div><dt>${a}</dt><dd>${k1 === 'W A S D' ? kbd(k1) : `<kbd>${k1}</kbd>`}${k2 ? ` / ${k2 === 'mouse' ? 'mouse' : k2.includes(' ') ? kbd(k2) : `<kbd>${k2}</kbd>`}` : ''}</dd></div>`).join('')}</dl>
-        <p class="hint">Health comes back only to the top of the segment you are in; bandages do the rest. Each cleared wave leaves a supply crate nearby with ammunition and bandages. A roll as you land halves a hard fall. Ctrl also crouches. Music by Kevin MacLeod (incompetech.com), licensed under CC BY 4.0. Roll and landing foley by dklon (opengameart.org), CC BY 3.0.</p>
+        <dl class="keys touchkeys only-touch">${touchRows.map(([a, b]) => `<div><dt>${a}</dt><dd>${b}</dd></div>`).join('')}</dl>
+        <dl class="keys only-mouse">${keys.map(([a, k1, k2]) => `<div><dt>${a}</dt><dd>${k1 === 'W A S D' ? kbd(k1) : `<kbd>${k1}</kbd>`}${k2 ? ` / ${k2 === 'mouse' ? 'mouse' : k2.includes(' ') ? kbd(k2) : `<kbd>${k2}</kbd>`}` : ''}</dd></div>`).join('')}</dl>
+        <p class="hint">Health comes back only to the top of the segment you are in; bandages do the rest. Each cleared wave leaves a supply crate nearby with ammunition and bandages. A roll as you land halves a hard fall.<span class="only-mouse"> Ctrl also crouches.</span> Music by Kevin MacLeod (incompetech.com), licensed under CC BY 4.0. Roll and landing foley by dklon (opengameart.org), CC BY 3.0.</p>
         <nav class="menu-nav row"><button class="btn" data-act="back">Back</button></nav>
       </div>`);
 
@@ -116,16 +134,20 @@ export class UI {
           <h3>Graphics</h3>
           <div class="row"><span>Quality</span>
             <span class="seg" data-key="quality" title="">
-              <button type="button" data-v="low">Low</button><button type="button" data-v="medium">Medium</button><button type="button" data-v="high">High</button><button type="button" data-v="ultra">Ultra</button>
+              ${QUALITY_CHOICES.map((c) => `<button type="button" data-v="${c.id}">${c.label}</button>`).join('')}
             </span></div>
           <label class="row"><span>Render scale</span><input type="range" min="0.5" max="1" step="0.05" data-key="renderScale"><output></output></label>
-          <label class="row" title="Lowers the render scale for a moment when the frame rate drops, so it stays above 40 fps"><span>Dynamic resolution</span><input type="checkbox" data-key="dynamicRes"></label>
+          <label class="row"><span>Dynamic resolution<small>Lowers the render scale for a moment when the frame rate drops</small></span><input type="checkbox" data-key="dynamicRes"></label>
           <label class="row"><span>Field of view</span><input type="range" min="60" max="110" step="1" data-key="fov"><output></output></label>
           <label class="row"><span>Film grain</span><input type="checkbox" data-key="grain"></label>
           <label class="row"><span>Show frame rate</span><input type="checkbox" data-key="showFps"></label>
           <h3>Controls</h3>
-          <label class="row"><span>Mouse sensitivity</span><input type="range" min="0.2" max="2.5" step="0.05" data-key="sensitivity"><output></output></label>
+          <label class="row only-mouse"><span>Mouse sensitivity</span><input type="range" min="0.2" max="2.5" step="0.05" data-key="sensitivity"><output></output></label>
           <label class="row"><span>Invert vertical look</span><input type="checkbox" data-key="invertY"></label>
+          <h3 class="only-touch">Touch</h3>
+          <label class="row only-touch"><span>Look sensitivity</span><input type="range" min="0.3" max="2.5" step="0.05" data-key="touchSens"><output></output></label>
+          <label class="row only-touch"><span>Aim assist<small>The view slows a little over an infected</small></span><input type="checkbox" data-key="aimAssist"></label>
+          <label class="row only-touch"><span>Button size</span><input type="range" min="0.8" max="1.3" step="0.05" data-key="touchSize"><output></output></label>
           <h3>Audio</h3>
           <label class="row"><span>Master volume</span><input type="range" min="0" max="1" step="0.01" data-key="master"><output></output></label>
           <label class="row"><span>Music</span><input type="range" min="0" max="1" step="0.01" data-key="music"><output></output></label>
@@ -156,7 +178,7 @@ export class UI {
         <span>${kbd('W A S D')} move</span><span><kbd>Shift</kbd> sprint</span><span><kbd>C</kbd><kbd>Z</kbd> stance</span><span><kbd>V</kbd> roll</span><span><kbd>H</kbd> bandage</span><span><kbd>F</kbd> use</span>
       </div>
       <div class="vitals zk t">
-        <div class="arsenal">
+        <div class="arsenal" data-tc="swap">
           <div class="ammo"><span class="mag">30</span><span class="res">120</span></div>
           <div class="cur">${gun('rifle')}<span class="wname"></span></div>
           <div class="slots-row"></div>
@@ -165,13 +187,14 @@ export class UI {
         <div class="hp"></div>
         <div class="vit-line"><span class="band"></span><span class="stance"></span></div>
       </div>
-      <div class="prompt zk t"></div>
+      <div class="prompt zk t" data-tc="prompt"></div>
       <div class="abil zk t"></div>
       <div class="fps t"></div>`);
     this.minimap = new Minimap();
     this.hud.querySelector('.nav').prepend(this.minimap.el);
 
-    root.append(this.hud, this.menu, this.pause, this.over, this.debrief, this.baseScreen.el, this.howto, this.settingsEl, this.loading);
+    this.touch = new TouchControls(this, settings, { pause: () => this.h.pause?.() });
+    root.append(this.touch.zone, this.hud, this.touch.el, this.menu, this.pause, this.over, this.debrief, this.baseScreen.el, this.howto, this.settingsEl, this.loading, this.rotate);
     const q = (s) => this.hud.querySelector(s);
     this.cross = q('.cross'); this.hitEl = q('.hitmark'); this.hpNum = q('.hp-num'); this.hpMax = q('.hp-max'); this.hpEl = q('.hp'); this.hpSegs = [];
     this.band = q('.band'); this.stance = q('.stance'); this.wname = q('.wname'); this.curGun = q('.cur'); this.slotsEl = q('.slots-row');
@@ -208,7 +231,7 @@ export class UI {
 
   _bindSettings() {
     const s = this.settings, root = this.settingsEl;
-    const fmt = { renderScale: (v) => `${Math.round(v * 100)}%`, fov: (v) => `${v}°`, sensitivity: (v) => Number(v).toFixed(2), master: (v) => `${Math.round(v * 100)}`, music: (v) => `${Math.round(v * 100)}`, sfx: (v) => `${Math.round(v * 100)}` };
+    const fmt = { renderScale: (v) => `${Math.round(v * 100)}%`, fov: (v) => `${v}°`, sensitivity: (v) => Number(v).toFixed(2), touchSens: (v) => Number(v).toFixed(2), touchSize: (v) => `${Math.round(v * 100)}%`, master: (v) => `${Math.round(v * 100)}`, music: (v) => `${Math.round(v * 100)}`, sfx: (v) => `${Math.round(v * 100)}` };
     const sync = () => {
       root.querySelectorAll('[data-key]').forEach((c) => {
         const k = c.dataset.key;
@@ -231,6 +254,7 @@ export class UI {
       const c = e.target; const k = c.dataset.key; if (!k) return;
       s[k] = c.type === 'checkbox' ? c.checked : Number(c.value);
       saveSettings(s); sync(); this.h.settings?.(k);
+      if (k === 'touchSize') this.touch?.layout();
     });
     root.addEventListener('click', (e) => {
       const b = e.target.closest('.seg button'); if (!b) return;
@@ -251,8 +275,12 @@ export class UI {
     if (note) this.loading.querySelector('.load-note').textContent = note;
   }
 
+  // touch <-> mouse: the prompt and the ability rings say different things
+  onInputMode() { if (this._last) { delete this._last.prompt; delete this._last.abs; } }
+
   setState(state, summary) {
     this.state = state;
+    if (state !== 'playing') this.touch?.releaseAll();
     this._summary = summary;
     this.hud.classList.toggle('show', state === 'playing' || state === 'paused');
     document.body.classList.toggle('in-game', state === 'playing');
@@ -325,12 +353,14 @@ export class UI {
     const p = game.player, w = game.weapon, L = this._last, cam = game.engine.camera;
     const set = (key, val, fn) => { if (L[key] !== val) { L[key] = val; fn(val); } };
     this._frame++;
+    this.touch.update(game, dt);
+    const touch = this.touch.on;
     this.minimap.draw(game);
 
     // health: one 25 point segment each; the light part shows how far it will regenerate
     const nSeg = Math.max(1, Math.round(p.maxHealth / 25)), seg = p.maxHealth / nSeg;
     set('nseg', nSeg, (n) => {
-      this.hpEl.innerHTML = '<b><u></u><i></i></b>'.repeat(n); this.hpEl.style.gridTemplateColumns = `repeat(${n}, 1fr)`; this.hpEl.style.width = `${n * 46}px`;
+      this.hpEl.innerHTML = '<b><u></u><i></i></b>'.repeat(n); this.hpEl.style.gridTemplateColumns = `repeat(${n}, 1fr)`; this.hpEl.style.width = `calc(${n} * var(--seg-w, 46px))`;
       this.hpSegs = [...this.hpEl.children].map((b) => [b.firstChild, b.lastChild]);
       for (const k in L) if (/^(seg|cap)\d/.test(k)) delete L[k];
     });
@@ -407,8 +437,8 @@ export class UI {
       set('salv', Math.round(op.salvage), (v) => { this.salvNum.textContent = fmtN(v); });
       set('gain', op.gainSeq, (v) => { if (!v) return; this.salvGain.textContent = `+${op.gain}`; this.salvGain.classList.remove('on'); void this.salvGain.offsetWidth; this.salvGain.classList.add('on'); });
       const abs = op.abilities;
-      set('abs', abs.map((a) => a.id).join(), () => {
-        this.abil.innerHTML = abs.map((a) => `<div class="ab"><u>${a.key}</u><span>${a.short}</span></div>`).join('');
+      set('abs', abs.map((a) => a.id).join() + touch, () => {
+        this.abil.innerHTML = abs.map((a, i) => `<div class="ab" data-tc="ab" data-i="${i}"><u>${touch ? a.short : a.key}</u><span>${a.short}</span></div>`).join('');
         this.abEls = [...this.abil.children];
         for (const k in L) if (k.startsWith('ab:')) delete L[k];
       });
@@ -426,7 +456,7 @@ export class UI {
     // one prompt at a time, the key first
     let key = '', text = '';
     if (!p.alive) text = '';
-    else if (!p.script && document.pointerLockElement !== game.engine.canvas) text = 'Click to take aim';
+    else if (!p.script && !touch && document.pointerLockElement !== game.engine.canvas) text = 'Click to take aim';
     else if (p.boundary > 0.3) text = 'Turn back, the valley is sealed beyond this point';
     else if (game.interact) { key = game.interact.key; text = game.interact.text; }
     else if (p.bandaging > 0) text = 'Applying a bandage';
@@ -435,9 +465,13 @@ export class UI {
     else if (w.ammo === 0 && w.reserve === 0) { key = 'Q'; text = 'Out of ammunition, switch weapon'; }
     else if (w.ammo <= Math.max(1, w.magSize / 6) && !w.busy) { key = 'R'; text = 'Reload'; }
     else if (p.health <= 50 && p.bandages > 0) { key = 'H'; text = 'Use a bandage'; }
+    if (touch && p.vehicle) { key = ''; text = ''; }
     set('prompt', key + '|' + text, () => {
-      this.prompt.innerHTML = key ? `<kbd>${key}</kbd><span>${text}</span>` : text;
-      this.prompt.classList.toggle('plain', !key);
+      // on touch the prompt itself is the button: no key cap, the whole pill is tappable
+      this.prompt.innerHTML = key && !touch ? `<kbd>${key}</kbd><span>${text}</span>` : `<span>${text}</span>`;
+      this.prompt.dataset.key = key;
+      this.prompt.classList.toggle('tap', touch && !!key);
+      this.prompt.classList.toggle('plain', !key || touch);
       this.prompt.classList.toggle('on', !!text);
     });
     if (this.settings.showFps) { this.fpsEl.textContent = `${Math.round(game.fps || 0)} fps`; this.fpsEl.style.display = 'block'; } else if (L.fpsHidden !== true) { this.fpsEl.style.display = 'none'; L.fpsHidden = true; }

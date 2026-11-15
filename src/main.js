@@ -1,4 +1,6 @@
 import '@fontsource-variable/inter';
+// first: the light asset set for phones must be in place before any module starts a download
+import { initAssets, assetStats } from './engine/assets.js';
 import * as THREE from 'three';
 import { Engine } from './engine/engine.js';
 import { G } from './engine/shared.js';
@@ -11,9 +13,12 @@ import { UI, loadSettings, saveSettings, hasSavedSettings } from './ui/ui.js';
 import { Progress } from './game/progress.js';
 import { Operation } from './game/operation.js';
 import { createFilm } from './cinematic/film.js';
+import { MOBILE } from './core/device.js';
+import { installCapMask, hasWebGL2, showMessage } from './engine/caps.js';
+import { enterFullscreen, isFullscreen, canFullscreen } from './ui/touch.js';
 
-// an inline icon keeps the browser from asking the server for a favicon that does not exist
-{ const l = document.createElement('link'); l.rel = 'icon'; l.href = 'data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22/%3E'; document.head.appendChild(l); }
+// an inline icon keeps the browser from asking the server for a favicon that does not exist (index.html normally links the real one)
+if (!document.querySelector('link[rel="icon"]')) { const l = document.createElement('link'); l.rel = 'icon'; l.href = 'data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22/%3E'; document.head.appendChild(l); }
 const params = new URLSearchParams(location.search);
 const canvas = document.getElementById('view');
 const nextFrame = () => new Promise((r) => requestAnimationFrame(r));
@@ -42,7 +47,12 @@ async function boot() {
   if (params.get('q')) settings.quality = params.get('q');
   let game = null, engine = null;
   // the player asks for raw (unaccelerated) mouse input and falls back to the plain lock
-  const lock = () => { if (game && game.player) game.player.requestLock(); else { try { const p = canvas.requestPointerLock(); if (p && p.catch) p.catch(() => {}); } catch (e) { /* not available */ } } };
+  // on touch there is no pointer lock: the same tap goes fullscreen (and landscape) instead
+  const touchMode = () => document.body.classList.contains('touch');
+  const lock = () => {
+    if (touchMode()) { if (MOBILE) enterFullscreen(); return; }
+    if (game && game.player) game.player.requestLock(); else { try { const p = canvas.requestPointerLock(); if (p && p.catch) p.catch(() => {}); } catch (e) { /* not available */ } }
+  };
   const applySetting = (k) => {
     if (!engine) return;
     if (k === 'quality' || k === 'renderScale' || k === 'all') {
@@ -67,32 +77,72 @@ async function boot() {
     sound: (name, volume = 0.5) => { game?.audio.resume(); game?.audio.play(name, { volume }); },
     resume: () => { lock(); game.resume(); },
     quit: () => { document.exitPointerLock?.(); game.toMenu(); },
+    pause: () => { document.exitPointerLock?.(); game.pause(); },
     settings: applySetting,
     click: () => { game?.audio.resume(); game?.audio.play('ui_click', { volume: 0.5 }); },
   }, progress);
   if (AUTO) document.getElementById('ui').style.display = 'none';
 
-  ui.progress(0.05, 'Starting renderer');
+  // Loading display: the stage of the start-up, or the share of the expected download when that is
+  // further along (on a slow connection the downloads are most of the wait), with the megabytes so far.
+  let loadP = 0, loadLabel = '';
+  const loadProgress = (p, label) => {
+    if (label !== undefined && label !== loadLabel) (window.__loadStages ||= []).push([label, Math.round(performance.now())]);   // (stage timing for tools)
+    if (label !== undefined) loadLabel = label;
+    const expect = assetStats.startBytes || (assetStats.lite ? 48e6 : 125e6);
+    loadP = Math.max(loadP, p ?? 0, Math.min(0.95, assetStats.bytes / expect));
+    if (p === 1) { loadP = 1; clearInterval(loadTick); }
+    const mb = assetStats.bytes / 1048576;
+    ui.progress(loadP, loadP < 1 && mb >= 1 ? `${loadLabel} (${mb.toFixed(0)} MB)` : loadLabel);
+  };
+  const loadTick = setInterval(() => loadProgress(), 250);
+  // capability masks for testing (?caps=), then the plain message where WebGL2 is missing
+  installCapMask();
+  if (!hasWebGL2()) {
+    clearInterval(loadTick);
+    showMessage('This browser cannot show Valle Morta', 'The game needs WebGL2, which this browser or device does not offer. A current Chrome, Safari, Firefox or Edge will run it.');
+    return;
+  }
+  // phones and tablets load the light asset set (public/assets/m/) and start on the phone tier
+  await initAssets();
+  if (MOBILE && firstRun) { settings.quality = 'low'; ui.syncSettings?.(); }   // = the mobile preset (engine.resolveQuality)
+
+  loadProgress(0.05, 'Starting renderer');
   await nextFrame();
   engine = new Engine(canvas, settings.quality);
   engine.renderScale = engine.q.scale * (AUTO ? 1 : settings.renderScale);
   G.uNoiseTex.value = makeNoiseTexture(256, 11);
-  const resize = () => engine.resize(Math.max(320, window.innerWidth), Math.max(200, window.innerHeight));
+  // phones: the visual viewport is what is actually on screen while the address bar comes and goes
+  const portrait = () => MOBILE && window.innerHeight > window.innerWidth * 1.05;
+  const resize = () => {
+    const vv = MOBILE && window.visualViewport;
+    const w = vv ? Math.round(vv.width) : window.innerWidth, h = vv ? Math.round(vv.height) : window.innerHeight;
+    engine.resize(Math.max(320, w), Math.max(200, h));
+    if (portrait() && game && game.state === 'playing') game.pause();     // turned upright: the run waits behind the rotate screen
+  };
   resize();
   window.addEventListener('resize', resize);
+  if (MOBILE) {
+    window.visualViewport?.addEventListener('resize', resize);
+    // some browsers report the new size a moment after the rotation
+    window.addEventListener('orientationchange', () => { resize(); setTimeout(resize, 250); setTimeout(resize, 700); });
+  }
 
   const layout = createLayout();
-  ui.progress(0.12, 'Raising the mountains');
-  const terrain = await Terrain.load(engine, (p) => ui.progress(0.12 + p * 0.3));
+  loadProgress(0.12, 'Raising the mountains');
+  const terrain = await Terrain.load(engine, (p) => loadProgress(0.12 + p * 0.3));
   engine.scene.add(terrain.group);
-  ui.progress(0.45, 'Gathering clouds');
+  loadProgress(0.45, 'Gathering clouds');
   await engine.init(nextFrame);
   const off = new Set((params.get('off') || '').split(',').filter(Boolean));
-  ui.progress(0.55, 'Building the village');
-  const world = await buildWorld(engine, terrain, layout, off, (p) => ui.progress(0.55 + p * 0.25));
-  ui.progress(0.82, 'Waking the valley');
+  loadProgress(0.55, 'Building the village');
+  const world = await buildWorld(engine, terrain, layout, off, (p) => loadProgress(0.55 + p * 0.25));
+  loadProgress(0.82, 'Waking the valley');
   game = new Game({ engine, terrain, layout, world, settings });
-  await game.init((p) => ui.progress(0.82 + p * 0.16));
+  await game.init((p) => loadProgress(0.82 + p * 0.12));
+  // textures uploaded and shaders compiled in slices, before the first real frame
+  loadProgress(0.94, 'Preparing shaders');
+  await engine.prewarm(nextFrame, (p) => loadProgress(0.94 + p * 0.05));
   game.progress = progress;
   game.operation = new Operation(game, progress);
   game.ui = AUTO ? null : ui;
@@ -122,7 +172,9 @@ async function boot() {
       sync();
       return (performance.now() - t0) / n;
     };
-    run(4); await nextFrame();
+    // warm-up one frame at a time: the first frames link the remaining programs (shadow depth
+    // variants) and upload late textures, which on a phone would be one long stall
+    for (let i = 0; i < 4; i++) { run(1); await nextFrame(); }
     const t = [];
     for (let i = 0; i < 3; i++) { t.push(run(8)); await nextFrame(); }
     t.sort((a, b) => a - b);
@@ -144,9 +196,14 @@ async function boot() {
 
   // pointer lock <-> pause
   document.addEventListener('pointerlockchange', () => {
-    if (document.pointerLockElement !== canvas && game.state === 'playing' && !AUTO) game.pause();
+    if (document.pointerLockElement !== canvas && game.state === 'playing' && !AUTO && !touchMode()) game.pause();
   });
-  canvas.addEventListener('click', () => { if (game.state === 'playing' && document.pointerLockElement !== canvas && !AUTO) lock(); });
+  canvas.addEventListener('click', () => { if (game.state === 'playing' && document.pointerLockElement !== canvas && !AUTO && !touchMode()) lock(); });
+  // phones: leaving fullscreen or the app pauses the run; the next tap (Resume) goes fullscreen again
+  const fsChange = () => { if (MOBILE && !AUTO && !isFullscreen() && canFullscreen() && game.state === 'playing') game.pause(); };
+  document.addEventListener('fullscreenchange', fsChange);
+  document.addEventListener('webkitfullscreenchange', fsChange);
+  document.addEventListener('visibilitychange', () => { if (document.hidden && !AUTO && game.state === 'playing' && touchMode()) game.pause(); });
   window.addEventListener('keydown', (e) => {
     if (e.code === 'Escape' && game.state === 'paused') { /* browsers swallow Esc while unlocking; resume is via the button */ }
     if (e.code === 'KeyP' && game.state === 'playing') { document.exitPointerLock?.(); game.pause(); }
@@ -168,11 +225,12 @@ async function boot() {
       engine.camera.rotation.x = THREE.MathUtils.clamp(engine.camera.rotation.x - e.movementY * 0.003, -1.5, 1.5);
     });
   } else {
-    if (firstRun) {
-      ui.progress(0.99, 'Tuning graphics');
+    // phones skip it: they start on the mobile preset (set above) and step up in Settings
+    if (firstRun && !MOBILE) {
+      loadProgress(0.99, 'Tuning graphics');
       try { await autoQuality(); } catch (e) { console.error('[auto quality] failed:', e); }
     }
-    ui.progress(1);
+    loadProgress(1);
     game.toMenu();
   }
 
@@ -247,6 +305,7 @@ async function boot() {
 
 boot().catch((e) => {
   console.error(e);
+  if (e && e.vmMessage) { showMessage(e.vmMessage[0], e.vmMessage[1]); return; }
   const d = document.createElement('pre');
   d.style.cssText = 'position:fixed;inset:0;margin:0;padding:24px;color:#f88;background:#111;white-space:pre-wrap;font:13px system-ui;z-index:99';
   d.textContent = String((e && e.stack) || e);

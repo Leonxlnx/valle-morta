@@ -360,7 +360,7 @@ const SPEC_CHUNK = THREE.ShaderChunk.lights_physical_fragment
 // the stored sward fraction; the near/far tile mix and the cheap-layer switch are per cascade.
 //   target A: sqrt(albedo), sward fraction (C3: ao)    B: normal xy, roughness, specular    C: ao, sward*drift
 // [C0, C1, C2, C3] texels per side
-const CACHE_RES = { low: [1024, 1024, 1024, 1024], medium: [2048, 1024, 1024, 1024], high: [2048, 2048, 2048, 2048], ultra: [2048, 2048, 2048, 2048] };
+const CACHE_RES = { mobile: [512, 512, 512, 512], mobileHigh: [1024, 512, 512, 512], low: [1024, 1024, 1024, 1024], medium: [2048, 1024, 1024, 1024], high: [2048, 2048, 2048, 2048], ultra: [2048, 2048, 2048, 2048] };
 // level-0 texels baked per frame while streaming (doubled when the camera nears the used edge)
 // Cache on or off (off: the full per-pixel ground everywhere, as before the cache):
 // URL ?gcache=0|1 first, then the quality key groundCache, then this per-preset default.
@@ -370,7 +370,7 @@ function cacheEnabled(engine) {
   if (engine.q && typeof engine.q.groundCache === 'boolean') return engine.q.groundCache;
   return CACHE_DEFAULT[engine.qualityName] ?? true;
 }
-const CACHE_BUDGET = { low: 1 << 14, medium: 1 << 14, high: 1 << 15, ultra: 1 << 15 };
+const CACHE_BUDGET = { mobile: 1 << 13, mobileHigh: 1 << 13, low: 1 << 14, medium: 1 << 14, high: 1 << 15, ultra: 1 << 15 };
 // bake: [distance for the cheap-layer switch, near/far tile mix, far-only, far constants baked in]
 const CASCADES = [
   { size: 20.48, step: 0.64, bake: [5, 0.0, 0.0, 0], band: 2.5, edge: 0.15 },
@@ -532,7 +532,10 @@ export class Terrain {
     onProgress(0.7);
 
     const heightTex = new THREE.DataTexture(t.local, meta.local.n, meta.local.n, THREE.RedFormat, THREE.FloatType);
-    heightTex.minFilter = heightTex.magFilter = THREE.LinearFilter;
+    // 32-bit float textures filter only with OES_texture_float_linear (absent on iOS and many
+    // Android GPUs; unfiltered, the texture would read as zero). The clipmap vertices sit on the
+    // height samples, so nearest sampling differs only where two rings blend.
+    heightTex.minFilter = heightTex.magFilter = engine.renderer.extensions.has('OES_texture_float_linear') ? THREE.LinearFilter : THREE.NearestFilter;
     heightTex.needsUpdate = true;
     const mk = (img) => {
       const tex = new THREE.DataTexture(img.data, img.width, img.height, THREE.RGBAFormat);
@@ -629,14 +632,16 @@ ${CACHE_SURFACE}
       const cell = 0.5 * 2 ** Math.max(l, 0);
       const u = near ? t.levels[0].u : { uLevel: { value: new THREE.Vector4(0, 0, cell, half) }, uInner: { value: new THREE.Vector4(1e9, 1e9, -1e9, -1e9) } };
       // cache off: every level and the near patch run the full per-pixel material
+      // groundNear false (mobile tier): the patch at the feet reads the cache too (no per-pixel ground)
+      const pp = near && engine.q.groundNear !== false;
       const fo = useCache ? {
-        key: near ? 'terrain-near' : 'terrain-local',
+        key: pp ? 'terrain-near' : 'terrain-local',
         uniforms: { ...shared, ...u, ...t.cache.uniforms },
-        fragmentPars: near ? `${fullDefs}#define VM_NEAR
+        fragmentPars: pp ? `${fullDefs}#define VM_NEAR
 uniform vec4 uLevel;
 ${LOCAL_FRAG_PARS}
 ${CACHE_FRAG_PARS}` : CACHE_FRAG_PARS,
-        surface: near ? LOCAL_SURFACE + NEAR_BLEND : CACHE_SURFACE,
+        surface: pp ? LOCAL_SURFACE + NEAR_BLEND : CACHE_SURFACE,
       } : { key: 'terrain-pp', uniforms: { ...shared, ...u }, fragmentPars: fullDefs + LOCAL_FRAG_PARS, surface: LOCAL_SURFACE };
       const mat = enhance(new THREE.MeshStandardMaterial({ roughness: 1, metalness: 0 }), {
         ...fo,

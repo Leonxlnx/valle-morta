@@ -61,7 +61,8 @@ function inTile(c, t, fn) {
   c.save();
   c.beginPath(); c.rect(t.x, t.y, t.w, t.h); c.clip();
   c.translate(t.x, t.y);
-  fn(t.w, t.h);
+  const r = fn(t.w, t.h);
+  if (r && r.then) return r.then(() => c.restore());   // a drawing that yields between its strokes
   c.restore();
 }
 
@@ -225,7 +226,7 @@ const PT = {
 };
 const tuv = (t, u, v) => [(t.x + 2 + u * (t.w - 4)) / 1024, (t.y + 2 + (1 - v) * (t.h - 4)) / 1024];
 
-function drawSpruce(c, rnd, w, h) {
+async function drawSpruce(c, rnd, w, h, tick) {
   const ax = (t) => w * 0.5 + Math.sin(t * 2.3) * 7;
   const ay = (t) => h - 3 - t * (h - 24);
   const sprig = (px, py, ang, len, depth, wid = 4.2) => {
@@ -250,6 +251,7 @@ function drawSpruce(c, rnd, w, h) {
     c.beginPath(); c.moveTo(ex - Math.cos(ang) * 4, ey - Math.sin(ang) * 4); c.lineTo(ex, ey); c.stroke();
   };
   for (let t = 0.02; t < 0.985; t += 0.036 + rnd() * 0.014) {
+    if (tick) await tick();
     const prof = t < 0.22 ? lerp(0.5, 1, t / 0.22) : Math.pow(1 - (t - 0.22) / 0.78, 0.8);
     for (const sd of [-1, 1]) {
       const a = -Math.PI / 2 + sd * (0.82 + rnd() * 0.3);
@@ -416,17 +418,26 @@ function drawBark(c, rnd, w, h, o) {
     c.beginPath(); c.arc(rnd() * w, rnd() * h, 1 + rnd() * 3.5, 0, TAU); c.fill();
   }
 }
-function makePlantAtlas(aniso) {
+async function makePlantAtlas(aniso, tick) {
   const cv = makeCanvas(1024, 1024), c = cv.getContext('2d');
   const rnd = rng32(8803);
   c.lineCap = 'round';
-  inTile(c, PT.spruce, (w, h) => drawSpruce(c, rnd, w, h));
+  if (tick) await tick();
+  await inTile(c, PT.spruce, (w, h) => drawSpruce(c, rnd, w, h, tick));
   // leafy sprays for the broadleaf crowns (full foliage, not bare twigs in bud)
-  for (let k = 0; k < 4; k++) inTile(c, PT['spray' + k], (w, h) => drawSpray(c, rnd, w, h, k));
+  for (let k = 0; k < 4; k++) {
+    if (tick) await tick();
+    inTile(c, PT['spray' + k], (w, h) => drawSpray(c, rnd, w, h, k));
+  }
+  if (tick) await tick();
   inTile(c, PT.barkC, (w, h) => drawBark(c, rnd, w, h, { h: 22, s: 17, l: 19, plates: 1100, pw: 6, ph: 18, cracks: 320, cl: 46, cw: 1.2, specks: 180, sh: 70 }));
+  if (tick) await tick();
   inTile(c, PT.barkD, (w, h) => drawBark(c, rnd, w, h, { h: 34, s: 8, l: 41, plates: 700, pw: 7, ph: 26, cracks: 300, cl: 120, cw: 2.0, specks: 260, sh: 60 }));
+  if (tick) await tick();
   inTile(c, PT.shrub, (w, h) => drawTwigs(c, rnd, w, h, { kind: 'leaf', decoP: 0.9, decoN: [1, 3], scatter: 10, maxDepth: 4, len0: 0.3, wid0: 4.5, barkL: 22, fork: 0.5 }));
+  if (tick) await tick();
   inTile(c, PT.blossom, (w, h) => drawTwigs(c, rnd, w, h, { kind: 'blossom', decoP: 0.9, decoN: [2, 4], scatter: 11, maxDepth: 4, len0: 0.3, wid0: 4.5, barkL: 20, fork: 0.5 }));
+  if (tick) await tick();
   inTile(c, PT.burnt, (w, h) => {
     c.fillStyle = hsl(20, 10, 4.5); c.fillRect(0, 0, w, h);
     for (let y = 0; y < h; y += 15) for (let x = -8; x < w; x += 12) {
@@ -439,6 +450,7 @@ function makePlantAtlas(aniso) {
       c.beginPath(); c.ellipse(rnd() * w, rnd() * h, 4 + rnd() * 10, 10 + rnd() * 26, 0, 0, TAU); c.fill();
     }
   });
+  if (tick) await tick();
   inTile(c, PT.wood, (w, h) => {
     c.fillStyle = hsl(34, 36, 47); c.fillRect(0, 0, w, h);
     for (let i = 0; i < 500; i++) {
@@ -966,12 +978,13 @@ if (diffuseColor.a < alphaTest) { discard; return; }
   return mat;
 }
 
-function bakeGrassMap(ctx) {
+async function bakeGrassMap(ctx) {
   const t = ctx.terrain, n = t.maskN, P = ctx.layout;
   const A = t.maskA, B = t.maskB, C = t.maskC, H = t.local, hn = t.meta.local.n;
   const data = new Uint8Array(n * n * 4);
   const hs = (hn - 1) / n, cell = 1024 / n;
   for (let j = 0; j < n; j++) {
+    if (ctx.tick && (j & 15) === 0) await ctx.tick(0.2 * j / n);
     const hj = Math.min(hn - 2, Math.round(j * hs));
     for (let i = 0; i < n; i++) {
       const k = (j * n + i) * 4;
@@ -1165,13 +1178,15 @@ export async function build(ctx) {
   };
 
   // ============================================================ grass
+  let grassMap = null;
+  try { grassMap = await bakeGrassMap(ctx); } catch (e) { console.error('[vegetation] grass map failed:', e); }
+  if (ctx.tick) await ctx.tick(0.2);
   safe('grass', () => {
     const atlas = makeGrassAtlas(aniso);
-    const grassMap = bakeGrassMap(ctx);
     const gAvg = groundAverage(T);
     const uGround = T.uniforms.uMeadow || { value: gAvg.clone().multiplyScalar(0.9) };   // the colour of the sward below (terrain.js)
     const uTexAvg = { value: new THREE.Vector3(atlas.avg[0], atlas.avg[1], atlas.avg[2]) };
-    const qg = clamp(quality.grass ?? 0.85, 0.3, 1), sq = Math.sqrt(qg);
+    const qg = clamp(quality.grass ?? 0.85, 0.12, 1), sq = Math.sqrt(qg);
     const TW = 1 / 1024;
     const uCull = { value: new THREE.Vector4(0, 0, -1, -1) };   // xyz view direction, w cosine of the cull cone
     const cfgs = [
@@ -1187,7 +1202,14 @@ export async function build(ctx) {
         tile: [0, 512 * TW, 256 * TW, 256 * TW], varT: [0.62, 0.78, 0.93], varH: [1, 0.8, 1.6, 0.9], misc: [1.25, 2.6, 0.05, 0.8], root: 1, tip: [1, 1, 1], seed: 91, shadows: false },
     ];
     // grassRange (ultra): a longer reach of the mid and flower rings; low / medium unchanged
-    const gr = clamp(quality.grassRange ?? 1, 1, 2);
+    const gr = clamp(quality.grassRange ?? 1, 0.3, 2);
+    // below 1 (mobile tiers): every ring but the one at the feet ends sooner, and only the rings at the
+    // feet cast shadows (grass shadows are a large share of a small GPU's shadow pass)
+    if (gr < 1) for (const c of cfgs) {
+      if (c.name === 'feet') continue;
+      c.R *= gr; c.fade = c.fade.map((f) => (f > 0 ? f * gr : f));
+      if (c.name !== 'near') c.shadows = false;
+    }
     if (gr > 1) for (const c of cfgs) {
       const k = c.name === 'flowers' ? gr : c.name === 'mid' ? 1 + (gr - 1) * 0.6 : 1;
       if (k === 1) continue;
@@ -1233,7 +1255,10 @@ export async function build(ctx) {
 
   // ============================================================ trees
   const trees = [];
-  const plant = safe('plant atlas', () => makePlantAtlas(aniso));
+  if (ctx.tick) await ctx.tick(0.25);
+  let plant = null;
+  try { plant = await makePlantAtlas(aniso, ctx.tick); } catch (e) { console.error('[vegetation] plant atlas failed:', e); }
+  if (ctx.tick) await ctx.tick(0.4);
   safe('trees', () => {
     if (!plant) return;
     const kinds = [
@@ -1251,6 +1276,9 @@ export async function build(ctx) {
       { name: 'linden', rn: 125, cap: 90, clear: new THREE.Color(0.035, 0.045, 0.025), ...broadleafKind(505,
         { H: 9.5, trunk: 0.36, bole: 0.3, limbs: 5, limbTilt: 0.8, limbLen: 0.25, leader: false, low: 3, dead: true, spread: 1.05, fork: 0.32, lateral: 0.65, photo: 0.45, droop: 0.4, leafS: 0.95, sprays: [PT.spray2, PT.spray2, PT.spray3], bark: PT.barkC }) },
     ];
+    // treeRange (mobile tiers): the full tree meshes give way to the impostors sooner
+    const tr = clamp(quality.treeRange ?? 1, 0.3, 1);
+    if (tr < 1) for (const k of kinds) k.rn = Math.round(k.rn * tr);
     const rt = bakeImpostors(engine.renderer, kinds, plant.tex);
 
     // ---- placement: conifers
@@ -1340,7 +1368,7 @@ export async function build(ctx) {
       return mesh;
     };
     // broadleaf: full clusters up to NEAR m, then the mid model (fewer, larger clusters, no fine twigs)
-    const NEAR = 36;
+    const NEAR = Math.round(36 * tr);
     kinds.forEach((k, i) => {
       const pm = i < 2 ? matC : matD;
       k.mesh = mkMesh(k.geo, pm, k.geoMid ? 40 : k.cap, `tree-${k.name}`);
@@ -1448,6 +1476,7 @@ diffuseColor.a = min(1.0, diffuseColor.a * 1.5);
   });
 
   // ============================================================ shrubs, dead wood
+  if (ctx.tick) await ctx.tick(0.7);
   safe('shrubs', () => {
     if (!plant) return;
     const pm = makePlantMaterial(plant.tex, U, 1e7);
@@ -1543,6 +1572,7 @@ diffuseColor.a = min(1.0, diffuseColor.a * 1.5);
   });
 
   // ============================================================ rocks
+  if (ctx.tick) await ctx.tick(0.85);
   safe('rocks', () => {
     const rnd = rng32(5519);
     const uniforms = {

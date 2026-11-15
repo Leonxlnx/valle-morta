@@ -190,8 +190,10 @@ export class MB {
     const root = (a) => { while (par[a] !== a) { par[a] = par[par[a]]; a = par[a]; } return a; };
     const wid = (q) => {
       let w = vid.get(q); if (w !== undefined) return w;
-      const k = `${Math.round(pos[q * 3] * 250)},${Math.round(pos[q * 3 + 1] * 250)},${Math.round(pos[q * 3 + 2] * 250)}`;
-      w = weld.get(k); if (w === undefined) { w = par.length; par.push(w); weld.set(k, w); }
+      // 4 mm grid cell as a number: x keys an inner map of y * 2^24 + z (exact for |y|, |z| < 33 km)
+      const gx = Math.round(pos[q * 3] * 250), k = Math.round(pos[q * 3 + 1] * 250) * 16777216 + Math.round(pos[q * 3 + 2] * 250);
+      let row = weld.get(gx); if (!row) weld.set(gx, row = new Map());
+      w = row.get(k); if (w === undefined) { w = par.length; par.push(w); row.set(k, w); }
       vid.set(q, w); return w;
     };
     for (let t = 0; t < nt; t++) { const o = i0 + t * 3, a = root(wid(idx[o])), b = root(wid(idx[o + 1])), c = root(wid(idx[o + 2])); par[b] = a; par[root(c)] = a; }

@@ -5,6 +5,8 @@ import * as THREE from 'three';
 import { G } from './shared.js';
 import { Sky } from './sky.js';
 import { PostFX } from './post.js';
+import { MOBILE } from '../core/device.js';
+import { probeCaps, loseAfter, showMessage } from './caps.js';
 
 // Each preset is one deliberate bundle (integrated Radeon 780M, 1920x1200). The tiers were moved up
 // one step in iteration 2: low is the former medium, medium the former high, high the former ultra.
@@ -25,7 +27,47 @@ export const QUALITY = {
   high:   { scale: 1.0,  msaa: 0, shadow: 4096, shadowRange: 130, pano: [4096, 1024], cloudSteps: 72, ao: true,  vol: true, volSteps: 30, volScale: 2, texSize: 2048, grass: 1.0,  aniso: 16, far: 1,   sharpen: 0.8, rays: 32, rayStrength: 0.1, reflect: 0.34, clutter: 0.5 },
   ultra:  { scale: 1.0,  msaa: 0, shadow: 5120, shadowRange: 150, pano: [5120, 1280], cloudSteps: 96, ao: true,  aoHQ: true, aoRadius: 1.6, aoIntensity: 2.1, aoAmount: 1.0, contact: 1.0, shadowSoft: 1.2, vol: true, volSteps: 36, volScale: 2, texSize: 2048, grass: 1.0, grassRange: 1.5, aniso: 16, far: 1.5, sharpen: 1.0,
             rays: 32, rayStrength: 0.13, volStrength: 0.85, reflect: 0.34, aoFull: false, cloudFine: 1, clutter: 1, clarity: 0.3, vibrance: 0.32, contrast: 1.17 },
+  // Phone and tablet tiers, below low. A phone GPU has a fraction of the 780M's fill rate, so the
+  // per-pixel post passes go first (AO, light shafts, reflections, contact shadows) and the internal
+  // render size is capped by pixel count whatever the device pixel ratio: maxPix internal pixels
+  // (the edge-adaptive upscaler sharpens it to the output), maxOut output pixels (CSS size times
+  // the device pixel ratio, capped). The governor holds 30 fps (dynFloor ms) down to dynMin.
+  //   mobile      ~1050x590 internal, 1024 shadows over 40 m, 1K sky, 18 % grass to 45 % range,
+  //               tree meshes to 45 % range, house detail to 60 %, 3-level bloom, 512 px textures,
+//               ground from the 512 px cache tiles only (groundNear false: no per-pixel patch at the feet)
+  //   mobileHigh  1152x648 internal, 2048 shadows over 55 m, 2K sky, 30 % grass to 60 % range,
+  //               tree meshes to 60 %, house detail to 80 %, 4-level bloom, 512 px textures, cache-only ground
+//   (measured on the 780M, street + meadow, GPU split: low 16.5 ms, mobile 9.7 ms; the per-pixel
+//   patch at the feet alone cost 3 ms of a 1280x720 mobileHigh frame)
+  // Keys only these read: maxPix, maxOut, dynFloor, dynUp, dynMin, bloomLevels, treeRange and
+  // detailFar (vegetation / buildings); grassRange below 1 also shortens the grass rings.
+  mobile:     { scale: 1.0, maxPix: 1050 * 590, maxOut: 1920 * 886, msaa: 0, shadow: 1024, shadowRange: 40, shadowSoft: 1.0, pano: [1024, 256], cloudSteps: 24, ao: false, vol: false, volSteps: 8, volScale: 4, rays: 0,
+                texSize: 512, grass: 0.18, grassRange: 0.45, treeRange: 0.45, detailFar: 0.6, aniso: 2, far: 1, sharpen: 1.0, bloomLevels: 3, clutter: 0, groundNear: false, dynFloor: 33.3, dynUp: 28, dynMin: 0.6 },
+  mobileHigh: { scale: 1.0, maxPix: 1152 * 648, maxOut: 2400 * 1080, msaa: 0, shadow: 2048, shadowRange: 55, shadowSoft: 1.2, pano: [2048, 512], cloudSteps: 32, ao: false, vol: false, volSteps: 8, volScale: 4, rays: 0,
+                texSize: 512, grass: 0.3, grassRange: 0.6, treeRange: 0.6, detailFar: 0.8, aniso: 4, far: 1, sharpen: 0.95, bloomLevels: 4, clutter: 0, groundNear: false, dynFloor: 33.3, dynUp: 28, dynMin: 0.6 },
 };
+// The Settings screen offers four buttons (low, medium, high, ultra). On a phone or tablet they map
+// one step per button onto mobile, mobileHigh, low, medium, so the first two are the phone tiers.
+// Names that are already presets pass through unchanged.
+const MOBILE_MAP = { low: 'mobile', medium: 'mobileHigh', high: 'low', ultra: 'medium' };
+export function resolveQuality(name) {
+  if (MOBILE && MOBILE_MAP[name]) return MOBILE_MAP[name];
+  return QUALITY[name] ? name : (MOBILE ? 'mobile' : 'low');
+}
+// labels for a settings UI that wants to name the tiers by what they are on this device
+export const QUALITY_CHOICES = MOBILE
+  ? [{ id: 'low', label: 'Phone' }, { id: 'medium', label: 'Phone high' }, { id: 'high', label: 'Low' }, { id: 'ultra', label: 'Medium' }]
+  : [{ id: 'low', label: 'Low' }, { id: 'medium', label: 'Medium' }, { id: 'high', label: 'High' }, { id: 'ultra', label: 'Ultra' }];
+// presets clamped to what the GPU can allocate
+function fitCaps(q, caps) {
+  if (!caps) return q;
+  const m = caps.maxTex;
+  q.shadow = Math.min(q.shadow, m);
+  q.texSize = Math.min(q.texSize, m);
+  if (q.pano[0] > m) q.pano = [m, m / 4];
+  if (q.msaa) q.msaa = Math.min(q.msaa, caps.maxSamples || 0);
+  return q;
+}
 // ?qo=key:value,... overrides preset keys (tooling A/B, e.g. qo=msaa:4,reflect:0)
 function withOverrides(q) {
   try {
@@ -51,9 +93,26 @@ const PREPASS_LAYER = 4;
 export class Engine {
   constructor(canvas, qualityName = 'high') {
     this.canvas = canvas;
+    qualityName = resolveQuality(qualityName);
     this.qualityName = qualityName;
-    this.q = withOverrides({ ...QUALITY[qualityName] });
     const renderer = new THREE.WebGLRenderer({ canvas, antialias: false, alpha: false, depth: false, stencil: false, powerPreference: 'high-performance', preserveDrawingBuffer: false });
+    // what this GPU can do; a missing essential ends in a plain message (main.js shows err.vmMessage)
+    this.caps = probeCaps(renderer.getContext());
+    if (this.caps.missing.length) {
+      renderer.dispose();
+      const e = new Error('GPU lacks: ' + this.caps.missing.join(', '));
+      e.vmMessage = ['This device cannot run Valle Morta', 'Its graphics chip lacks ' + this.caps.missing.join(', ') + '.'];
+      throw e;
+    }
+    this.q = fitCaps(withOverrides({ ...QUALITY[qualityName] }), this.caps);
+    // A lost context (page in the background, GPU memory short) cannot be rebuilt in place: every
+    // texture, target and program would have to be recreated. Stop drawing and offer a reload.
+    canvas.addEventListener('webglcontextlost', (e) => {
+      e.preventDefault();
+      this.lost = true;
+      showMessage('The graphics were reset', 'The browser took the graphics chip away from the game, usually because the page was in the background or memory ran short. Reload to continue.', true);
+    });
+    loseAfter(renderer.getContext());
     renderer.setPixelRatio(1);
     renderer.toneMapping = THREE.NoToneMapping;
     renderer.shadowMap.enabled = true;
@@ -117,8 +176,9 @@ export class Engine {
   }
 
   setQuality(name) {
+    name = resolveQuality(name);
     this.qualityName = name;
-    this.q = withOverrides({ ...QUALITY[name] });
+    this.q = fitCaps(withOverrides({ ...QUALITY[name] }), this.caps);
     this.renderScale = this.q.scale;
     this.sun.shadow.mapSize.set(this.q.shadow, this.q.shadow);
     if (this.sun.shadow.map) { this.sun.shadow.map.dispose(); this.sun.shadow.map = null; }
@@ -136,6 +196,15 @@ export class Engine {
 
   // An explicit resize (window, quality, render scale, film) restarts the governor at the top step.
   resize(outW, outH) {
+    // phone tiers: the caller passes CSS pixels (window size); the output goes up to the device
+    // pixel ratio within maxOut pixels. A repeat call with the current output size (setQuality,
+    // settings) keeps the CSS size it was derived from.
+    if (this._css && outW === this.outW && outH === this.outH) [outW, outH] = this._css;
+    if (this.q.maxOut) {
+      this._css = [outW, outH];
+      const k = Math.max(1, Math.min(globalThis.devicePixelRatio || 1, Math.sqrt(this.q.maxOut / (outW * outH))));
+      outW = Math.round(outW * k); outH = Math.round(outH * k);
+    } else this._css = null;
     this.outW = outW; this.outH = outH;
     this.renderer.setSize(outW, outH, false);
     const s = this.post.settings, q = this.q;
@@ -145,12 +214,16 @@ export class Engine {
     s.raySteps = q.rays ?? 0; s.rayStrength = q.rayStrength ?? 0.05; s.volStrength = q.volStrength ?? 0.7;
     s.clarity = q.clarity ?? 0.22; s.vibrance = q.vibrance ?? 0.25; s.contrast = q.contrast ?? 1.14;
     if (q.sharpen !== undefined) s.sharpen = q.sharpen;
+    s.bloomLevels = q.bloomLevels ?? 6;
     // the steps of the governor: the set render scale, then down in 0.08 steps to 0.5
     // With MSAA the first step down drops the multisampling at the same scale (it costs about as
     // much as the rest of the frame on the 780M; FXAA then covers the edges).
-    const top = this.renderScale, lv = [{ s: top, msaa: q.msaa }];
+    // (phone tiers: the top step is capped at maxPix internal pixels, the bottom at dynMin of it)
+    const top = q.maxPix ? Math.min(this.renderScale, +Math.sqrt(q.maxPix / (outW * outH)).toFixed(3)) : this.renderScale;
+    const lv = [{ s: top, msaa: q.msaa }];
     if (q.msaa) lv.push({ s: top, msaa: 0 });
-    for (let x = top - DYN_STEP; x >= DYN_MIN - 1e-6; x -= DYN_STEP) lv.push({ s: +x.toFixed(3), msaa: 0 });
+    const dmin = q.dynMin ? q.dynMin * top : DYN_MIN;
+    for (let x = top - DYN_STEP; x >= dmin - 1e-6; x -= DYN_STEP) lv.push({ s: +x.toFixed(3), msaa: 0 });
     for (const l of lv) l.cost = l.s * l.s * (l.msaa ? 1.8 : 1);
     this.levels = lv;
     this._gov = { k: 0, ema: 0, t: 0, over: 0, under: 0, upWait: 2000, lastUp: -1e9, clock: 0 };
@@ -203,11 +276,12 @@ export class Engine {
     g.t += ms;
     if (g.t < 500) return;   // let the timing settle after a change
     const last = this.levels.length - 1, cost = this.levels[g.k].cost;
-    if (g.ema > DYN_FLOOR_MS) {
+    const floor = this.q.dynFloor || DYN_FLOOR_MS, upMs = this.q.dynUp || DYN_UP_MS;
+    if (g.ema > floor) {
       g.under = 0; g.over += ms;
       if (g.over > 400 && g.k < last) {
         if (g.clock - g.lastUp < 5000) g.upWait = Math.min(30000, g.upWait * 2);
-        this._step(Math.min(last, g.k + (g.ema > 33.3 ? 2 : 1)));
+        this._step(Math.min(last, g.k + (g.ema > floor * 1.33 ? 2 : 1)));
       }
       return;
     }
@@ -217,7 +291,7 @@ export class Engine {
     if (g.k === 0) return;
     // (about two thirds of the frame taken to scale with the pixels: measured on the 780M, the
     // old three quarters and 20.5 ms kept it at the bottom step while running at 50-57 fps)
-    if (g.ema * (0.35 + 0.65 * this.levels[g.k - 1].cost / cost) < DYN_UP_MS) {
+    if (g.ema * (0.35 + 0.65 * this.levels[g.k - 1].cost / cost) < upMs) {
       g.under += ms;
       if (g.under > g.upWait) { g.lastUp = g.clock; this._step(g.k - 1); }
     } else g.under = 0;
@@ -233,6 +307,51 @@ export class Engine {
     await this.sky.init(this.time, tick);
     this.sky.ambTarget = this.ambient;
     this.sky.updateEnvironment(this.scene);
+  }
+
+  // Start-up warm-up, spread over frames so the page never stalls for seconds (phones compile and
+  // upload far slower than this laptop): every texture of the scene is uploaded a few per frame,
+  // then every program is compiled with compileAsync (KHR_parallel_shader_compile where available),
+  // including hidden objects (house detail, tree LODs, pooled infected) and the weapon layer.
+  async prewarm(nextFrame, onProgress = () => {}) {
+    const r = this.renderer, scene = this.scene, cam = this.camera;
+    const tex = new Set();
+    const add = (v) => { if (v && v.isTexture && !v.isRenderTargetTexture) tex.add(v); };
+    scene.traverse((o) => {
+      for (const m of Array.isArray(o.material) ? o.material : o.material ? [o.material] : []) {
+        for (const k in m) add(m[k]);
+        if (m.uniforms) for (const k in m.uniforms) add(m.uniforms[k] && m.uniforms[k].value);
+      }
+    });
+    const list = [...tex];
+    let budget = 0, t0 = performance.now();
+    for (let i = 0; i < list.length; i++) {
+      const t = list[i];
+      // (images still downloading are uploaded when they arrive)
+      if (t.image || t.isDataTexture || t.isDataArrayTexture || t.isCompressedTexture) { try { r.initTexture(t); } catch (e) { /* uploaded on use */ } }
+      const w = t.image ? (t.image.width || 0) * (t.image.height || 0) * (t.image.depth || 1) : 0;
+      budget += w;
+      if (budget > 6e6 || performance.now() - t0 > 30) { budget = 0; onProgress(0.5 * i / list.length); await nextFrame(); t0 = performance.now(); }
+    }
+    onProgress(0.5);
+    const hidden = [], mask = cam.layers.mask;
+    scene.traverse((o) => { if (!o.visible) { hidden.push(o); o.visible = true; } });
+    cam.layers.enableAll();
+    try {
+      // group by group (lights from the whole scene), so the programs are issued in slices instead of
+      // one long task; each resolves once its programs link, and the page keeps painting meanwhile
+      const groups = scene.children.slice();
+      for (let gi = 0; gi < groups.length; gi++) {
+        const p = r.compileAsync(groups[gi], cam, scene);
+        let done = false; p.then(() => { done = true; }, () => { done = true; });
+        while (!done) await nextFrame();
+        onProgress(0.5 + 0.5 * (gi + 1) / groups.length);
+      }
+    } catch (e) { /* compiled lazily */ }
+    cam.layers.mask = mask;
+    for (const o of hidden) o.visible = false;
+    this._precompiled = true;
+    onProgress(1);
   }
 
   // marks the meshes of the town chunks for the depth pre-pass (once, after the world is built)
@@ -353,6 +472,7 @@ export class Engine {
   // Renders one frame. `output` may be a render target (film capture).
   render(dt, output = null) {
     const r = this.renderer;
+    if (this.lost) return;
     // film capture renders at the fixed (top) scale and pauses the governor
     this._filming = !!output;
     if (output && this._gov && this._gov.k !== 0) this._step(0);

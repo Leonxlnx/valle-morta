@@ -558,10 +558,17 @@ export class Sky {
   _measureAmbient(scene) {
     try {
       const W = 96, H = 48;
-      if (!this.probeRT) this.probeRT = new THREE.WebGLRenderTarget(W, H, { type: THREE.FloatType, depthBuffer: false });
+      // (32-bit float targets need EXT_color_buffer_float, missing on many phones: 16-bit then)
+      const f32 = this.renderer.extensions.has('EXT_color_buffer_float');
+      if (!this.probeRT) this.probeRT = new THREE.WebGLRenderTarget(W, H, { type: f32 ? THREE.FloatType : THREE.HalfFloatType, depthBuffer: false });
       this.envPass.render(this.renderer, this.probeRT);
-      const buf = new Float32Array(W * H * 4);
-      this.renderer.readRenderTargetPixels(this.probeRT, 0, 0, W, H, buf);
+      let buf = new Float32Array(W * H * 4);
+      if (f32) this.renderer.readRenderTargetPixels(this.probeRT, 0, 0, W, H, buf);
+      else {
+        const hb = new Uint16Array(W * H * 4);
+        this.renderer.readRenderTargetPixels(this.probeRT, 0, 0, W, H, hb);
+        for (let i = 0; i < hb.length; i++) buf[i] = THREE.DataUtils.fromHalfFloat(hb[i]);
+      }
       const up = [0, 0, 0], dn = [0, 0, 0];
       let wu = 0, wd = 0;
       for (let j = 0; j < H; j++) {

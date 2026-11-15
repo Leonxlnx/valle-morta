@@ -51,6 +51,18 @@ Bought at the Base and fitted to the G, 4 and 5 keys, each with a cooldown ring 
 
 Health comes in four segments and regenerates only to the top of the current one; bandages (up to three) do the rest. Falls above 3.5 m hurt; a roll on landing halves the damage.
 
+## Phones and tablets
+
+The game runs in a mobile browser in landscape. **Controls:** put your left thumb anywhere on the left half to move (push the stick to its edge to sprint), drag on the right half to look, hold the large button to fire (drag it to keep turning), tap the eye button to aim, the round arrow to reload, the lower chevrons to crouch (hold to lie down), the ammunition read-out to switch weapon and the button under pause for a bandage. Crates, the helicopter and abilities are a tap on the prompt or ring that appears. Sensitivity and control size are in Settings.
+
+**Fullscreen:** the first tap asks for fullscreen and locks landscape. Leaving fullscreen, switching apps or turning the phone upright pauses the run; Resume goes back to fullscreen. Safari on iPhone has no fullscreen for web pages: use Share, then Add to Home Screen, and start the game from the new icon, which opens without browser bars.
+
+**Graphics:** phones start on the Phone tier straight away (no benchmark) and the frame rate is held at about 30 fps by lowering the render scale for a moment when needed. Phone high (more shadow range, sharper sky, more grass) can be picked in Settings; the remaining two buttons there are the desktop Low and Medium presets. Phones load a reduced asset set from `public/assets/m/` (about 50 MB instead of about 250 MB); rebuild it with `node tools/mobile-assets.mjs` after changing any texture, model or terrain file. `?mobile=1` / `?mobile=0` and `?lite=1` / `?lite=0` force the phone mode and the asset set on any device.
+
+**Trying it on a phone:** start the dev server with `npm run dev -- --host`, connect the phone to the same network and open the `Network:` address Vite prints (fullscreen needs no HTTPS, but some browsers keep audio and sensors to secure pages).
+
+It has only been tested in desktop Chrome emulating a phone (touch events, phone screen sizes, a 4x slower CPU), not on real phones or tablets.
+
 ## How it is built
 
 - `src/engine`: HDR renderer with ray-marched volumetric clouds baked into a sky panorama, cloud shadows, light shafts, height fog, ambient occlusion and quality presets.
@@ -75,6 +87,8 @@ All tools drive the real game in headless Chrome against the running dev server,
 | `node tools/audit.mjs` | world audit with coordinates: floating, hanging and buried parts, missing colliders, chunk culling, z-fighting (`--only float,col,cull,zf`) |
 | `node tools/zcap.mjs --look` | portrait and scene sheets of every infected type and variant |
 | `node tools/bake-terrain.mjs` | re-bakes the erosion-simulated terrain |
+| `node tools/mobile-assets.mjs` | rebuilds the light asset set for phones and tablets in `public/assets/m/` (offline, ffmpeg; run it after changing any texture, model or terrain file) |
+| `node tools/mobile-check.mjs --load` / `--shots` / `--caps` | phone emulation: download size, start-up stalls and GPU memory; screenshots of the phone tiers; each forced capability fallback |
 | `node cinematic/capture.mjs --stills` | quick framing check of the film (without `--stills` it renders the full 4K HDR film, which needs ffmpeg with libx265 and takes a long time) |
 
 Offline generators live in `tools/texgen/` (PBR textures, Python + numpy) and `tools/zombie/`, `tools/weapon/`, `tools/props/` (Blender scripts).
@@ -89,6 +103,7 @@ Offline generators live in `tools/texgen/` (PBR textures, Python + numpy) and `t
 - The dark rooms seen through ground-floor windows have no collider of their own; the walls around the window hold the player out.
 - Infected skin gets a small fill from the viewer's side so faces stay readable in shade; against a bright sky they are still darker than the scene around them.
 - The wave bell is a temple bell recording, because no freely licensed church bell could be found; nobody has auditioned the sound set by ear.
+- Phones and tablets (checked only in desktop Chrome with device emulation, no real phone yet): the phone tiers and the light asset set (about 60 MB of assets to the first game) are in place, but building the village and preparing the infected are CPU work of about 12 s on this laptop and several times that on a phone, in long main-thread tasks.
 
 ## Credits
 

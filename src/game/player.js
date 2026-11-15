@@ -60,6 +60,9 @@ export class Player {
     this.mouseDown = [false, false, false];
     this.mouse = { ax: 0, ay: 0, lastT: -1, env: 0, held: null, heldFrames: 0, events: 0, rejected: 0, vx: 0, vy: 0, vT: -1e9 };
     this.rawInput = null;       // true once the browser granted unaccelerated mouse input
+    // touch (src/ui/touch.js): held controls merged into the input each frame, look in radians
+    this.touch = null;          // { fwd, strafe, sprint, fire, ads, crouch, jump, reload } or null
+    this.tlook = { x: 0, y: 0 };
     this._bind();
   }
 
@@ -135,13 +138,21 @@ export class Player {
     if (t - m.vT < 60) { m.ax += m.vx * span; m.ay += m.vy * span; }
   }
 
+  // touch look: radians at the unzoomed view, added by the touch controls; turns slower through a scope like the mouse
+  touchLook(dx, dy) { if (Number.isFinite(dx) && Number.isFinite(dy)) { this.tlook.x += dx; this.tlook.y += dy; } }
+
   _applyLook() {
-    const m = this.mouse;
+    const m = this.mouse, tl = this.tlook;
     if (m.held && ++m.heldFrames > 3) { m.held = null; m.rejected++; }   // nothing followed it: an isolated spike
+    const inv = this.settings.invertY ? -1 : 1;
+    if (tl.x !== 0 || tl.y !== 0) {
+      if (!this.script) { this.yaw -= tl.x * this.zoomK; this.pitch = clamp(this.pitch - tl.y * this.zoomK * inv, -1.5, 1.5); }
+      tl.x = tl.y = 0;
+    }
     if (m.ax === 0 && m.ay === 0) return;
     const s = this.lookScale();
     this.yaw -= m.ax * s;
-    this.pitch = clamp(this.pitch - m.ay * s * (this.settings.invertY ? -1 : 1), -1.5, 1.5);
+    this.pitch = clamp(this.pitch - m.ay * s * inv, -1.5, 1.5);
     m.ax = m.ay = 0;
   }
 
@@ -242,6 +253,18 @@ export class Player {
     i.slot = pr.has('Digit1') ? 1 : pr.has('Digit2') ? 2 : pr.has('Digit3') ? 3 : 0;
     i.ability = pr.has('KeyG') ? 1 : pr.has('Digit4') ? 2 : pr.has('Digit5') ? 3 : 0;
     pr.clear();
+    // touch controls add to the keyboard: a hybrid device can use both at once
+    const t = this.touch;
+    if (t) {
+      i.fwd = clamp(i.fwd + (t.fwd || 0), -1, 1);
+      i.strafe = clamp(i.strafe + (t.strafe || 0), -1, 1);
+      i.sprint = i.sprint || !!t.sprint;
+      i.jump = i.jump || !!t.jump;
+      i.crouch = i.crouch || !!t.crouch;
+      i.fire = i.fire || !!t.fire;
+      i.ads = i.ads || !!t.ads;
+      i.reload = i.reload || !!t.reload;
+    }
   }
 
   // Aim the view at a world position with a smoothing rate (for scripts).
@@ -305,7 +328,7 @@ export class Player {
   update(dt) {
     this.time += dt;
     this.stepT = Math.max(0, this.stepT - dt);
-    if (!this.enabled) { this.mouse.ax = this.mouse.ay = 0; this._applyCamera(dt); return; }
+    if (!this.enabled) { this.mouse.ax = this.mouse.ay = 0; this.tlook.x = this.tlook.y = 0; this._applyCamera(dt); return; }
     this._readInput(dt);
     this._applyLook();
     // mounted (the Operation tank): the vehicle takes the input and owns the camera

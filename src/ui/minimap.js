@@ -32,26 +32,40 @@ export class Minimap {
     const half = this.half = (layout.playRadius || 330) + 80;
     const cam = new THREE.OrthographicCamera(-half, half, half, -half, 1, 4000);
     cam.position.set(c[0], 1800, c[1]); cam.up.set(0, 0, -1); cam.lookAt(c[0], 0, c[1]); cam.updateMatrixWorld();
-    const rt = new THREE.WebGLRenderTarget(TEX, TEX, { type: THREE.HalfFloatType, depthBuffer: true });
+    // half floats keep the radiance for the exposure below; where the GPU cannot render or read
+    // them back (no EXT_color_buffer_float, or ?caps=nofloat) the read stays empty and the map
+    // would be black, so it renders to RGBA8 there (clamped at 1, still fine for an aerial view)
+    let hf = !!engine.caps?.floatRender;
+    const read = (h) => {
+      const rt = new THREE.WebGLRenderTarget(TEX, TEX, { type: h ? THREE.HalfFloatType : THREE.UnsignedByteType, depthBuffer: true });
+      const buf = h ? new Uint16Array(TEX * TEX * 4) : new Uint8Array(TEX * TEX * 4);
+      try {
+        r.setRenderTarget(rt); r.setClearColor(0x20231c, 1); r.clear();
+        r.render(scene, cam);
+        r.readRenderTargetPixels(rt, 0, 0, TEX, TEX, buf);
+      } finally { rt.dispose(); }
+      // the clear colour is never zero: an all-zero sample means the read failed
+      for (let i = 0; i < buf.length; i += 4 * 97) if (buf[i] || buf[i + 1] || buf[i + 2]) return buf;
+      return null;
+    };
     const dome = engine.sky && engine.sky.dome, domeVis = dome ? dome.visible : false;
     const bg = scene.background, fog = scene.fog, prevRT = r.getRenderTarget();
     const prevCol = r.getClearColor(new THREE.Color()), prevA = r.getClearAlpha();
-    const buf = new Uint16Array(TEX * TEX * 4);
+    let buf = null;
     try {
       if (dome) dome.visible = false;
       scene.background = null; scene.fog = null;
-      r.setRenderTarget(rt); r.setClearColor(0x20231c, 1); r.clear();
-      r.render(scene, cam);
-      r.readRenderTargetPixels(rt, 0, 0, TEX, TEX, buf);
+      if (hf) buf = read(true);
+      if (!buf) { hf = false; buf = read(false); }
     } catch (e) { console.warn('minimap bake failed', e); return; } finally {
       if (dome) dome.visible = domeVis;
       scene.background = bg; scene.fog = fog;
       r.setRenderTarget(prevRT); r.setClearColor(prevCol, prevA);
-      rt.dispose();
     }
-    // half floats -> linear radiance -> exposure from the log-average -> filmic curve -> sRGB
-    const half2f = new Float32Array(65536);
-    for (let i = 0; i < 65536; i++) half2f[i] = THREE.DataUtils.fromHalfFloat(i);
+    if (!buf) { console.warn('minimap bake read nothing'); return; }
+    // half floats (or bytes) -> linear radiance -> exposure from the log-average -> filmic curve -> sRGB
+    const half2f = new Float32Array(hf ? 65536 : 256);
+    for (let i = 0; i < half2f.length; i++) half2f[i] = hf ? THREE.DataUtils.fromHalfFloat(i) : i / 255;
     let sum = 0, n = 0;
     for (let i = 0; i < buf.length; i += 4 * 37) {
       const l = 0.2126 * half2f[buf[i]] + 0.7152 * half2f[buf[i + 1]] + 0.0722 * half2f[buf[i + 2]];

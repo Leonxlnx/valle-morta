@@ -52,18 +52,26 @@ export class Path {
     this.g0 = -720; this.gs = 24; this.gn = 60;
     this.cells = new Array(this.gn * this.gn);
     const diag = this.gs * 0.7072;
+    // the distance to a segment's bounding box is a lower bound of the distance to the segment:
+    // exact distances only where that bound can matter (same lists as measuring every segment)
+    const bx = new Float64Array((n - 1) * 4), lb = new Float64Array(n - 1), EPS = 1e-6;
+    for (let i = 0; i < n - 1; i++) {
+      const a = this.pts[i], b = this.pts[i + 1];
+      bx[i * 4] = Math.min(a[0], b[0]); bx[i * 4 + 1] = Math.min(a[1], b[1]); bx[i * 4 + 2] = Math.max(a[0], b[0]); bx[i * 4 + 3] = Math.max(a[1], b[1]);
+    }
+    let guess = 0;
     for (let cz = 0; cz < this.gn; cz++) {
       for (let cx = 0; cx < this.gn; cx++) {
         const mx = this.g0 + (cx + 0.5) * this.gs, mz = this.g0 + (cz + 0.5) * this.gs;
-        let best = 1e18;
-        const ds = new Float64Array(n - 1);
+        let best = this._segDist(guess, mx, mz, null);
         for (let i = 0; i < n - 1; i++) {
-          ds[i] = this._segDist(i, mx, mz, null);
-          if (ds[i] < best) best = ds[i];
+          const ex = Math.max(bx[i * 4] - mx, 0, mx - bx[i * 4 + 2]), ez = Math.max(bx[i * 4 + 1] - mz, 0, mz - bx[i * 4 + 3]);
+          const l = lb[i] = Math.sqrt(ex * ex + ez * ez) - EPS;
+          if (l < best) { const d = this._segDist(i, mx, mz, null); if (d < best) { best = d; guess = i; } }
         }
         const lim = best + 2 * diag + 0.01;
         const list = [];
-        for (let i = 0; i < n - 1; i++) if (ds[i] <= lim) list.push(i);
+        for (let i = 0; i < n - 1; i++) if (lb[i] <= lim && this._segDist(i, mx, mz, null) <= lim) list.push(i);
         this.cells[cz * this.gn + cx] = list;
       }
     }

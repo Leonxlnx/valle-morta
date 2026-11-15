@@ -79,7 +79,9 @@ export async function build(ctx) {
   };
   let colTris = 0, colMeshes = 0;
   const pushCol = (name) => { const m = B.cb.mesh(name); if (m) { ctx.colliders.push(m); colTris += B.cb.tris; colMeshes++; } };
-  for (const b of ctx.layout.buildings) {
+  const nb = ctx.layout.buildings.length;
+  for (const [bi, b] of ctx.layout.buildings.entries()) {
+    if (ctx.tick) await ctx.tick(0.85 * bi / nb);
     B.mb = chunk(b.kind === 'church' ? 'church' : b.x < -60 ? 'west' : b.x < 30 ? 'v0' : b.x < 80 ? 'v1' : 'v2');
     B.cb = new CB();
     const i0 = B.mb.idx.length, key = b.kind === 'church' ? 'church' : b.x < -60 ? 'west' : b.x < 30 ? 'v0' : b.x < 80 ? 'v1' : 'v2';
@@ -92,14 +94,17 @@ export async function build(ctx) {
     } catch (e) { console.error(`[buildings] ${b.id} failed:`, e); }
     pushCol(b.id);
   }
+  if (ctx.tick) await ctx.tick(0.86);
   B.mb = chunk('west'); B.cb = new CB();
   const ib = B.mb.idx.length;
   try { buildBridge(B); B.mb.extract(ib, detail('west#bridge')); } catch (e) { console.error('[buildings] bridge failed:', e); }
   pushCol('bridge');
+  if (ctx.tick) await ctx.tick(0.88);
   B.mb = chunk('walls'); B.cb = new CB();
   try { buildStoneWalls(B); } catch (e) { console.error('[buildings] stone walls failed:', e); }
   pushCol('stonewalls');
   // street furniture in the structure material, merged into the nearest chunk
+  if (ctx.tick) await ctx.tick(0.9);
   const cbW = new CB(), cbS = new CB();
   let town = null;
   try { town = buildTown(B, (c) => chunk(c.x < 30 ? 'v0' : c.x < 80 ? 'v1' : 'v2'), cbW, cbS); } catch (e) { console.error('[buildings] town furniture failed:', e); }
@@ -108,6 +113,7 @@ export async function build(ctx) {
     if (m) { m.userData.surface = surf; ctx.colliders.push(m); colTris += cb.tris; colMeshes++; }
   }
 
+  if (ctx.tick) await ctx.tick(0.93);
   const group = new THREE.Group();
   group.name = 'buildings';
   let tris = 0, verts = 0;
@@ -125,10 +131,11 @@ export async function build(ctx) {
     const c = m.geometry.boundingSphere.center, lod = new THREE.LOD();
     lod.name = `bldx-lod:${key}`; lod.position.set(c.x, c.y, c.z);
     m.position.set(-c.x, -c.y, -c.z); m.updateMatrix(); m.updateMatrixWorld(true);
-    lod.addLevel(m, 0, 0.04); lod.addLevel(new THREE.Object3D(), DFAR + Math.min(40, m.geometry.boundingSphere.radius * 0.4), 0.06);
+    lod.addLevel(m, 0, 0.04); lod.addLevel(new THREE.Object3D(), DFAR * (ctx.quality?.detailFar ?? 1) + Math.min(40, m.geometry.boundingSphere.radius * 0.4), 0.06);
     lod.updateMatrixWorld(true);
     group.add(lod); tris += mb.tris; verts += mb.n; parts.push(`x${key}:${Math.round(mb.tris / 1000)}k`);
   }
+  if (ctx.tick) await ctx.tick(0.97);
   for (const im of buildDebris(B, material)) { group.add(im); tris += im.count * im.geometry.index.count / 3; }
   ctx.scene.add(group);
   const stats = { town, tris: Math.round(tris), meshes: group.children.length, stones: B.stones.length, tiles: B.tiles.length, verts, cat: B.stat, colTris, colMeshes, ms: Math.round(performance.now() - t0), missing: material.userData.missing };

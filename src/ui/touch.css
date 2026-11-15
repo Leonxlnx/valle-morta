@@ -1,0 +1,179 @@
+/* Phones and tablets: the touch controls, the HUD rearranged around the thumbs, compact screens
+   for short landscape viewports, safe areas and the browser gestures kept out of the way.
+   Built from the tokens in ui.css; --tk scales the controls (set by touch.js). */
+:root {
+  --tk: 1;
+  --sl: max(16px, env(safe-area-inset-left));
+  --sr: max(16px, env(safe-area-inset-right));
+  --st: max(12px, env(safe-area-inset-top));
+  --sb: max(12px, env(safe-area-inset-bottom));
+}
+
+/* ---------------------------------------------------------------- no browser gestures in the way */
+html, body { position: fixed; inset: 0; width: 100%; height: 100%; overscroll-behavior: none; touch-action: none; -webkit-touch-callout: none; -webkit-user-select: none; -webkit-tap-highlight-color: transparent; -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+button, [data-act], label, input { touch-action: manipulation; }
+.sheet.wide, .base-body { touch-action: pan-y; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; }
+img, svg { -webkit-user-drag: none; }
+body:not(.touch) .only-touch { display: none !important; }
+body.touch .only-mouse { display: none !important; }
+
+/* ---------------------------------------------------------------- portrait on a phone */
+.rotate { position: fixed; inset: 0; z-index: 50; display: none; align-items: center; justify-content: center; padding: var(--st) var(--sr) var(--sb) var(--sl); background: var(--void); text-align: center; pointer-events: auto; }
+@media (orientation: portrait) { body.mobile .rotate { display: flex; } }
+.rotate-box { display: grid; justify-items: center; gap: var(--s3); max-width: 280px; }
+.rotate svg { width: 72px; height: 72px; fill: none; stroke: var(--ink-2); stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; margin-bottom: var(--s2); }
+.rotate svg rect { transform-origin: 32px 28px; animation: turn 2.6s var(--ease) infinite; }
+@keyframes turn { 0%, 30% { transform: none; } 55%, 85% { transform: rotate(-90deg); } 100% { transform: none; } }
+.rotate h2 { font-size: var(--t-l); font-weight: var(--w-bold); letter-spacing: var(--track-tight); }
+.rotate p { font-size: var(--t-m); line-height: 1.5; color: var(--ink-3); }
+
+/* ---------------------------------------------------------------- the controls */
+.tc-zone, .tc { position: absolute; inset: 0; display: none; }
+body.touch.in-game .tc-zone, body.touch.in-game .tc { display: block; }
+.tc-zone { pointer-events: auto; touch-action: none; }
+.tc { pointer-events: none; }
+
+.tc-btn { --x: 0; --y: 0; --d: 50px; position: absolute; right: calc(var(--sr) + var(--x) * var(--tk) * 1px); bottom: calc(var(--sb) + var(--y) * var(--tk) * 1px); width: calc(var(--d) * var(--tk)); height: calc(var(--d) * var(--tk)); transform: translate(50%, 50%); display: grid; place-items: center; padding: 0; border: var(--hair) solid rgba(236, 235, 230, 0.3); border-radius: 50%; background: rgba(14, 15, 15, 0.34); -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px); color: var(--ink); pointer-events: auto; touch-action: none; cursor: pointer; transition: background var(--fast) var(--ease), border-color var(--fast) var(--ease), scale var(--fast) var(--ease), opacity var(--mid); box-shadow: 0 2px 14px rgba(0, 0, 0, 0.22); }
+.tc-btn svg { width: 46%; height: 46%; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.4)); }
+.tc-btn.down { background: rgba(236, 235, 230, 0.22); border-color: rgba(236, 235, 230, 0.6); scale: 0.94; }
+.tc-btn.on { background: var(--ink); border-color: var(--ink); color: var(--on-ink); }
+.tc-btn.on svg { filter: none; }
+
+/* the right thumb: fire, and an arc of buttons around it */
+.tc-fire { --x: 92; --y: 104; --d: 84px; border-width: 1.5px; border-color: rgba(236, 235, 230, 0.5); background: rgba(14, 15, 15, 0.3); }
+.tc-fire svg { width: 40%; height: 40%; stroke-width: 1.5; }
+.tc-fire .dot { fill: currentColor; stroke: none; }
+.tc-fire.down { background: rgba(201, 101, 90, 0.3); border-color: rgba(236, 235, 230, 0.75); }
+.tc-jump { --x: 92; --y: 194; }
+.tc-reload { --x: 147; --y: 175; }
+.tc-ads { --x: 179; --y: 126; }
+.tc-crouch { --x: 174; --y: 67; }
+.tc-roll { --x: 134; --y: 25; }
+.tc-crouch.prone svg { transform: translateY(2px); }
+/* top right: pause, and the bandage under it */
+.tc-pause, .tc-band { --d: 44px; left: auto; bottom: auto; right: var(--sr); transform: none; }
+.tc-pause { top: var(--st); }
+.tc-band { top: calc(var(--st) + 44px * var(--tk) + 10px); }
+.tc-band em { position: absolute; right: -3px; bottom: -3px; min-width: 17px; height: 17px; padding: 0 4px; display: grid; place-items: center; border-radius: var(--pill); background: var(--ink); color: var(--on-ink); font: var(--w-bold) 11px/1 var(--font); font-style: normal; font-variant-numeric: tabular-nums; }
+.tc-band.dim { opacity: 0.4; }
+
+/* the left thumb: a stick that appears where the thumb lands, a faint ring where it usually does */
+.tc-stick { position: absolute; left: 0; top: 0; width: 0; height: 0; opacity: 0; transition: opacity 120ms var(--ease); }
+.tc-stick.on { opacity: 1; }
+.tc-stick i, .tc-stick b, .tc-rest { position: absolute; border-radius: 50%; }
+.tc-stick i { left: calc(-58px * var(--tk)); top: calc(-58px * var(--tk)); width: calc(116px * var(--tk)); height: calc(116px * var(--tk)); border: 1.5px solid rgba(236, 235, 230, 0.34); background: radial-gradient(closest-side, rgba(14, 15, 15, 0.08), rgba(14, 15, 15, 0.3)); transition: border-color var(--fast); }
+.tc-stick b { left: calc(-25px * var(--tk)); top: calc(-25px * var(--tk)); width: calc(50px * var(--tk)); height: calc(50px * var(--tk)); background: rgba(236, 235, 230, 0.78); box-shadow: 0 2px 12px rgba(0, 0, 0, 0.35); }
+.tc-stick.run i { border-color: var(--ink); border-width: 2px; }
+.tc-stick.run b { background: var(--ink); }
+.tc-rest { left: calc(var(--sl) + 50px * var(--tk)); bottom: calc(var(--sb) + 44px * var(--tk)); width: calc(116px * var(--tk)); height: calc(116px * var(--tk)); border: 1.5px dashed rgba(236, 235, 230, 0.16); transition: opacity var(--mid); }
+.tc:has(.tc-stick.on) .tc-rest { opacity: 0; }
+/* in the tank only driving, looking and firing; nothing while dead or while the helicopter has the camera */
+.tc.veh .tc-ads, .tc.veh .tc-reload, .tc.veh .tc-jump, .tc.veh .tc-crouch, .tc.veh .tc-roll, .tc.veh .tc-band { display: none; }
+.tc.off > :not(.tc-pause) { display: none; }
+
+/* ---------------------------------------------------------------- HUD around the thumbs */
+body.touch .hud { --edge: 14px; }
+body.touch .hud::before { background: radial-gradient(50% 45% at 0% 0%, rgba(0, 0, 0, 0.26), transparent 70%), radial-gradient(35% 40% at 100% 0%, rgba(0, 0, 0, 0.2), transparent 70%); }
+body.touch .keyhint { display: none; }
+body.touch .nav { left: var(--sl); top: var(--st); gap: 6px; }
+body.touch .minimap { width: calc(96px * var(--tk)); height: calc(96px * var(--tk)); }
+body.touch .info { min-width: 0; gap: 1px; }
+body.touch .info .wave { font-size: var(--t-m); }
+body.touch .info .line, body.touch .salvage, body.touch .extract { font-size: var(--t-xs); }
+body.touch .vitals { --seg-w: 30px; left: calc(var(--sl) + 96px * var(--tk) + 16px); top: var(--st); bottom: auto; gap: 5px; }
+body.touch .hp-num { font-size: 24px; }
+body.touch .vit-line { font-size: var(--t-xs); }
+/* ammunition and weapon at the top right, beside pause: a tap switches weapon */
+body.touch .arsenal { position: fixed; top: var(--st); right: calc(var(--sr) + 44px * var(--tk) + 12px); min-height: 44px; margin: 0; padding: 4px 4px 0; display: grid; grid-template-columns: auto auto; align-items: center; justify-items: end; column-gap: var(--s3); row-gap: 2px; pointer-events: auto; cursor: pointer; }
+body.touch .arsenal .ammo { grid-column: 2; grid-row: 1; }
+body.touch .arsenal .cur { grid-column: 1; grid-row: 1; }
+body.touch .arsenal .slots-row { grid-column: 1 / 3; padding-top: 4px; gap: var(--s2); }
+body.touch .ammo .mag { font-size: 28px; }
+body.touch .cur svg { width: 84px; height: 24px; }
+body.touch .wname, body.touch .wslot kbd { display: none; }
+body.touch .wslot svg { width: 36px; height: 11px; }
+body.touch .boss { width: min(320px, 34vw); top: calc(var(--st) + 4px); }
+body.touch .toast { top: 22vh; }
+body.touch .toast strong { font-size: var(--t-l); }
+body.touch .toast span { font-size: var(--t-s); }
+/* the prompt sits between the thumbs, above the ability rings; when it can act it is a button */
+body.touch .prompt { bottom: calc(var(--sb) + 92px * var(--tk)); font-size: var(--t-s); padding: 0 18px; min-height: 40px; }
+body.touch .prompt.tap { min-height: 46px; padding: 0 22px; border: var(--hair) solid rgba(236, 235, 230, 0.55); background: rgba(14, 15, 15, 0.55); font-size: var(--t-m); pointer-events: auto; cursor: pointer; }
+body.touch .prompt.tap.on::before { content: ""; width: 7px; height: 7px; margin-right: 2px; border-radius: 50%; background: var(--accent); }
+body.touch .prompt:not(.on) { pointer-events: none; }
+body.touch .abil { bottom: var(--sb); gap: var(--s3); }
+body.touch .ab { pointer-events: auto; cursor: pointer; }
+body.touch .ab span { display: none; }
+body.touch .ab u { width: calc(60px * var(--tk)); height: calc(60px * var(--tk)); font-size: 10px; font-weight: var(--w-med); letter-spacing: 0; }
+body.touch .ab u::after { inset: 3px; background: rgba(14, 15, 15, 0.42); }
+body.touch .hud.cine .arsenal, body.touch .hud.cine .ab, body.touch .hud.cine .prompt { pointer-events: none; }
+body.touch .marker span { font-size: 11px; }
+
+/* ---------------------------------------------------------------- thumb-sized menus */
+body.touch .btn, body.touch .seg button, body.touch .tabs button, body.touch .subtabs button, body.touch .pick button, body.touch .buy, body.touch .equip, body.touch .slot, body.touch .mode { min-height: 44px; }
+body.touch .pick button, body.touch .base button, body.touch .seg button { min-width: 44px; }
+body.touch .menu .btn { padding: 10px 2px; }
+body.touch .base-foot .btn { padding: 10px 0; }
+body.touch .rows .row { min-height: 50px; }
+body.touch .row input[type="range"] { height: 28px; background: linear-gradient(90deg, var(--ink) var(--v), var(--ink-4) var(--v)) center / 100% 2px no-repeat; }
+body.touch .row input[type="range"]::-webkit-slider-thumb { width: 24px; height: 24px; border-width: 5px; }
+body.touch .row input[type="checkbox"] { width: 46px; height: 26px; }
+body.touch .row input[type="checkbox"]::after { width: 20px; height: 20px; }
+body.touch .row input[type="checkbox"]:checked::after { transform: translateX(20px); }
+body.touch .mode:hover { transform: none; }
+.row small { display: block; margin-top: 2px; font-size: var(--t-xs); line-height: 1.35; color: var(--ink-3); }
+.touchkeys dd { font-size: var(--t-s); color: var(--ink-3); text-align: right; }
+
+/* short landscape screens (phones): everything fits without scrolling the page */
+@media (max-height: 540px) {
+  .menu { justify-content: center; padding: max(20px, var(--st)) max(28px, var(--sr)) max(16px, var(--sb)) max(28px, var(--sl)); }
+  .menu-col { gap: var(--s3); max-width: min(720px, 100%); }
+  .wordmark.big { font-size: 42px; }
+  .lede { font-size: var(--t-m); margin-top: 0; }
+  .modes { margin-top: var(--s1); gap: var(--s2); }
+  .mode { min-height: 0; padding: var(--s3) var(--s4) var(--s2); gap: var(--s1); border-radius: var(--r3); }
+  .mode strong { font-size: var(--t-l); }
+  .mode span { font-size: var(--t-s); line-height: 1.4; }
+  .mode em { padding-top: var(--s2); align-items: center; min-height: 34px; }
+  .foot { display: none; }
+  .sheet { padding: var(--s4) var(--s5); max-height: calc(100% - 20px); overflow: auto; overscroll-behavior: contain; touch-action: pan-y; }
+  .sheet.wide { max-height: calc(100% - 20px); width: min(640px, calc(100% - var(--sl) - var(--sr))); padding-bottom: 0; }
+  /* the way back stays on screen however far the list is scrolled */
+  .sheet.wide > .menu-nav.row { position: sticky; bottom: 0; z-index: 1; margin: var(--s3) calc(var(--s5) * -1) 0; padding: var(--s2) var(--s5) var(--s3); background: linear-gradient(rgba(17, 18, 18, 0), rgba(17, 18, 18, 0.96) 28%); }
+  .sheet h2 { font-size: var(--t-l); margin-bottom: var(--s3); }
+  .sheet .sub { margin: calc(var(--s2) * -1) 0 var(--s3); font-size: var(--t-s); }
+  .sheet h3 { margin-top: var(--s5); }
+  .menu-nav { margin-top: var(--s3); }
+  .menu-nav.row { margin-top: var(--s3); }
+  .stats > div, .keys > div { min-height: 32px; padding: 3px 0; font-size: var(--t-s); }
+  .stats .sum dd { font-size: var(--t-l); }
+  .hint { margin-top: var(--s3); font-size: var(--t-xs); }
+  /* summaries side by side: the result and the buttons on the left, the numbers on the right */
+  .over .sheet, .debrief .sheet { width: min(760px, calc(100% - var(--sl) - var(--sr))); display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr); grid-template-rows: auto auto 1fr; column-gap: var(--s6); align-items: start; }
+  .over .sheet > h2, .debrief .sheet > h2, .debrief .sheet > .sub { grid-column: 1; }
+  .over .sheet > .stats, .debrief .sheet > .stats { grid-column: 2; grid-row: 1 / 4; }
+  .over .sheet > .menu-nav, .debrief .sheet > .menu-nav { grid-column: 1; align-self: end; }
+  /* Base */
+  .base-wrap { width: calc(100% - var(--sl) - var(--sr)); gap: var(--s2); padding: var(--st) 0 var(--sb); }
+  .base-head { gap: var(--s4); align-items: center; }
+  .base-title { gap: 2px; }
+  .base-title h2 { font-size: var(--t-xl); }
+  .base-sub { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: var(--t-xs); }
+  .bank { padding-right: var(--s4); }
+  .bank b { font-size: var(--t-xl); }
+  .base .deploy { padding: 10px 30px; }
+  .base-bar { min-height: 0; }
+  .tabs { gap: var(--s5); }
+  .tabs button { padding: var(--s2) 0; }
+  .subtabs { margin-bottom: 4px; }
+  .card { min-height: 0; padding: var(--s3) var(--s3) var(--s2); }
+  .card-foot { padding-top: var(--s2); }
+  .loadout { flex-wrap: wrap; gap: var(--s2); padding: var(--s2) var(--s3); }
+  .loadout p { display: none; }
+  .run-grid { grid-template-columns: minmax(0, 1fr); }
+  .base-foot { padding-top: var(--s2); }
+  .base-foot p { font-size: var(--t-xs); line-height: 1.4; }
+}
+@media (max-height: 540px) and (max-width: 760px) {
+  .base-foot p { display: none; }
+}

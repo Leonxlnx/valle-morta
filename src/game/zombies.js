@@ -311,12 +311,21 @@ export class Zombies {
     const loader = new GLTFLoader();
     const names = [...new Set(Object.values(INFECTED).map((d) => d.model))];
     const gltfs = await Promise.all(names.map((nm) => fetchGlb(loader, nm)));
-    names.forEach((nm, i) => { if (gltfs[i]) this.sets[nm] = this._makeSet(nm, gltfs[i]); });
+    // one body (its LOD meshes, then its pool) per slice: a phone gets frames in between
+    const slice = () => new Promise((r) => setTimeout(r, 0));
+    for (const [i, nm] of names.entries()) {
+      if (!gltfs[i]) continue;
+      const set = this.sets[nm] = this._makeSet(nm, gltfs[i]);
+      await slice();
+      // coarser meshes for the distance (a crowd of sub-pixel triangles is what costs frame time)
+      if (set.lodSrc) { const l = [set.lodSrc]; for (const cell of LOD_CELL.slice(1)) { l.push(decimate(set.lodSrc, cell)); await slice(); } set.lods = l; }
+    }
     if (!this.sets.zombie) { console.info('[zombies] zombie.glb missing, using placeholder bodies'); return; }
     // build the whole pool up front so nothing is cloned or compiled mid-fight
     for (const nm in this.sets) {
       const set = this.sets[nm];
-      for (let i = 0; i < (POOL_SIZE[nm] || 4); i++) { const z = this._create(set); z.root.visible = false; set.pool.push(z); }
+      for (let i = 0; i < (POOL_SIZE[nm] || 4); i++) { const z = this._create(set); z.root.visible = false; set.pool.push(z); if (i % 4 === 3) await slice(); }
+      await slice();
     }
   }
 
@@ -357,8 +366,7 @@ export class Zombies {
       variants.forEach(prep);
       for (const t in set.tints) set.tints[t].forEach(prep);
       set.materials = variants;
-      // coarser meshes for the distance: a crowd of sub-pixel triangles is what costs frame time
-      set.lods = LOD_CELL.map((cell) => (cell ? decimate(mesh.geometry, cell) : mesh.geometry));
+      set.lodSrc = mesh.geometry;   // its LOD meshes are made by load(), one per slice
     }
     gltf.scene.updateMatrixWorld(true);
     if (head) { const y = head.getWorldPosition(_a).y; if (y > 0.8) set.height = y + 0.2; }

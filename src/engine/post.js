@@ -575,7 +575,8 @@ export class PostFX {
   // must not reallocate on every step); the three most recently used sets are kept.
   setSize(w, h) {
     this._cache = this._cache || new Map();
-    const key = `${w}x${h}x${this.settings.volScale}x${this.settings.aoFull ? 1 : 0}`;
+    const st = this.settings;
+    const key = `${w}x${h}x${st.volScale}x${st.aoFull ? 1 : 0}x${st.ao ? 1 : 0}${st.volumetric ? 1 : 0}x${st.bloomLevels ?? 6}`;
     let t = this._cache.get(key);
     if (t) this._cache.delete(key); else t = this._makeTargets(w, h);
     this._cache.set(key, t);
@@ -591,17 +592,20 @@ export class PostFX {
     const hw = Math.max(2, Math.ceil(w / 2)), hh = Math.max(2, Math.ceil(h / 2));
     const vs = this.settings.volScale;
     // ultra: AO and contact shadows at the full render size (small objects sit on the ground)
-    const aw = this.settings.aoFull ? w : hw, ah = this.settings.aoFull ? h : hh;
+    // (AO or volumetrics switched off, as on the phone tiers: a token 4x4 target the tone pass reads)
+    const ao = this.settings.ao, vol = this.settings.volumetric;
+    const aw = !ao ? 4 : this.settings.aoFull ? w : hw, ah = !ao ? 4 : this.settings.aoFull ? h : hh;
     const t = {
       ao: new THREE.WebGLRenderTarget(aw, ah, { ...hf }),
       aoB: new THREE.WebGLRenderTarget(aw, ah, { ...hf }),
-      vol: new THREE.WebGLRenderTarget(Math.ceil(w / vs), Math.ceil(h / vs), { ...hf }),
+      vol: new THREE.WebGLRenderTarget(vol ? Math.ceil(w / vs) : 4, vol ? Math.ceil(h / vs) : 4, { ...hf }),
       ldr: new THREE.WebGLRenderTarget(w, h, { type: THREE.UnsignedByteType, format: THREE.RGBAFormat, depthBuffer: false, minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter }),
       mips: [],
     };
     // the bloom pyramid starts at quarter resolution
     let mw = Math.max(2, Math.ceil(w / 4)), mh = Math.max(2, Math.ceil(h / 4));
-    for (let i = 0; i < 6 && mw > 8 && mh > 8; i++) {
+    const levels = this.settings.bloomLevels ?? 6;   // (fewer on the phone tiers: a tighter glow, fewer passes)
+    for (let i = 0; i < levels && mw > 8 && mh > 8; i++) {
       t.mips.push(new THREE.WebGLRenderTarget(mw, mh, { ...hf }));
       mw = Math.ceil(mw / 2); mh = Math.ceil(mh / 2);
     }

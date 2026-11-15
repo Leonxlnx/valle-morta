@@ -5,7 +5,10 @@ import * as THREE from 'three';
 import { G, GLSL_COMMON, bindShared } from '../engine/shared.js';
 import { enhance } from '../engine/materials.js';
 
-const MAX = 900;
+import { MOBILE } from '../core/device.js';
+
+// particle pool: phones keep fewer (the bursts lose some of their tail, never their shape)
+const MAX = MOBILE ? 400 : 900;
 const UP = new THREE.Vector3(0, 1, 0);
 
 const P_VS = /* glsl */`
